@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.0.0"
+	},
+	"info": {
+		"0409": {
+			"ProductVersion": "0.1.0",
+			"CompanyName": "",
+			"FileDescription": "SDK Version Control",
+			"LegalCopyright": "MIT License",
+			"ProductName": "SDK Version Control",
+			"Comments": "SDK Version Management Tool"
+		}
+	}
+}

@@ -1,0 +1,25 @@
+{
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": {
+          "file_version": "0.1.0.0",
+          "product_version": "0.1.0.0"
+        },
+        "info": {
+          "0409": {
+            "Comments": "",
+            "CompanyName": "",
+            "FileDescription": "SDK Version Control",
+            "FileVersion": "0.1.0.0",
+            "InternalName": "SDKVersionControl",
+            "LegalCopyright": "MIT License",
+            "OriginalFilename": "SDKVersionControl.exe",
+            "ProductName": "SDK Version Control",
+            "ProductVersion": "0.1.0"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "changelog": "## 0.2.0\n- 新增代理连通性检测（百度/Google）\n- SDK 版本列表支持走代理\n- 修复 macOS/Linux 编译兼容性\n- 重构代码结构",
+  "downloads": {
+    "windows-amd64": {
+      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl.exe",
+      "filename": "SDKVersionControl.exe"
+    },
+    "darwin-amd64": {
+      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl_darwin_amd64.bin",
+      "filename": "SDKVersionControl"
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl_darwin_arm64.bin",
+      "filename": "SDKVersionControl"
+    },
+    "linux-amd64": {
+      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl",
+      "filename": "SDKVersionControl"
+    }
+  }
+}
