@@ -302,7 +302,11 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
+			if resp.StatusCode == http.StatusOK {
+				errCh <- fmt.Errorf("fallback: server returned 200 instead of 206 for range request")
+				return
+			}
+			if resp.StatusCode != http.StatusPartialContent {
 				errCh <- fmt.Errorf("segmented download failed, HTTP status code: %d", resp.StatusCode)
 				return
 			}

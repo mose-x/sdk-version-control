@@ -12,8 +12,34 @@ declare global {
           GetInstallDir: (sdkType: string) => Promise<string>;
           GetPathEntries: () => Promise<any[]>;
           ImportSdk: (externalPath: string, sdkType: string) => Promise<void>;
-          GetSettings: () => Promise<{ theme: string; language: string }>;
-          SaveSettings: (settings: { theme: string; language: string }) => Promise<void>;
+          GetSettings: () => Promise<{
+            theme: string;
+            language: string;
+            proxy: {
+              enabled: boolean;
+              mode: string;
+              url: string;
+              protocol: string;
+            };
+            endpoints: Record<string, string>;
+            installPath: string;
+            githubMirror: string;
+            downloadThreads: number;
+          }>;
+          SaveSettings: (settings: {
+            theme: string;
+            language: string;
+            proxy: {
+              enabled: boolean;
+              mode: string;
+              url: string;
+              protocol: string;
+            };
+            endpoints?: Record<string, string>;
+            installPath?: string;
+            githubMirror?: string;
+            downloadThreads: number;
+          }) => Promise<void>;
           GetAppInfo: () => Promise<{
             version: string;
             buildDate: string;
