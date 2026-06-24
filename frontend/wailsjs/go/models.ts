@@ -63,6 +63,27 @@ export namespace config {
 
 }
 
+export namespace logger {
+	
+	export class LogFileInfo {
+	    name: string;
+	    size: number;
+	    modTime: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LogFileInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.size = source["size"];
+	        this.modTime = source["modTime"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class AppInfo {
@@ -138,6 +159,7 @@ export namespace pathmgr {
 	    path: string;
 	    isManaged: boolean;
 	    sdkType: string;
+	    source: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PathEntry(source);
@@ -148,6 +170,7 @@ export namespace pathmgr {
 	        this.path = source["path"];
 	        this.isManaged = source["isManaged"];
 	        this.sdkType = source["sdkType"];
+	        this.source = source["source"];
 	    }
 	}
 

@@ -12,7 +12,7 @@ import (
 	"sdk_version_control/internal/config"
 )
 
-// MavenFetcher Maven 版本获取器
+// MavenFetcher Maven version fetcher
 type MavenFetcher struct {
 	cfg        *config.Config
 	sm         *config.SettingsManager
@@ -47,7 +47,7 @@ func (f *MavenFetcher) GetBinDir() string {
 
 func (f *MavenFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{
-		"M2_HOME": "", // 根目录
+		"M2_HOME": "", // Root directory
 	}
 }
 
@@ -58,13 +58,13 @@ func (f *MavenFetcher) VerifyCommand() (string, []string) {
 func (f *MavenFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://archive.apache.org/dist/maven/maven-3/"))
 	if err != nil {
-		return nil, fmt.Errorf("获取Maven版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch Maven version list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("解析Maven版本页面失败: %w", err)
+		return nil, fmt.Errorf("failed to parse Maven version page: %w", err)
 	}
 
 	var versions []VersionInfo
@@ -73,7 +73,7 @@ func (f *MavenFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		if href == "" || href == ".." || href == "source" {
 			return
 		}
-		// 过滤掉 alpha/beta/rc 版本
+		// Filter out alpha/beta/rc versions
 		if strings.Contains(href, "alpha") || strings.Contains(href, "beta") || strings.Contains(href, "rc") || strings.Contains(href, "RC") {
 			return
 		}

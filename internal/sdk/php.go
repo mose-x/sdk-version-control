@@ -52,16 +52,16 @@ func (f *PHPFetcher) VerifyCommand() (string, []string)  { return "php", []strin
 func (f *PHPFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://windows.php.net/downloads/releases/"))
 	if err != nil {
-		return nil, fmt.Errorf("获取PHP版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch PHP version list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("读取PHP版本数据失败: %w", err)
+		return nil, fmt.Errorf("failed to read PHP version data: %w", err)
 	}
 
-	// 匹配 php-X.Y.Z-Win32-vs16-x64.zip 或 php-X.Y.Z-nts-Win32-vs16-x64.zip
+	// Match php-X.Y.Z-nts-Win32-vs16-x64.zip (or non-nts variants)
 	re := regexp.MustCompile(`php-(\d+\.\d+\.\d+)-nts-Win32-vs\d+-x64\.zip`)
 	seen := make(map[string]bool)
 	var versions []VersionInfo

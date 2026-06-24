@@ -14,7 +14,7 @@ import (
 	"sdk_version_control/internal/config"
 )
 
-// PythonFetcher Python 版本获取器
+// PythonFetcher Python version fetcher
 type PythonFetcher struct {
 	cfg        *config.Config
 	sm         *config.SettingsManager
@@ -45,7 +45,7 @@ func (f *PythonFetcher) Type() SdkType {
 
 func (f *PythonFetcher) GetBinDir() string {
 	if config.IsWindows() {
-		return "" // python.exe 在根目录
+		return "" // python.exe is in the root directory
 	}
 	return "bin"
 }
@@ -61,13 +61,13 @@ func (f *PythonFetcher) VerifyCommand() (string, []string) {
 func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://www.python.org/ftp/python/"))
 	if err != nil {
-		return nil, fmt.Errorf("获取Python版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch Python version list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("解析Python版本页面失败: %w", err)
+		return nil, fmt.Errorf("failed to parse Python version page: %w", err)
 	}
 
 	var versions []VersionInfo
@@ -80,7 +80,7 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		if href == "" || href == ".." {
 			return
 		}
-		// 过滤掉 alpha/beta/rc 版本
+		// Filter out alpha/beta/rc versions
 		if strings.Contains(href, "a") || strings.Contains(href, "b") || strings.Contains(href, "rc") {
 			return
 		}
@@ -90,7 +90,7 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		}
 		major, _ := strconv.Atoi(parts[0])
 		minor, _ := strconv.Atoi(parts[1])
-		// 只要 Python 3.8+
+		// Only Python 3.8+
 		if major < 3 || (major == 3 && minor < 8) {
 			return
 		}
@@ -100,7 +100,7 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			return
 		}
 
-		// 并发验证下载包是否存在（HEAD 请求）
+		// Concurrently verify the download package exists (HEAD request)
 		wg.Add(1)
 		go func(version, dlURL, fn string, maj, min int) {
 			defer wg.Done()
@@ -116,7 +116,7 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			}
 			resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
-				return // 该版本没有 Windows 二进制包，跳过
+				return // No Windows binary package for this version, skip
 			}
 			mu.Lock()
 			versions = append(versions, VersionInfo{
@@ -145,7 +145,7 @@ func (f *PythonFetcher) buildDownloadURL(version string) (string, string) {
 
 	switch {
 	case os == "windows" && arch == "amd64":
-		// Windows 使用 embed 包（免安装版）
+		// Windows uses the embed package (portable version)
 		fileName := fmt.Sprintf("python-%s-embed-amd64.zip", version)
 		url := f.useEndpoint(fmt.Sprintf("https://www.python.org/ftp/python/%s/%s", version, fileName))
 		return url, fileName
@@ -169,7 +169,7 @@ func (f *PythonFetcher) buildDownloadURL(version string) (string, string) {
 func (f *PythonFetcher) GetDownloadURL(version string) (string, string, error) {
 	url, fileName := f.buildDownloadURL(version)
 	if url == "" {
-		return "", "", fmt.Errorf("不支持当前平台")
+		return "", "", fmt.Errorf("current platform is not supported")
 	}
 	return url, fileName, nil
 }

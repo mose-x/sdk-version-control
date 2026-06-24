@@ -58,17 +58,17 @@ func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		}
 		resp, err := f.httpClient.Get(apiURL)
 		if err != nil {
-			return nil, fmt.Errorf("获取Dart版本列表失败: %w", err)
+			return nil, fmt.Errorf("failed to fetch Dart version list: %w", err)
 		}
 		var result gcsListResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
-			return nil, fmt.Errorf("解析Dart版本数据失败: %w", err)
+			return nil, fmt.Errorf("failed to parse Dart version data: %w", err)
 		}
 		resp.Body.Close()
 
 		for _, prefix := range result.Prefixes {
-			// prefix 格式: "channels/stable/release/3.6.0/"
+			// prefix format: "channels/stable/release/3.6.0/"
 			parts := strings.Split(strings.TrimSuffix(prefix, "/"), "/")
 			if len(parts) < 4 {
 				continue
@@ -77,7 +77,7 @@ func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			if ver == "latest" {
 				continue
 			}
-			// 过滤 dev/beta
+			// Filter dev/beta
 			if strings.Contains(ver, "-") {
 				continue
 			}

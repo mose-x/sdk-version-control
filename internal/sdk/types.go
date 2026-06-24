@@ -8,23 +8,23 @@ import (
 	"strings"
 )
 
-// getSystemPath 获取系统+用户 PATH（平台相关，实现在 path_*.go）
+// getSystemPath returns the system+user PATH (platform-dependent, implemented in path_*.go)
 func getSystemPath() string {
 	return getPlatformPath()
 }
 
-// GetSystemPath 导出版本，供外部包使用
+// GetSystemPath is the exported version for use by external packages
 func GetSystemPath() string {
 	return getPlatformPath()
 }
 
-// IsCommandAvailable 检查命令是否在系统 PATH 中可用
-// 同时扫描进程 PATH 和 Windows 注册表中的系统 PATH
+// IsCommandAvailable checks whether a command is available in the system PATH
+// Scans both the process PATH and the system PATH from the Windows registry
 func IsCommandAvailable(cmd string) bool {
 	if _, err := exec.LookPath(cmd); err == nil {
 		return true
 	}
-	// 手动扫描 PATH 目录（解决 Wails 进程环境不一致问题）
+	// Manually scan PATH directories (handles Wails process env inconsistency)
 	pathEnv := getSystemPath()
 	sep := ":"
 	if runtime.GOOS == "windows" {
@@ -49,7 +49,7 @@ func IsCommandAvailable(cmd string) bool {
 	return false
 }
 
-// SdkType 定义支持的 SDK 类型
+// SdkType defines the supported SDK types
 type SdkType string
 
 const (
@@ -69,7 +69,7 @@ const (
 	Dart     SdkType = "dart"
 )
 
-// AllSdkTypes 返回所有支持的 SDK 类型（按展示顺序）
+// AllSdkTypes returns all supported SDK types (in display order)
 func AllSdkTypes() []SdkType {
 	return []SdkType{
 		NodeJS, JDK, Golang, Python, Rust, Ruby, DotNet, PHP, Perl,
@@ -78,7 +78,7 @@ func AllSdkTypes() []SdkType {
 	}
 }
 
-// SdkDisplayName 返回 SDK 的显示名称
+// SdkDisplayName returns the display name of an SDK
 func SdkDisplayName(t SdkType) string {
 	switch t {
 	case NodeJS:
@@ -114,12 +114,12 @@ func SdkDisplayName(t SdkType) string {
 	}
 }
 
-// SdkDirName 返回 SDK 在 ~/.svc/ 下的目录名
+// SdkDirName returns the directory name of the SDK under ~/.svc/
 func SdkDirName(t SdkType) string {
 	return string(t)
 }
 
-// VersionInfo 描述一个可用的远程版本
+// VersionInfo describes an available remote version
 type VersionInfo struct {
 	Version     string `json:"version"`
 	Major       int    `json:"major"`
@@ -129,19 +129,19 @@ type VersionInfo struct {
 	ReleaseDate string `json:"releaseDate"`
 }
 
-// SdkStatus 描述某个 SDK 在本机的安装状态
+// SdkStatus describes the local installation status of an SDK
 type SdkStatus struct {
 	SdkType           SdkType  `json:"sdkType"`
 	DisplayName       string   `json:"displayName"`
-	Configured        bool     `json:"configured"`        // 已在 .svc 中配置
-	PathConfigured    bool     `json:"pathConfigured"`    // 在 PATH 中存在但不在 .svc
-	PathVersion       string   `json:"pathVersion"`       // PATH 中检测到的版本号
+	Configured        bool     `json:"configured"`        // configured in .svc
+	PathConfigured    bool     `json:"pathConfigured"`    // present in PATH but not in .svc
+	PathVersion       string   `json:"pathVersion"`       // version detected in PATH
 	CurrentVersion    string   `json:"currentVersion"`
 	InstalledVersions []string `json:"installedVersions"`
 	InstallPath       string   `json:"installPath"`
 }
 
-// InstallProgress 安装进度（通过 Wails Events 推送到前端）
+// InstallProgress is the install progress (pushed to the frontend via Wails Events)
 type InstallProgress struct {
 	SdkType          SdkType `json:"sdkType"`
 	Version          string  `json:"version"`
@@ -154,10 +154,10 @@ type InstallProgress struct {
 	DownloadURL      string  `json:"downloadUrl"`
 }
 
-// PackageManagerInfo 包管理器信息
+// PackageManagerInfo describes a package manager
 type PackageManagerInfo struct {
 	Name      string  `json:"name"`      // npm, yarn, pnpm, composer
-	Version   string  `json:"version"`   // 当前版本
-	Installed bool    `json:"installed"` // 是否已安装
-	ParentSdk SdkType `json:"parentSdk"` // 父SDK类型
+	Version   string  `json:"version"`   // current version
+	Installed bool    `json:"installed"` // whether installed
+	ParentSdk SdkType `json:"parentSdk"` // parent SDK type
 }

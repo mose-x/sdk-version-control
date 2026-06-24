@@ -13,19 +13,19 @@ import (
 	"sdk_version_control/internal/config"
 )
 
-// NodejsFetcher Node.js 版本获取器
+// NodejsFetcher Node.js version fetcher
 type NodejsFetcher struct {
 	cfg        *config.Config
 	sm         *config.SettingsManager
 	httpClient *http.Client
 }
 
-// nodeVersionJSON 对应 nodejs.org/dist/index.json 的结构
+// nodeVersionJSON matches the structure of nodejs.org/dist/index.json
 type nodeVersionJSON struct {
 	Version string `json:"version"`
 	Date    string `json:"date"`
-	LTS     any    `json:"lts"` // false 或 字符串如 "Iron"
-	Major   int    `json:"-"`   // 从 Version 解析
+	LTS     any    `json:"lts"` // false or a string like "Iron"
+	Major   int    `json:"-"`   // Parsed from Version
 }
 
 func NewNodejsFetcher(cfg *config.Config, sm *config.SettingsManager) *NodejsFetcher {
@@ -52,7 +52,7 @@ func (f *NodejsFetcher) Type() SdkType {
 
 func (f *NodejsFetcher) GetBinDir() string {
 	if config.IsWindows() {
-		return "" // Windows 下 node.exe 直接在根目录
+		return "bin" // node.exe is in the root directory on Windows
 	}
 	return "bin"
 }
@@ -68,13 +68,13 @@ func (f *NodejsFetcher) VerifyCommand() (string, []string) {
 func (f *NodejsFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://nodejs.org/dist/index.json"))
 	if err != nil {
-		return nil, fmt.Errorf("获取Node.js版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch Node.js version list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var raw []nodeVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("解析Node.js版本数据失败: %w", err)
+		return nil, fmt.Errorf("failed to parse Node.js version data: %w", err)
 	}
 
 	var versions []VersionInfo
@@ -85,7 +85,7 @@ func (f *NodejsFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			continue
 		}
 		major, _ := strconv.Atoi(parts[0])
-		if major < 16 { // 过滤掉太旧的版本
+		if major < 16 { // Filter out versions that are too old
 			continue
 		}
 
@@ -111,7 +111,7 @@ func (f *NodejsFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		})
 	}
 
-	// 降序排列
+	// Sort in descending order
 	sort.Slice(versions, func(i, j int) bool {
 		return CompareVersions(versions[i].Version, versions[j].Version) > 0
 	})
@@ -161,12 +161,12 @@ func (f *NodejsFetcher) GetLocalStatus() (*SdkStatus, error) {
 func (f *NodejsFetcher) GetDownloadURL(version string) (string, string, error) {
 	url, fileName := f.buildDownloadURL(version)
 	if url == "" {
-		return "", "", fmt.Errorf("不支持当前平台")
+		return "", "", fmt.Errorf("current platform is not supported")
 	}
 	return url, fileName, nil
 }
 
-// CompareVersions 比较两个语义化版本号，返回 -1/0/1
+// CompareVersions compares two semantic versions, returns -1/0/1
 func CompareVersions(a, b string) int {
 	a = strings.TrimPrefix(a, "v")
 	b = strings.TrimPrefix(b, "v")

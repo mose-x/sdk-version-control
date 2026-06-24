@@ -7,7 +7,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// applySystemProxy 从 Windows 注册表读取系统代理并应用到 transport
+// applySystemProxy reads the system proxy from the Windows registry and applies it to the transport
 func applySystemProxy(transport *http.Transport) {
 	k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Internet Settings`, registry.READ)
 	if err != nil {
@@ -25,8 +25,8 @@ func applySystemProxy(transport *http.Transport) {
 		return
 	}
 
-	// Windows 系统代理可能是 http=host:port;https=host:port;socks=host:port 格式
-	// 优先使用 https 代理，其次 http，最后 socks
+	// Windows system proxy may be in the format http=host:port;https=host:port;socks=host:port
+	// Prefer the https proxy, then http, and finally socks
 	var proxyStr string
 	for _, part := range splitProxyParts(proxyServer) {
 		scheme, addr := parseProxyPart(part)
@@ -44,7 +44,7 @@ func applySystemProxy(transport *http.Transport) {
 		}
 	}
 
-	// 如果没有 scheme 前缀，默认为 http
+	// If there is no scheme prefix, default to http
 	if proxyStr == "" && proxyServer != "" {
 		if !hasScheme(proxyServer) {
 			proxyStr = "http://" + proxyServer

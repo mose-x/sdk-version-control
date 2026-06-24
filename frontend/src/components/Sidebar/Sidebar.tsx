@@ -20,7 +20,7 @@ interface SidebarProps {
   onRefresh: () => void
 }
 
-// 分类定义
+// Category definitions
 const SDK_CATEGORIES = [
   {
     key: 'runtime',
@@ -36,7 +36,7 @@ const SDK_CATEGORIES = [
   },
 ]
 
-// SVG 图标
+// SVG icons
 const NodeIcon = () => (
   <svg viewBox="0 0 32 32" width="20" height="20">
     <path d="M16 2L3 9.5v13L16 30l13-7.5v-13L16 2z" fill="currentColor" opacity="0.2"/>

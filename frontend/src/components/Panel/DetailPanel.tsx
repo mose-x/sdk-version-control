@@ -79,7 +79,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
       setVersions(result || [])
     } catch (e) {
       if (stale?.()) return
-      console.error('获取远程版本失败:', e)
+      console.error('Failed to get remote versions:', e)
       setLoadError(true)
     } finally {
       if (!stale?.()) setLoading(false)

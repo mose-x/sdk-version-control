@@ -4,7 +4,7 @@ package sdk
 
 import "os"
 
-// getPlatformPath 非 Windows 平台直接返回进程 PATH
+// getPlatformPath returns the process PATH directly on non-Windows platforms
 func getPlatformPath() string {
 	return os.Getenv("PATH")
 }

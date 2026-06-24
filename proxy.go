@@ -27,7 +27,7 @@ func (a *App) CheckProxy(targetURL string) error {
 
 	resp, err := client.Get(targetURL)
 	if err != nil {
-		return fmt.Errorf("连接失败: %w", err)
+		return fmt.Errorf("connection failed: %w", err)
 	}
 	resp.Body.Close()
 
@@ -51,10 +51,10 @@ func (a *App) applyGithubMirror(url string) string {
 
 func validatePathSegment(segment string) error {
 	if segment == "" {
-		return fmt.Errorf("路径段不能为空")
+		return fmt.Errorf("path segment cannot be empty")
 	}
 	if strings.ContainsAny(segment, "/\\") || strings.Contains(segment, "..") || strings.ContainsRune(segment, 0) {
-		return fmt.Errorf("非法路径段: %s", segment)
+		return fmt.Errorf("invalid path segment: %s", segment)
 	}
 	return nil
 }

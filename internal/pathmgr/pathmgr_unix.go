@@ -10,14 +10,15 @@ import (
 	"strings"
 
 	"sdk_version_control/internal/config"
+	"sdk_version_control/internal/logger"
 )
 
-// UnixPathManager Linux/macOS 平台的 PATH 管理（用户级 shell 配置）
+// UnixPathManager handles PATH management on Linux/macOS (via user-level shell config files)
 type UnixPathManager struct {
 	cfg *config.Config
 }
 
-// NewPathManager 创建 Linux/macOS 平台的 PathManager
+// NewPathManager creates a PathManager for Linux/macOS
 func NewPathManager(cfg *config.Config) PathManager {
 	return &UnixPathManager{cfg: cfg}
 }
@@ -29,15 +30,15 @@ func (m *UnixPathManager) ConfigureSdk(sdkType string, versionDir string, binDir
 	}
 
 	if err := m.writeEnvSh(sdkType, binPath, extraEnvVars, versionDir); err != nil {
-		return fmt.Errorf("写入env.sh失败: %w", err)
+		return fmt.Errorf("failed to write env.sh: %w", err)
 	}
 
 	if err := m.writeFishEnvSh(sdkType, binPath, extraEnvVars, versionDir); err != nil {
-		fmt.Fprintf(os.Stderr, "警告: 写入fish配置失败: %v\n", err)
+		logger.Warn("Failed to write fish config: %v", err)
 	}
 
 	if err := m.ensureSourceLine(); err != nil {
-		return fmt.Errorf("配置shell失败: %w", err)
+		return fmt.Errorf("failed to configure shell: %w", err)
 	}
 
 	return nil
@@ -97,15 +98,13 @@ func (m *UnixPathManager) GetAllPathEntries() ([]PathEntry, error) {
 	return DeduplicateEntries(entries), nil
 }
 
-// CleanExternalPaths 清理 env.sh 和 env.sh.fish 中非 SVC 管理的、匹配同 SDK 类型和版本的外部 PATH 条目
-func (m *UnixPathManager) CleanExternalPaths(sdkType string, version string, sourcePath string) error {
+// CleanExternalPaths cleans non-SVC-managed external PATH entries from env.sh and env.sh.fish matching the same SDK type and version
+func (m *UnixPathManager) CleanExternalPaths(sdkType string, version string, sourcePath string) {
 	envPath := m.cfg.EnvShPath()
 	m.cleanExternalFromEnvSh(envPath, sdkType, version, sourcePath)
 
 	fishEnvPath := filepath.Join(m.cfg.SvcDir(), "env.sh.fish")
 	m.cleanExternalFromFishSh(fishEnvPath, sdkType, version, sourcePath)
-
-	return nil
 }
 
 func (m *UnixPathManager) cleanExternalFromEnvSh(envPath string, sdkType string, version string, sourcePath string) {
@@ -393,7 +392,7 @@ func (m *UnixPathManager) ensureSourceLine() error {
 	}
 
 	if written == 0 && lastErr != nil {
-		return fmt.Errorf("无法写入任何shell配置文件: %w", lastErr)
+		return fmt.Errorf("unable to write to any shell config file: %w", lastErr)
 	}
 	return nil
 }
@@ -456,8 +455,8 @@ func (m *UnixPathManager) appendIfNotExists(file, line, checkStr string) error {
 	return err
 }
 
-// DetectSystemConflicts 检测系统级配置文件是否有匹配该 SDK 的环境变量配置
-func (m *UnixPathManager) DetectSystemConflicts(sdkType string, extraEnvVarKeys []string) []string {
+// DetectSystemConflicts checks whether system-level config files contain matching env var configs for the SDK
+func (m *UnixPathManager) DetectSystemConflicts(sdkType string, envKeys []string) []string {
 	var conflicts []string
 	sdkDir := m.cfg.SdkDir(sdkType)
 
@@ -492,7 +491,7 @@ func (m *UnixPathManager) DetectSystemConflicts(sdkType string, extraEnvVarKeys 
 					}
 				}
 			}
-			for _, key := range extraEnvVarKeys {
+			for _, key := range envKeys {
 				if strings.Contains(line, key) {
 					conflicts = append(conflicts, fmt.Sprintf("%s: %s", filepath.Base(file), line))
 				}
@@ -511,7 +510,7 @@ func (m *UnixPathManager) getSystemConfigFiles() []string {
 			"/etc/profile",
 			"/etc/zshenv",
 		)
-		// /etc/paths.d/ 目录下的文件
+		// Files in /etc/paths.d/
 		if entries, err := os.ReadDir("/etc/paths.d"); err == nil {
 			for _, e := range entries {
 				files = append(files, filepath.Join("/etc/paths.d", e.Name()))

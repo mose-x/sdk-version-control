@@ -43,7 +43,7 @@ func (f *AndroidFetcher) GetExtraEnvVars() map[string]string {
 }
 func (f *AndroidFetcher) VerifyCommand() (string, []string) { return "sdkmanager", []string{"--version"} }
 
-// Android repository XML 结构
+// Android repository XML structure
 type androidRepository struct {
 	XMLName xml.Name         `xml:"sdk-repository"`
 	Packages []androidPackage `xml:"remotePackage"`
@@ -68,7 +68,7 @@ type androidPackage struct {
 func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://dl.google.com/android/repository/repository2-3.xml"))
 	if err != nil {
-		// 回退到已知版本
+		// Fall back to known versions
 		return f.fallbackVersions(), nil
 	}
 	defer resp.Body.Close()
@@ -101,7 +101,7 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		if seen[ver] { continue }
 		seen[ver] = true
 
-		// 找到匹配平台的下载 URL
+		// Find the download URL matching the current platform
 		downloadURL := ""
 		fileName := ""
 		for _, a := range pkg.Archives.Archive {
@@ -146,7 +146,7 @@ func (f *AndroidFetcher) fallbackVersions() []VersionInfo {
 }
 
 func (f *AndroidFetcher) GetDownloadURL(version string) (string, string, error) {
-	// 先尝试从远程获取
+	// First try to fetch from remote
 	versions, _ := f.FetchRemoteVersions()
 	for _, v := range versions {
 		if v.Version == version {

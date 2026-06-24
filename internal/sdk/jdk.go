@@ -13,7 +13,7 @@ import (
 	"sdk_version_control/internal/config"
 )
 
-// JdkFetcher JDK 版本获取器 (基于 Adoptium/Eclipse Temurin)
+// JdkFetcher JDK version fetcher (based on Adoptium/Eclipse Temurin)
 type JdkFetcher struct {
 	cfg        *config.Config
 	sm         *config.SettingsManager
@@ -48,7 +48,7 @@ func (f *JdkFetcher) GetBinDir() string {
 
 func (f *JdkFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{
-		"JAVA_HOME": "", // 根目录
+		"JAVA_HOME": "", // Root directory
 	}
 }
 
@@ -72,10 +72,10 @@ type adoptiumRelease struct {
 }
 
 func (f *JdkFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
-	// 获取可用主版本列表
+	// Get available major versions
 	releasesResp, err := f.httpClient.Get(f.useEndpoint("https://api.adoptium.net/v3/info/available_releases"))
 	if err != nil {
-		return nil, fmt.Errorf("获取JDK可用版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to get available JDK versions: %w", err)
 	}
 	defer releasesResp.Body.Close()
 
@@ -84,7 +84,7 @@ func (f *JdkFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		AvailableLTSReleases []int `json:"available_lts_releases"`
 	}
 	if err := json.NewDecoder(releasesResp.Body).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("解析JDK版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to parse JDK version list: %w", err)
 	}
 
 	ltsSet := make(map[int]bool)
@@ -94,7 +94,7 @@ func (f *JdkFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 
 	os := f.osParam()
 	if os == "" {
-		return nil, fmt.Errorf("不支持当前操作系统")
+		return nil, fmt.Errorf("current operating system is not supported")
 	}
 
 	var versions []VersionInfo
@@ -126,7 +126,7 @@ func (f *JdkFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		}
 	}
 
-	// 降序排列
+	// Sort in descending order
 	sort.Slice(versions, func(i, j int) bool {
 		return CompareVersions(versions[i].Version, versions[j].Version) > 0
 	})
@@ -137,7 +137,7 @@ func (f *JdkFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 func (f *JdkFetcher) GetDownloadURL(version string) (string, string, error) {
 	os := f.osParam()
 	if os == "" {
-		return "", "", fmt.Errorf("不支持当前操作系统")
+		return "", "", fmt.Errorf("current operating system is not supported")
 	}
 
 	parts := strings.Split(version, ".")
@@ -161,7 +161,7 @@ func (f *JdkFetcher) GetDownloadURL(version string) (string, string, error) {
 		}
 	}
 
-	return "", "", fmt.Errorf("未找到JDK版本: %s", version)
+	return "", "", fmt.Errorf("JDK version not found: %s", version)
 }
 
 func (f *JdkFetcher) GetLocalStatus() (*SdkStatus, error) {

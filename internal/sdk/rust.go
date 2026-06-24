@@ -58,17 +58,17 @@ func (f *RustFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		url := fmt.Sprintf("https://api.github.com/repos/rust-lang/rust/releases?per_page=30&page=%d", page)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			return nil, fmt.Errorf("构建Rust版本请求失败: %w", err)
+			return nil, fmt.Errorf("failed to build Rust version request: %w", err)
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		resp, err := f.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("获取Rust版本列表失败: %w", err)
+			return nil, fmt.Errorf("failed to fetch Rust version list: %w", err)
 		}
 		var releases []ghRelease
 		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 			resp.Body.Close()
-			return nil, fmt.Errorf("解析Rust版本数据失败: %w", err)
+			return nil, fmt.Errorf("failed to parse Rust version data: %w", err)
 		}
 		resp.Body.Close()
 		if len(releases) == 0 { break }

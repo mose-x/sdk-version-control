@@ -12,7 +12,7 @@ import (
 	"sdk_version_control/internal/config"
 )
 
-// GolangFetcher Go 版本获取器
+// GolangFetcher is the Go version fetcher
 type GolangFetcher struct {
 	cfg        *config.Config
 	sm         *config.SettingsManager
@@ -42,12 +42,12 @@ func (f *GolangFetcher) Type() SdkType {
 }
 
 func (f *GolangFetcher) GetBinDir() string {
-	return "go/bin" // Go 解压后有一层 go/ 子目录
+	return "go/bin" // After extraction Go has a go/ subdirectory
 }
 
 func (f *GolangFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{
-		"GOROOT": "go", // 指向 go/ 子目录
+		"GOROOT": "go", // points to the go/ subdirectory
 	}
 }
 
@@ -71,13 +71,13 @@ type goVersionJSON struct {
 func (f *GolangFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://go.dev/dl/?mode=json&include=all"))
 	if err != nil {
-		return nil, fmt.Errorf("获取Go版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch Go version list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var raw []goVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("解析Go版本数据失败: %w", err)
+		return nil, fmt.Errorf("failed to parse Go version data: %w", err)
 	}
 
 	os := f.osParam()
@@ -143,7 +143,7 @@ func (f *GolangFetcher) GetDownloadURL(version string) (string, string, error) {
 		}
 	}
 
-	return "", "", fmt.Errorf("未找到Go版本: %s", version)
+	return "", "", fmt.Errorf("Go version not found: %s", version)
 }
 
 func (f *GolangFetcher) GetLocalStatus() (*SdkStatus, error) {

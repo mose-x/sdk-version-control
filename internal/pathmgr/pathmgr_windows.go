@@ -17,12 +17,12 @@ const (
 	userEnvKey   = `Environment`
 )
 
-// WindowsPathManager Windows 平台的 PATH 管理（通过用户级注册表 HKCU）
+// WindowsPathManager handles PATH management on Windows (via the user-level registry HKCU)
 type WindowsPathManager struct {
 	cfg *config.Config
 }
 
-// NewPathManager 创建 Windows 平台的 PathManager
+// NewPathManager creates a PathManager for Windows
 func NewPathManager(cfg *config.Config) PathManager {
 	return &WindowsPathManager{cfg: cfg}
 }
@@ -34,7 +34,7 @@ func (m *WindowsPathManager) ConfigureSdk(sdkType string, versionDir string, bin
 	}
 
 	if err := m.addToUserPath(binPath, sdkType); err != nil {
-		return fmt.Errorf("添加到用户PATH失败: %w", err)
+		return fmt.Errorf("failed to add to user PATH: %w", err)
 	}
 
 	for key, relPath := range extraEnvVars {
@@ -43,7 +43,7 @@ func (m *WindowsPathManager) ConfigureSdk(sdkType string, versionDir string, bin
 			value = filepath.Join(versionDir, relPath)
 		}
 		if err := m.setUserEnvVar(key, value); err != nil {
-			return fmt.Errorf("设置用户%s失败: %w", key, err)
+			return fmt.Errorf("failed to set user %s: %w", key, err)
 		}
 	}
 
@@ -160,12 +160,11 @@ func (m *WindowsPathManager) removeUserEnvVar(key string) {
 	k.DeleteValue(key)
 }
 
-// CleanExternalPaths 清理非 SVC 管理的、匹配同 SDK 类型和版本的外部 PATH 条目
-func (m *WindowsPathManager) CleanExternalPaths(sdkType string, version string, sourcePath string) error {
+// CleanExternalPaths cleans non-SVC-managed external PATH entries matching the same SDK type and version
+func (m *WindowsPathManager) CleanExternalPaths(sdkType string, version string, sourcePath string) {
 	if err := m.cleanExternalFromKey(sdkType, version, sourcePath); err == nil {
 		broadcastEnvChange()
 	}
-	return nil
 }
 
 func (m *WindowsPathManager) cleanExternalFromKey(sdkType string, version string, sourcePath string) error {
@@ -233,7 +232,7 @@ func (m *WindowsPathManager) GetAllPathEntries() ([]PathEntry, error) {
 	var entries []PathEntry
 	seen := make(map[string]bool)
 
-	// 先读用户级（主要配置位置）
+	// Read user-level first (primary config location)
 	userEntries := m.readPathFromKey(registry.CURRENT_USER, userEnvKey)
 	for _, e := range userEntries {
 		if !seen[e.Path] {
@@ -242,7 +241,7 @@ func (m *WindowsPathManager) GetAllPathEntries() ([]PathEntry, error) {
 		}
 	}
 
-	// 也读系统级（用于展示，标记为非管理）
+	// Also read system-level (for display, marked as non-managed)
 	systemEntries := m.readPathFromKey(registry.LOCAL_MACHINE, systemEnvKey)
 	for _, e := range systemEntries {
 		if !seen[e.Path] {
@@ -288,8 +287,8 @@ func (m *WindowsPathManager) readPathFromKey(root registry.Key, keyPath string) 
 	return entries
 }
 
-// DetectSystemConflicts 检测 HKLM 系统级是否有匹配该 SDK 的环境变量配置
-func (m *WindowsPathManager) DetectSystemConflicts(sdkType string, extraEnvVarKeys []string) []string {
+// DetectSystemConflicts checks whether the HKLM system-level registry contains matching env var configs for the SDK
+func (m *WindowsPathManager) DetectSystemConflicts(sdkType string, envKeys []string) []string {
 	var conflicts []string
 
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, systemEnvKey, registry.READ)
@@ -317,7 +316,7 @@ func (m *WindowsPathManager) DetectSystemConflicts(sdkType string, extraEnvVarKe
 			}
 		}
 
-		for _, key := range extraEnvVarKeys {
+		for _, key := range envKeys {
 			if val, _, err := k.GetStringValue(key); err == nil && val != "" {
 				conflicts = append(conflicts, fmt.Sprintf("%s=%s", key, val))
 			}
@@ -327,7 +326,7 @@ func (m *WindowsPathManager) DetectSystemConflicts(sdkType string, extraEnvVarKe
 	return conflicts
 }
 
-// broadcastEnvChange 广播环境变量变更消息
+// broadcastEnvChange broadcasts the environment variable change notification
 func broadcastEnvChange() {
 	user32 := windows.NewLazySystemDLL("user32.dll")
 	sendMessageTimeout := user32.NewProc("SendMessageTimeoutW")

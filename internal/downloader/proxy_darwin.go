@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// applySystemProxy 从 scutil --proxy 读取 macOS 系统代理并应用到 transport
+// applySystemProxy reads the macOS system proxy via scutil --proxy and applies it to the transport
 func applySystemProxy(transport *http.Transport) {
 	out, err := exec.Command("scutil", "--proxy").Output()
 	if err != nil {

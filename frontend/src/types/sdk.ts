@@ -14,8 +14,8 @@ export interface SdkStatus {
   sdkType: string;
   displayName: string;
   configured: boolean;
-  pathConfigured: boolean;  // 在 PATH 中但不在 .svc
-  pathVersion: string;      // PATH 中检测到的版本号
+  pathConfigured: boolean;  // In PATH but not in .svc
+  pathVersion: string;      // Version detected in PATH
   currentVersion: string;
   installedVersions: string[];
   installPath: string;

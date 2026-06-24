@@ -9,6 +9,7 @@ import (
 
 	"sdk_version_control/internal/downloader"
 	"sdk_version_control/internal/extractor"
+	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/sdk"
 )
 
@@ -39,7 +40,7 @@ func (a *App) GetSdkStatus(sdkType string) (*sdk.SdkStatus, error) {
 	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
-		return nil, fmt.Errorf("未知的SDK类型: %s", sdkType)
+		return nil, fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
 	return f.GetLocalStatus()
 }
@@ -50,7 +51,7 @@ func (a *App) CheckSystemConflicts(sdkType string) ([]string, error) {
 	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
-		return nil, fmt.Errorf("未知的SDK类型: %s", sdkType)
+		return nil, fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
 
 	var keys []string
@@ -67,7 +68,7 @@ func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
 	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
-		return nil, fmt.Errorf("未知的SDK类型: %s", sdkType)
+		return nil, fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
 	proxyCfg := a.getProxyConfig()
 	client := downloader.BuildClient(proxyCfg)
@@ -86,18 +87,21 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	sdkType := sdk.SdkType(sdkTypeStr)
 	f := a.registry.Get(sdkType)
 	if f == nil {
-		return fmt.Errorf("未知的SDK类型: %s", sdkTypeStr)
+		return fmt.Errorf("unknown SDK type: %s", sdkTypeStr)
 	}
+
+	logger.Info("Starting installation: %s %s", sdkTypeStr, version)
 
 	downloadURL, fileName, err := f.GetDownloadURL(version)
 	if err != nil {
-		return fmt.Errorf("获取下载链接失败: %w", err)
+		return fmt.Errorf("failed to get download URL: %w", err)
 	}
 	downloadURL = a.applyGithubMirror(downloadURL)
 
 	proxyCfg := a.getProxyConfig()
 
 	tmpFile := filepath.Join(a.cfg.TmpDir(), fileName)
+	logger.Info("Download URL: %s", downloadURL)
 	a.emitProgress(sdkType, version, "downloading", 0, "Downloading...", 0, 0, 0, downloadURL)
 
 	installCtx, cancel := context.WithCancel(a.ctx)
@@ -129,39 +133,42 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	}, proxyCfg, threads)
 	if err != nil {
 		a.emitProgress(sdkType, version, "error", 0, fmt.Sprintf("Download failed: %v", err), 0, 0, 0, downloadURL)
-		return fmt.Errorf("下载失败: %w", err)
+		return fmt.Errorf("download failed: %w", err)
 	}
 	defer os.Remove(tmpFile)
 
+	logger.Info("Download completed, extracting...")
 	a.emitProgress(sdkType, version, "extracting", 0, "Extracting...", 0, 0, 0, downloadURL)
 	versionDir := a.cfg.SdkVersionDir(string(sdkType), version)
 	if err := os.RemoveAll(versionDir); err != nil {
-		return fmt.Errorf("清理旧版本目录失败: %w", err)
+		return fmt.Errorf("failed to clean old version directory: %w", err)
 	}
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败: %w", err)
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	ext, err := extractor.NewExtractor(fileName)
 	if err != nil {
-		return fmt.Errorf("不支持的压缩格式: %w", err)
+		return fmt.Errorf("unsupported archive format: %w", err)
 	}
 	if err := ext.Extract(tmpFile, versionDir); err != nil {
-		return fmt.Errorf("解压失败: %w", err)
+		return fmt.Errorf("extraction failed: %w", err)
 	}
 	if err := extractor.StripTopDir(versionDir); err != nil {
-		return fmt.Errorf("解压失败: %w", err)
+		return fmt.Errorf("extraction failed: %w", err)
 	}
 
+	logger.Info("Extraction completed, configuring environment...")
 	a.emitProgress(sdkType, version, "configuring_path", 0, "Configuring environment...", 0, 0, 0, downloadURL)
 	if err := a.pathMgr.ConfigureSdk(string(sdkType), versionDir, f.GetBinDir(), f.GetExtraEnvVars()); err != nil {
-		return fmt.Errorf("配置PATH失败: %w", err)
+		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	if err := a.cfg.SetActiveVersion(string(sdkType), version); err != nil {
-		return fmt.Errorf("保存配置失败: %w", err)
+		return fmt.Errorf("failed to save config: %w", err)
 	}
 
+	logger.Info("Installation complete: %s %s", sdkTypeStr, version)
 	a.emitProgress(sdkType, version, "done", 100, "Installation complete!", 0, 0, 0, downloadURL)
 	return nil
 }
@@ -192,22 +199,28 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 	sdkType := sdk.SdkType(sdkTypeStr)
 	f := a.registry.Get(sdkType)
 	if f == nil {
-		return fmt.Errorf("未知的SDK类型: %s", sdkTypeStr)
+		return fmt.Errorf("unknown SDK type: %s", sdkTypeStr)
 	}
+
+	logger.Info("Switching %s version to: %s", sdkTypeStr, version)
 
 	versionDir := a.cfg.SdkVersionDir(sdkTypeStr, version)
 	if _, err := os.Stat(versionDir); err != nil {
-		return fmt.Errorf("版本目录不存在: %s", version)
+		logger.Error("Version directory does not exist: %s", versionDir)
+		return fmt.Errorf("version directory does not exist: %s", version)
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDir(), f.GetExtraEnvVars()); err != nil {
-		return fmt.Errorf("配置PATH失败: %w", err)
+		logger.Error("Failed to configure PATH for %s %s: %v", sdkTypeStr, version, err)
+		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	if err := a.cfg.SetActiveVersion(sdkTypeStr, version); err != nil {
-		return fmt.Errorf("保存配置失败: %w", err)
+		logger.Error("Failed to save config for %s %s: %v", sdkTypeStr, version, err)
+		return fmt.Errorf("failed to save config: %w", err)
 	}
 
+	logger.Info("Successfully switched %s to version %s", sdkTypeStr, version)
 	return nil
 }
 
@@ -220,7 +233,7 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
-		return "", fmt.Errorf("未知的SDK类型: %s", sdkType)
+		return "", fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
 	url, _, err := f.GetDownloadURL(version)
 	if err != nil {

@@ -17,12 +17,12 @@ func getUpdateFilePath() string {
 func (a *App) ApplyUpdate() error {
 	currentExe, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("获取当前程序路径失败: %w", err)
+		return fmt.Errorf("failed to get current program path: %w", err)
 	}
 
 	newExe := getUpdateFilePath()
 	if _, err := os.Stat(newExe); err != nil {
-		return fmt.Errorf("更新文件不存在: %w", err)
+		return fmt.Errorf("update file does not exist: %w", err)
 	}
 
 	exeName := filepath.Base(currentExe)
@@ -45,13 +45,13 @@ rm -f "$0"
 `, exeName, newExe, currentExe, currentExe, currentExe)
 
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
-		return fmt.Errorf("创建更新脚本失败: %w", err)
+		return fmt.Errorf("failed to create update script: %w", err)
 	}
 
 	cmd := createCmd("/bin/sh", scriptPath)
 	cmd.Dir = os.TempDir()
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动更新脚本失败: %w", err)
+		return fmt.Errorf("failed to launch update script: %w", err)
 	}
 
 	wailsRuntime.Quit(a.ctx)

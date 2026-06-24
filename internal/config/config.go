@@ -2,11 +2,12 @@ package config
 
 import (
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
+
+	"sdk_version_control/internal/logger"
 )
 
 const (
@@ -16,7 +17,7 @@ const (
 	envShFile    = "env.sh"
 )
 
-// Config 管理 ~/.svc 目录和应用配置
+// Config manages the ~/.svc directory and application configuration
 type Config struct {
 	mu      sync.RWMutex
 	homeDir string
@@ -24,12 +25,12 @@ type Config struct {
 	data    *ConfigData
 }
 
-// ConfigData 持久化到 config.json 的数据
+// ConfigData holds data persisted to config.json
 type ConfigData struct {
 	ActiveVersions map[string]string `json:"activeVersions"` // sdkType -> version
 }
 
-// NewConfig 创建配置管理器
+// NewConfig creates a configuration manager
 func NewConfig() (*Config, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -50,7 +51,7 @@ func NewConfig() (*Config, error) {
 }
 
 func (c *Config) init() error {
-	// 创建 ~/.svc 目录
+	// Create the ~/.svc directory
 	dirs := []string{
 		c.svcDir,
 		filepath.Join(c.svcDir, tmpDirName),
@@ -60,7 +61,7 @@ func (c *Config) init() error {
 			return err
 		}
 	}
-	// 创建各 SDK 子目录
+	// Create each SDK subdirectory
 	for _, name := range []string{
 		"nodejs", "jdk", "go", "python", "rust", "ruby", "dotnet", "php", "perl",
 		"maven", "gradle",
@@ -70,7 +71,7 @@ func (c *Config) init() error {
 			return err
 		}
 	}
-	// 加载配置文件
+	// Load the config file
 	return c.load()
 }
 
@@ -97,24 +98,24 @@ func (c *Config) save() error {
 	return os.WriteFile(filepath.Join(c.svcDir, configFile), data, 0644)
 }
 
-// HomeDir 返回用户主目录
+// HomeDir returns the user's home directory
 func (c *Config) HomeDir() string {
 	return c.homeDir
 }
 
-// SvcDir 返回 ~/.svc 路径
+// SvcDir returns the ~/.svc path
 func (c *Config) SvcDir() string {
 	return c.svcDir
 }
 
-// SetSvcDir 设置自定义安装目录
+// SetSvcDir sets a custom install directory
 func (c *Config) SetSvcDir(dir string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.svcDir = dir
 }
 
-// DefaultSvcDir 返回默认安装目录
+// DefaultSvcDir returns the default install directory
 func DefaultSvcDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -126,29 +127,29 @@ func DefaultSvcDir() string {
 	return filepath.Join(home, svcDirName)
 }
 
-// TmpDir 返回临时下载目录
+// TmpDir returns the temporary download directory
 func (c *Config) TmpDir() string {
 	return filepath.Join(c.svcDir, tmpDirName)
 }
 
-// SdkDir 返回指定 SDK 的存储目录
+// SdkDir returns the storage directory of the specified SDK
 func (c *Config) SdkDir(sdkType string) string {
 	return filepath.Join(c.svcDir, sdkType)
 }
 
-// SdkVersionDir 返回指定 SDK 版本的安装目录
+// SdkVersionDir returns the install directory of the specified SDK version
 func (c *Config) SdkVersionDir(sdkType string, version string) string {
 	return filepath.Join(c.SdkDir(sdkType), version)
 }
 
-// GetActiveVersion 获取当前激活的版本
+// GetActiveVersion returns the currently active version
 func (c *Config) GetActiveVersion(sdkType string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.data.ActiveVersions[sdkType]
 }
 
-// SetActiveVersion 设置当前激活版本
+// SetActiveVersion sets the currently active version
 func (c *Config) SetActiveVersion(sdkType string, version string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -156,13 +157,13 @@ func (c *Config) SetActiveVersion(sdkType string, version string) error {
 	return c.save()
 }
 
-// GetInstalledVersions 获取本地已安装的所有版本
+// GetInstalledVersions returns all locally installed versions
 func (c *Config) GetInstalledVersions(sdkType string) []string {
 	dir := c.SdkDir(sdkType)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Printf("读取SDK目录失败 (%s): %v", dir, err)
+			logger.Error("Failed to read SDK directory (%s): %v", dir, err)
 		}
 		return nil
 	}
@@ -175,22 +176,22 @@ func (c *Config) GetInstalledVersions(sdkType string) []string {
 	return versions
 }
 
-// EnvShPath 返回 env.sh 文件路径（Linux/macOS 用）
+// EnvShPath returns the env.sh file path (used on Linux/macOS)
 func (c *Config) EnvShPath() string {
 	return filepath.Join(c.svcDir, envShFile)
 }
 
-// IsWindows 判断当前是否为 Windows
+// IsWindows reports whether the current OS is Windows
 func IsWindows() bool {
 	return runtime.GOOS == "windows"
 }
 
-// IsDarwin 判断当前是否为 macOS
+// IsDarwin reports whether the current OS is macOS
 func IsDarwin() bool {
 	return runtime.GOOS == "darwin"
 }
 
-// IsLinux 判断当前是否为 Linux
+// IsLinux reports whether the current OS is Linux
 func IsLinux() bool {
 	return runtime.GOOS == "linux"
 }

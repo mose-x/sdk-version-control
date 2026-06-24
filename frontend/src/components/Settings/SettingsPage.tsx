@@ -12,9 +12,11 @@ import {
   LinkOutlined,
   FolderOutlined,
   DeleteOutlined,
+  FileTextOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
-import { GetSettings, SaveSettings, GetAppInfo, GetDefaultEndpoints, GetEndpoints, SaveEndpoints, GetDefaultInstallPath, GetInstallPath, MigrateInstallPath, CheckUpdate, DownloadUpdate, ApplyUpdate, GetTmpCacheSize, CleanTmpCache, CheckProxy } from '../../../wailsjs/go/main/App'
+import { GetSettings, SaveSettings, GetAppInfo, GetDefaultEndpoints, GetEndpoints, SaveEndpoints, GetDefaultInstallPath, GetInstallPath, MigrateInstallPath, CheckUpdate, DownloadUpdate, ApplyUpdate, GetTmpCacheSize, CleanTmpCache, CheckProxy, GetLogFiles, GetLogContent, CleanLogs, GetLogDir, DeleteLogFile } from '../../../wailsjs/go/main/App'
 import { BrowserOpenURL, EventsOn } from '../../../wailsjs/runtime/runtime'
 
 interface AppSettings {
@@ -79,6 +81,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
   const [tmpCacheSize, setTmpCacheSize] = useState(0)
   const [cleaning, setCleaning] = useState(false)
   const [checkingProxy, setCheckingProxy] = useState<Record<string, boolean>>({})
+  const [logFiles, setLogFiles] = useState<any[]>([])
+  const [logModalOpen, setLogModalOpen] = useState(false)
+  const [currentLogFile, setCurrentLogFile] = useState('')
+  const [logContent, setLogContent] = useState('')
+  const [loadingLogs, setLoadingLogs] = useState(false)
+  const [cleaningLogs, setCleaningLogs] = useState(false)
+  const [logDir, setLogDir] = useState('')
 
   useEffect(() => {
     const off = EventsOn('update:progress', (progress: any) => {
@@ -109,10 +118,74 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
       setDraftEndpoints({ ...endpoints })
     })
     loadTmpCacheSize()
+    loadLogFiles()
+    GetLogDir().then((d: string) => setLogDir(d || ''))
   }, [])
 
   const loadTmpCacheSize = () => {
     GetTmpCacheSize().then(size => setTmpCacheSize(size || 0))
+  }
+
+  const loadLogFiles = () => {
+    setLoadingLogs(true)
+    GetLogFiles().then((files: any[]) => {
+      setLogFiles(files || [])
+    }).finally(() => {
+      setLoadingLogs(false)
+    })
+  }
+
+  const handleViewLog = async (filename: string) => {
+    setCurrentLogFile(filename)
+    setLogContent('')
+    setLogModalOpen(true)
+    try {
+      const content = await GetLogContent(filename)
+      setLogContent(content || '')
+    } catch (e: any) {
+      msgApi.error(e?.message || e)
+    }
+  }
+
+  const handleCleanLogs = () => {
+    Modal.confirm({
+      title: t('logs.cleanConfirm'),
+      content: t('logs.cleanConfirmDesc'),
+      okText: t('app.confirm'),
+      cancelText: t('app.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setCleaningLogs(true)
+        try {
+          await CleanLogs()
+          msgApi.success(t('logs.cleanSuccess'))
+          loadLogFiles()
+        } catch (e: any) {
+          msgApi.error(t('logs.cleanFail', { error: e?.message || e }))
+        } finally {
+          setCleaningLogs(false)
+        }
+      }
+    })
+  }
+
+  const handleDeleteLog = (filename: string) => {
+    Modal.confirm({
+      title: t('logs.deleteConfirm'),
+      content: t('logs.deleteConfirmDesc', { filename }),
+      okText: t('app.confirm'),
+      cancelText: t('app.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await DeleteLogFile(filename)
+          msgApi.success(t('logs.deleteSuccess'))
+          loadLogFiles()
+        } catch (e: any) {
+          msgApi.error(t('logs.deleteFail', { error: e?.message || e }))
+        }
+      }
+    })
   }
 
   const handleCheckProxy = async (target: string, label: string) => {
@@ -232,7 +305,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
     }
   }
 
-  // 安装位置
+  // Install path
   const hasInstallPathChange = () => {
     return installPathDraft.trim() !== installPath.trim()
   }
@@ -297,7 +370,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
       okText: t('app.confirm'),
       cancelText: t('app.cancel'),
       onOk: () => {
-        // 清理空值
+        // Clean up empty values
         const cleaned: Record<string, string> = {}
         for (const [k, v] of Object.entries(draftEndpoints)) {
           if (v.trim()) cleaned[k] = v.trim()
@@ -321,7 +394,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
         const newDraft = { ...draftEndpoints }
         delete newDraft[sdkType]
         setDraftEndpoints(newDraft)
-        // 立即保存
+        // Save immediately
         const cleaned: Record<string, string> = {}
         for (const [k, v] of Object.entries(newDraft)) {
           if (v.trim()) cleaned[k] = v.trim()
@@ -378,7 +451,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
               optionType="button"
               buttonStyle="solid"
             >
-              <Radio.Button value="zh">中文</Radio.Button>
+              <Radio.Button value="zh">Chinese</Radio.Button>
               <Radio.Button value="en">English</Radio.Button>
             </Radio.Group>
           </div>
@@ -647,6 +720,80 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
       ),
     },
     {
+      key: 'logs',
+      label: (
+        <span>
+          <FileTextOutlined />
+          {t('logs.title')}
+        </span>
+      ),
+      children: (
+        <div className="settings-content">
+          <div className="settings-section">
+            <div className="settings-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>
+                <FileTextOutlined style={{ marginRight: 8 }} />
+                {t('logs.logFiles')}
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  onClick={loadLogFiles}
+                  loading={loadingLogs}
+                >
+                  {t('logs.refresh')}
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  onClick={handleCleanLogs}
+                  loading={cleaningLogs}
+                  disabled={logFiles.length === 0}
+                >
+                  {t('logs.clean')}
+                </Button>
+              </div>
+            </div>
+            <div style={{ marginTop: 12, fontSize: 12, color: 'var(--ant-color-text-secondary)', marginBottom: 12 }}>
+              {t('logs.logDir')}: {logDir}
+            </div>
+            {loadingLogs ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ant-color-text-secondary)' }}>Loading...</div>
+            ) : logFiles.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ant-color-text-secondary)' }}>
+                {t('logs.noLogs')}
+              </div>
+            ) : (
+              <div style={{ border: '1px solid var(--ant-color-border)', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', padding: '8px 12px', background: 'var(--ant-color-bg-layout)', fontSize: 12, fontWeight: 600, color: 'var(--ant-color-text-secondary)' }}>
+                  <div style={{ flex: 2 }}>Filename</div>
+                  <div style={{ flex: 1, textAlign: 'right' }}>{t('logs.size')}</div>
+                  <div style={{ flex: 2, textAlign: 'right', paddingRight: 8 }}>{t('logs.modified')}</div>
+                  <div style={{ width: 120, textAlign: 'right' }}>{t('logs.actions')}</div>
+                </div>
+                {logFiles.map((file: any, idx: number) => (
+                  <div key={idx} style={{ display: 'flex', padding: '8px 12px', borderTop: idx > 0 ? '1px solid var(--ant-color-border)' : 'none', alignItems: 'center', fontSize: 13, color: 'var(--ant-color-text)' }}>
+                    <div style={{ flex: 2, fontFamily: 'monospace' }}>{file.name}</div>
+                    <div style={{ flex: 1, textAlign: 'right', color: 'var(--ant-color-text-secondary)' }}>{formatBytes(file.size)}</div>
+                    <div style={{ flex: 2, textAlign: 'right', paddingRight: 8, color: 'var(--ant-color-text-secondary)' }}>{file.modTime}</div>
+                    <div style={{ width: 120, textAlign: 'right', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <Button type="link" size="small" onClick={() => handleViewLog(file.name)}>
+                        {t('logs.view')}
+                      </Button>
+                      <Button type="link" size="small" danger onClick={() => handleDeleteLog(file.name)}>
+                        {t('logs.delete')}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+    },
+    {
       key: 'about',
       label: (
         <span>
@@ -835,6 +982,35 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
             {updateInfo.changelog}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title={t('logs.viewLog', { name: currentLogFile })}
+        open={logModalOpen}
+        onCancel={() => setLogModalOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setLogModalOpen(false)}>
+            {t('logs.close')}
+          </Button>,
+        ]}
+        width={800}
+      >
+        <div
+          style={{
+            background: '#000',
+            color: '#0f0',
+            padding: '12px 16px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap',
+            maxHeight: 500,
+            overflowY: 'auto',
+            lineHeight: 1.6,
+          }}
+        >
+          {logContent || 'No content'}
+        </div>
       </Modal>
     </div>
   )

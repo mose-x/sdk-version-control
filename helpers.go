@@ -40,7 +40,7 @@ func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string
 
 	binPath := findExecutable(binDir, cmdName)
 	if binPath == "" {
-		return "", fmt.Errorf("在目录中未找到 %s 可执行文件", cmdName)
+		return "", fmt.Errorf("%s executable not found in directory", cmdName)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -59,7 +59,7 @@ func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string
 	if sdkType == "maven" || sdkType == "gradle" {
 		javaHome := a.findJavaHome()
 		if javaHome == "" {
-			return "", fmt.Errorf("导入 %s 需要先安装 JDK，请先导入或安装 JDK", sdkType)
+			return "", fmt.Errorf("importing %s requires JDK to be installed first, please import or install JDK first", sdkType)
 		}
 		env = append(env, "JAVA_HOME="+javaHome)
 	}
@@ -75,15 +75,15 @@ func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string
 	out, err := c.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("执行 %s 超时（10秒），无法获取版本号", cmdName)
+			return "", fmt.Errorf("executing %s timed out (10s), unable to get version", cmdName)
 		}
-		return "", fmt.Errorf("执行 %s 失败: %s", cmdName, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("failed to execute %s: %s", cmdName, strings.TrimSpace(string(out)))
 	}
 
 	re := regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`)
 	ver := re.FindString(string(out))
 	if ver == "" {
-		return "", fmt.Errorf("无法从 %s 输出中解析版本号", cmdName)
+		return "", fmt.Errorf("unable to parse version from %s output", cmdName)
 	}
 	return ver, nil
 }

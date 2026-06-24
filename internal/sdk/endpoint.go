@@ -1,13 +1,13 @@
 package sdk
 
-// EndpointInfo SDK 下载端点信息
+// EndpointInfo describes an SDK download endpoint
 type EndpointInfo struct {
 	SdkType         string `json:"sdkType"`
 	DisplayName     string `json:"displayName"`
 	DefaultEndpoint string `json:"defaultEndpoint"`
 }
 
-// DefaultEndpoints 返回所有 SDK 的默认端点（有序）
+// DefaultEndpoints returns the default endpoints of all SDKs (in order)
 func DefaultEndpoints() []EndpointInfo {
 	return []EndpointInfo{
 		{string(NodeJS), SdkDisplayName(NodeJS), "https://nodejs.org"},

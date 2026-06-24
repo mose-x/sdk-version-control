@@ -56,13 +56,13 @@ type dotnetReleaseIndex struct {
 func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json"))
 	if err != nil {
-		return nil, fmt.Errorf("获取.NET版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch .NET version list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var index dotnetReleaseIndex
 	if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
-		return nil, fmt.Errorf("解析.NET版本数据失败: %w", err)
+		return nil, fmt.Errorf("failed to parse .NET version data: %w", err)
 	}
 
 	var versions []VersionInfo

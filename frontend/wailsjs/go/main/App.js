@@ -26,8 +26,16 @@ export function CleanInactiveVersions(arg1) {
   return window['go']['main']['App']['CleanInactiveVersions'](arg1);
 }
 
+export function CleanLogs() {
+  return window['go']['main']['App']['CleanLogs']();
+}
+
 export function CleanTmpCache() {
   return window['go']['main']['App']['CleanTmpCache']();
+}
+
+export function DeleteLogFile(arg1) {
+  return window['go']['main']['App']['DeleteLogFile'](arg1);
 }
 
 export function DetectPathVersion(arg1) {
@@ -64,6 +72,18 @@ export function GetInstallDir(arg1) {
 
 export function GetInstallPath() {
   return window['go']['main']['App']['GetInstallPath']();
+}
+
+export function GetLogContent(arg1) {
+  return window['go']['main']['App']['GetLogContent'](arg1);
+}
+
+export function GetLogDir() {
+  return window['go']['main']['App']['GetLogDir']();
+}
+
+export function GetLogFiles() {
+  return window['go']['main']['App']['GetLogFiles']();
 }
 
 export function GetPackageManagers(arg1) {

@@ -9,11 +9,11 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// getPlatformPath 从 Windows 注册表读取系统+用户 PATH
+// getPlatformPath reads the system+user PATH from the Windows registry
 func getPlatformPath() string {
 	var allPaths []string
 
-	// 优先读取注册表（反映最新的版本切换），用户级优先于系统级
+	// Prefer the registry (reflects the latest version switches); user-level takes priority over system-level
 	for _, key := range []struct {
 		root registry.Key
 		path string
@@ -40,16 +40,16 @@ func getPlatformPath() string {
 		allPaths = append(allPaths, parts...)
 	}
 
-	// 进程 PATH 作为兜底
+	// Process PATH as a fallback
 	pathEnv := os.Getenv("PATH")
 	allPaths = append(allPaths, strings.Split(pathEnv, ";")...)
 
-	// 去重
+	// Deduplicate
 	seen := make(map[string]bool)
 	var result []string
 	for _, p := range allPaths {
 		p = strings.TrimSpace(p)
-		// 清理 Unicode 控制字符
+		// Strip Unicode control characters
 		p = cleanUnicode(p)
 		if p == "" {
 			continue
@@ -63,10 +63,10 @@ func getPlatformPath() string {
 	return strings.Join(result, ";")
 }
 
-// splitPathString 拆分 Windows PATH 字符串
-// 同时处理分号分隔和空格分隔的情况
+// splitPathString splits a Windows PATH string
+// Handles both semicolon-separated and space-separated cases
 func splitPathString(s string) []string {
-	// 先按分号拆分
+	// First split by semicolons
 	parts := strings.Split(s, ";")
 	var result []string
 	for _, part := range parts {
@@ -74,7 +74,7 @@ func splitPathString(s string) []string {
 		if part == "" {
 			continue
 		}
-		// 如果包含多个盘符，可能是空格分隔的，进一步拆分
+		// If it contains multiple drive letters, it may be space-separated; split further
 		if strings.Count(part, ":\\") > 1 {
 			sub := splitByDriveLetter(part)
 			result = append(result, sub...)
@@ -85,15 +85,15 @@ func splitPathString(s string) []string {
 	return result
 }
 
-// splitByDriveLetter 按盘符拆分空格分隔的路径
-// 例如 "C:\a b C:\c d" -> ["C:\a b", "C:\c d"]
+// splitByDriveLetter splits a space-separated path by drive letter
+// e.g. "C:\a b C:\c d" -> ["C:\a b", "C:\c d"]
 func splitByDriveLetter(s string) []string {
-	// 查找所有盘符位置
+	// Find all drive letter positions
 	var positions []int
 	for i := 0; i < len(s)-2; i++ {
 		if s[i] >= 'A' && s[i] <= 'Z' || s[i] >= 'a' && s[i] <= 'z' {
 			if s[i+1] == ':' && s[i+2] == '\\' {
-				// 确保前面是空格或开头
+				// Ensure the previous character is a space or the start of the string
 				if i == 0 || s[i-1] == ' ' || s[i-1] == '\t' {
 					positions = append(positions, i)
 				}
@@ -119,10 +119,10 @@ func splitByDriveLetter(s string) []string {
 	return result
 }
 
-// cleanUnicode 清理 Unicode 控制字符
+// cleanUnicode removes Unicode control characters
 func cleanUnicode(s string) string {
 	return strings.Map(func(r rune) rune {
-		// 删除 Unicode 双向控制字符和 BOM
+		// Remove Unicode bidirectional control characters and BOM
 		if r >= 0x202A && r <= 0x202E { return -1 }
 		if r >= 0x2066 && r <= 0x2069 { return -1 }
 		if r == 0xFEFF { return -1 }

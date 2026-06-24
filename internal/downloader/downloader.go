@@ -16,28 +16,29 @@ import (
 	"time"
 
 	xproxy "golang.org/x/net/proxy"
+	"sdk_version_control/internal/logger"
 )
 
-// ProgressCallback 下载进度回调函数
+// ProgressCallback is the download progress callback function
 type ProgressCallback func(downloadedBytes, totalBytes int64, speedBytesPerSec int64)
 
-// ProxyConfig 代理配置
+// ProxyConfig holds proxy configuration
 type ProxyConfig struct {
-	Enabled  bool   // 是否启用代理
+	Enabled  bool   // whether to enable proxy
 	Mode     string // "system" | "custom"
-	URL      string // 自定义代理地址
-	Protocol string // "http" | "socks5"（自定义代理无 scheme 时使用）
+	URL      string // custom proxy URL
+	Protocol string // "http" | "socks5" (used when custom proxy has no scheme)
 }
 
-// Downloader HTTP 文件下载器
+// Downloader is an HTTP file downloader
 type Downloader struct{}
 
-// NewDownloader 创建下载器
+// NewDownloader creates a downloader
 func NewDownloader() *Downloader {
 	return &Downloader{}
 }
 
-// BuildClient 根据代理配置构建 HTTP Client
+// BuildClient builds an HTTP client based on the proxy configuration
 func BuildClient(proxy ProxyConfig) *http.Client {
 	transport := &http.Transport{}
 
@@ -69,7 +70,7 @@ func BuildClient(proxy ProxyConfig) *http.Client {
 	}
 }
 
-// applyProxy 将代理 URL 应用到 transport，自动识别 HTTP 和 SOCKS5
+// applyProxy applies a proxy URL to the transport, auto-detecting HTTP and SOCKS5
 func applyProxy(transport *http.Transport, proxyURL *url.URL) {
 	if proxyURL.Scheme == "socks5" || proxyURL.Scheme == "socks5h" {
 		dialer, err := xproxy.SOCKS5("tcp", proxyURL.Host, nil, xproxy.Direct)
@@ -83,8 +84,8 @@ func applyProxy(transport *http.Transport, proxyURL *url.URL) {
 	}
 }
 
-// hasScheme 判断字符串是否包含 URL scheme（如 http://、socks5://）
-// 严格按 RFC 3986：scheme 首字符必须是字母，后续可含数字/+/-/.
+// hasScheme checks whether a string contains a URL scheme (e.g. http://, socks5://)
+// Strictly per RFC 3986: the first character of a scheme must be a letter, followed by letters, digits, +, -, .
 func hasScheme(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -98,53 +99,59 @@ func hasScheme(s string) bool {
 	return false
 }
 
-const minMultiThreadSize = 5 * 1024 * 1024 // 5MB 以下不分段
+const minMultiThreadSize = 5 * 1024 * 1024 // files smaller than 5MB are not split
 
-// Download 下载文件到指定路径，threads 为并发线程数（<=1 则单线程）
+// Download downloads a file to the specified path; threads is the concurrent thread count (<=1 means single-threaded)
 func (d *Downloader) Download(ctx context.Context, downloadURL, destPath string, callback ProgressCallback, proxy ProxyConfig, threads int) error {
 	client := BuildClient(proxy)
 
-	// 确保目录存在
+	// Ensure the directory exists
 	dir := filepath.Dir(destPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败: %w", err)
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// 尝试多线程下载
+	logger.Info("Starting download: %s", filepath.Base(destPath))
+	logger.Info("Download threads: %d", threads)
+
+	// Try multi-threaded download
 	if threads > 1 {
 		err := d.downloadMultiThread(ctx, client, downloadURL, destPath, callback, threads)
 		if err == nil {
 			return nil
 		}
-		// 不支持分段时回退到单线程
-		if !strings.Contains(err.Error(), "fallback") {
+		// Fall back to single-threaded when range requests are not supported
+		if strings.Contains(err.Error(), "fallback") {
+			logger.Warn("Multi-thread download fallback: %v", err)
+		} else {
 			return err
 		}
 	}
 
+	logger.Info("Using single-thread download")
 	return d.downloadSingle(ctx, client, downloadURL, destPath, callback)
 }
 
-// downloadSingle 单线程下载（原有逻辑）
+// downloadSingle single-threaded download (original logic)
 func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, downloadURL, destPath string, callback ProgressCallback) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
-		return fmt.Errorf("创建请求失败: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("下载失败: %w", err)
+		return fmt.Errorf("download failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载失败，HTTP状态码: %d", resp.StatusCode)
+		return fmt.Errorf("download failed, HTTP status code: %d", resp.StatusCode)
 	}
 
 	out, err := os.Create(destPath)
 	if err != nil {
-		return fmt.Errorf("创建文件失败: %w", err)
+		return fmt.Errorf("failed to create file: %w", err)
 	}
 	defer out.Close()
 
@@ -165,7 +172,7 @@ func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, do
 		if n > 0 {
 			_, writeErr := out.Write(buf[:n])
 			if writeErr != nil {
-				return fmt.Errorf("写入文件失败: %w", writeErr)
+				return fmt.Errorf("failed to write file: %w", writeErr)
 			}
 			downloaded += int64(n)
 
@@ -192,16 +199,16 @@ func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, do
 				}
 				break
 			}
-			return fmt.Errorf("读取响应失败: %w", readErr)
+			return fmt.Errorf("failed to read response: %w", readErr)
 		}
 	}
 
 	return nil
 }
 
-// downloadMultiThread 多线程分段下载
+// downloadMultiThread multi-threaded segmented download
 func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Client, downloadURL, destPath string, callback ProgressCallback, threads int) error {
-	// HEAD 请求获取文件大小和 Range 支持
+	// HEAD request to get file size and Range support
 	headReq, err := http.NewRequestWithContext(ctx, "HEAD", downloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("fallback: %w", err)
@@ -226,18 +233,18 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 		return fmt.Errorf("fallback: file too small for multi-thread")
 	}
 
-	// 创建输出文件并预分配大小
+	// Create output file and pre-allocate size
 	out, err := os.Create(destPath)
 	if err != nil {
-		return fmt.Errorf("创建文件失败: %w", err)
+		return fmt.Errorf("failed to create file: %w", err)
 	}
 	if err := out.Truncate(totalBytes); err != nil {
 		out.Close()
-		return fmt.Errorf("预分配文件失败: %w", err)
+		return fmt.Errorf("failed to pre-allocate file: %w", err)
 	}
 	out.Close()
 
-	// 计算分段
+	// Calculate segments
 	chunkSize := totalBytes / int64(threads)
 	type chunk struct {
 		start int64
@@ -253,14 +260,14 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 		chunks = append(chunks, chunk{start, end})
 	}
 
-	// 并发下载
+	// Concurrent download
 	var totalDownloaded atomic.Int64
 	var wg sync.WaitGroup
 	errCh := make(chan error, threads)
 	startTime := time.Now()
 	var stopProgress atomic.Bool
 
-	// 进度报告协程
+	// Progress reporter goroutine
 	go func() {
 		for !stopProgress.Load() {
 			time.Sleep(500 * time.Millisecond)
@@ -296,7 +303,7 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-				errCh <- fmt.Errorf("分段下载失败，HTTP状态码: %d", resp.StatusCode)
+				errCh <- fmt.Errorf("segmented download failed, HTTP status code: %d", resp.StatusCode)
 				return
 			}
 
@@ -334,14 +341,14 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 	wg.Wait()
 	stopProgress.Store(true)
 
-	// 检查错误
+	// Check errors
 	select {
 	case err := <-errCh:
 		return err
 	default:
 	}
 
-	// 最后一次回调
+	// Final callback
 	if callback != nil {
 		elapsed := time.Since(startTime).Seconds()
 		var speed int64
@@ -351,10 +358,11 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 		callback(totalBytes, totalBytes, speed)
 	}
 
+	logger.Info("Multi-thread download completed: %s (%d threads, %d bytes)", filepath.Base(destPath), threads, totalBytes)
 	return nil
 }
 
-// GetContentLength 获取远程文件大小（用于更新下载等场景）
+// GetContentLength retrieves the size of a remote file (used by update downloads etc.)
 func GetContentLength(ctx context.Context, client *http.Client, downloadURL string) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, "HEAD", downloadURL, nil)
 	if err != nil {
@@ -368,7 +376,7 @@ func GetContentLength(ctx context.Context, client *http.Client, downloadURL stri
 	return resp.ContentLength, nil
 }
 
-// ParseContentLength 从字符串解析 Content-Length
+// ParseContentLength parses Content-Length from a string
 func ParseContentLength(s string) int64 {
 	n, _ := strconv.ParseInt(s, 10, 64)
 	return n

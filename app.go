@@ -10,6 +10,7 @@ import (
 
 	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/downloader"
+	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/pathmgr"
 	"sdk_version_control/internal/sdk"
 
@@ -19,7 +20,7 @@ import (
 //go:embed about.json
 var aboutJSON []byte
 
-// App struct - Wails 绑定的核心结构
+// App struct - Wails bound core structure
 type App struct {
 	ctx         context.Context
 	cfg         *config.Config
@@ -32,13 +33,16 @@ type App struct {
 	cancelFuncs map[string]context.CancelFunc
 }
 
-// NewApp 创建 App 实例
+// NewApp creates an App instance
 func NewApp() *App {
 	cfg, err := config.NewConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "初始化配置失败: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to initialize config: %v\n", err)
 		os.Exit(1)
 	}
+
+	logger.Init(cfg.SvcDir())
+	logger.Info("Application starting...")
 
 	app := &App{
 		cfg:         cfg,
@@ -51,20 +55,38 @@ func NewApp() *App {
 	return app
 }
 
-// startup 应用启动时调用
+// startup called on application launch
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	s := a.settings.Get()
 	if s.InstallPath != "" {
+		logger.Info("Using custom install path: %s", s.InstallPath)
 		a.cfg.SetSvcDir(s.InstallPath)
 	}
 	a.registry = sdk.NewRegistry(a.cfg, a.settings)
+	logger.Info("SDK registry initialized with %d SDK types", len(a.registry.All()))
 
-	if entries, err := os.ReadDir(a.cfg.TmpDir()); err == nil {
+	// Clean up temp directory
+	if entries, err := os.ReadDir(a.cfg.TmpDir()); err == nil && len(entries) > 0 {
+		logger.Info("Cleaning up %d temporary files from previous run", len(entries))
 		for _, e := range entries {
 			os.RemoveAll(filepath.Join(a.cfg.TmpDir(), e.Name()))
 		}
 	}
+
+	logger.Info("Application startup complete")
+}
+
+// shutdown called on application exit
+func (a *App) shutdown(ctx context.Context) {
+	logger.Info("Application shutting down...")
+	a.cancelMu.Lock()
+	for sdkType, cancel := range a.cancelFuncs {
+		logger.Info("Cancelling ongoing install: %s", sdkType)
+		cancel()
+	}
+	a.cancelMu.Unlock()
+	logger.Info("Application shutdown complete")
 }
 
 func (a *App) emitProgress(sdkType sdk.SdkType, version, stage string, percent int, message string, downloadedBytes, totalBytes, speedBytesPerSec int64, downloadURL string) {
@@ -81,7 +103,7 @@ func (a *App) emitProgress(sdkType sdk.SdkType, version, stage string, percent i
 	})
 }
 
-// GetPathEntries 获取所有 PATH 条目
+// GetPathEntries retrieves all PATH entries
 func (a *App) GetPathEntries() ([]pathmgr.PathEntry, error) {
 	return a.pathMgr.GetAllPathEntries()
 }

@@ -57,26 +57,26 @@ func (a *App) InstallPackageManager(name string) error {
 	switch name {
 	case "npm":
 		if a.cfg.GetActiveVersion("nodejs") == "" {
-			return fmt.Errorf("请先安装 Node.js")
+			return fmt.Errorf("please install Node.js first")
 		}
-		return fmt.Errorf("npm 随 Node.js 一起安装，请先安装 Node.js")
+		return fmt.Errorf("npm is installed with Node.js, please install Node.js first")
 	case "yarn":
 		if a.cfg.GetActiveVersion("nodejs") == "" {
-			return fmt.Errorf("请先安装 Node.js")
+			return fmt.Errorf("please install Node.js first")
 		}
 		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "yarn")
 	case "pnpm":
 		if a.cfg.GetActiveVersion("nodejs") == "" {
-			return fmt.Errorf("请先安装 Node.js")
+			return fmt.Errorf("please install Node.js first")
 		}
 		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "pnpm")
 	case "composer":
 		if a.cfg.GetActiveVersion("php") == "" {
-			return fmt.Errorf("请先安装 PHP")
+			return fmt.Errorf("please install PHP first")
 		}
-		return fmt.Errorf("Composer 安装需要手动下载: https://getcomposer.org/download/")
+		return fmt.Errorf("Composer requires manual download: https://getcomposer.org/download/")
 	default:
-		return fmt.Errorf("未知的包管理器: %s", name)
+		return fmt.Errorf("unknown package manager: %s", name)
 	}
 }
 
@@ -91,11 +91,11 @@ func (a *App) UpdatePackageManager(name string) error {
 	case "composer":
 		return a.runScopedCommand("composer", sdk.PHP, "self-update")
 	default:
-		return fmt.Errorf("未知的包管理器: %s", name)
+		return fmt.Errorf("unknown package manager: %s", name)
 	}
 }
 
-// buildSdkPath 构建仅包含指定 SDK 活跃版本 bin 目录的 PATH
+// buildSdkPath builds a PATH containing only the bin directory of the specified SDK's active version
 func (a *App) buildSdkPath(parent sdk.SdkType) string {
 	active := a.cfg.GetActiveVersion(string(parent))
 	if active == "" {
@@ -110,7 +110,7 @@ func (a *App) buildSdkPath(parent sdk.SdkType) string {
 	return binDir
 }
 
-// resolveInPath 在指定 PATH 中查找命令（不走系统 PATH）
+// resolveInPath looks up a command in the specified PATH (bypasses system PATH)
 func resolveInPath(cmd, searchPath string) string {
 	if searchPath == "" {
 		return cmd
@@ -137,7 +137,7 @@ func resolveInPath(cmd, searchPath string) string {
 	return cmd
 }
 
-// runScopedCommand 在指定 SDK 的 PATH 范围内运行命令
+// runScopedCommand runs a command within the PATH scope of the specified SDK
 func (a *App) runScopedCommand(name string, parent sdk.SdkType, args ...string) error {
 	scopedPath := a.buildSdkPath(parent)
 	fullPath := resolveInPath(name, scopedPath)

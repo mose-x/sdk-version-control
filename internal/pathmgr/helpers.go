@@ -1,14 +1,16 @@
 package pathmgr
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
-// detectSdkTypeFromPath 根据路径中的关键字推断 SDK 类型
+// detectSdkTypeFromPath infers the SDK type from keywords in the path
 func detectSdkTypeFromPath(p string) string {
 	lower := strings.ToLower(filepath.ToSlash(p))
 	switch {
@@ -47,10 +49,10 @@ func detectSdkTypeFromPath(p string) string {
 	return ""
 }
 
-// detectSdkTypeByBin 检查目录中是否存在特征性可执行文件
+// detectSdkTypeByBin checks whether a directory contains a characteristic executable
 func detectSdkTypeByBin(dir string) string {
 	dirs := []string{dir, filepath.Join(dir, "bin")}
-	// 特征性可执行文件（跨平台）
+	// Characteristic executables (cross-platform)
 	checks := []struct {
 		bin     string
 		sdkType string
@@ -74,7 +76,7 @@ func detectSdkTypeByBin(dir string) string {
 	}
 	for _, d := range dirs {
 		for _, c := range checks {
-			// 检查无扩展名（Unix）和有扩展名（Windows）
+			// Check no extension (Unix) and with extension (Windows)
 			for _, ext := range []string{"", ".exe", ".cmd", ".bat"} {
 				if _, err := os.Stat(filepath.Join(d, c.bin+ext)); err == nil {
 					return c.sdkType
@@ -85,7 +87,7 @@ func detectSdkTypeByBin(dir string) string {
 	return detectSdkTypeFromPath(dir)
 }
 
-// DetectSdkRoot 从 bin 目录向上查找 SDK 根目录
+// DetectSdkRoot walks up from the bin directory to find the SDK root
 func DetectSdkRoot(binDir string, sdkType string) string {
 	binDir = filepath.Clean(binDir)
 	candidate := binDir
@@ -93,7 +95,7 @@ func DetectSdkRoot(binDir string, sdkType string) string {
 		candidate = filepath.Dir(candidate)
 	}
 
-	// 验证根目录
+	// Verify root directory
 	switch sdkType {
 	case "go":
 		if _, err := os.Stat(filepath.Join(candidate, "bin")); err == nil {
@@ -104,7 +106,7 @@ func DetectSdkRoot(binDir string, sdkType string) string {
 			return candidate
 		}
 	case "nodejs":
-		// Node.js 根目录有 node 可执行文件
+		// Node.js root contains the node executable
 		for _, ext := range []string{"", ".exe"} {
 			if _, err := os.Stat(filepath.Join(candidate, "node"+ext)); err == nil {
 				return candidate
@@ -117,8 +119,8 @@ func DetectSdkRoot(binDir string, sdkType string) string {
 	return candidate
 }
 
-// DeduplicateEntries 按 SDK 根目录去重，同一个 SDK 安装只保留一条记录
-// 如果存在重复条目，优先保留 IsManaged=true 的标记
+// DeduplicateEntries dedupes entries by SDK root, keeping only one record per SDK install
+// When duplicate entries exist, the IsManaged=true flag is preserved with priority
 func DeduplicateEntries(entries []PathEntry) []PathEntry {
 	seen := make(map[string]int) // key -> index in result
 	var result []PathEntry
@@ -154,19 +156,19 @@ func DeduplicateEntries(entries []PathEntry) []PathEntry {
 	return result
 }
 
-// normalizeJdkRoot 将 JRE 路径规范化为 JDK 根路径
-// 例如 jdk-1.8.0/jre -> jdk-1.8.0
+// normalizeJdkRoot normalizes a JRE path to the JDK root path
+// e.g. jdk-1.8.0/jre -> jdk-1.8.0
 func normalizeJdkRoot(root string) string {
-	// 如果根目录名为 "jre"，检查父目录是否是 JDK 根
+	// If the root directory name is "jre", check whether the parent directory is the JDK root
 	if strings.ToLower(filepath.Base(root)) == "jre" {
 		parent := filepath.Dir(root)
-		// 检查父目录是否有 bin/javac，确认是 JDK 根
+		// Check whether the parent directory has bin/javac, confirming it is the JDK root
 		for _, ext := range []string{"", ".exe"} {
 			if _, err := os.Stat(filepath.Join(parent, "bin", "javac"+ext)); err == nil {
 				return parent
 			}
 		}
-		// 父目录有 release 文件也确认是 JDK 根
+		// A release file in the parent also confirms it is the JDK root
 		if _, err := os.Stat(filepath.Join(parent, "release")); err == nil {
 			return parent
 		}
@@ -174,20 +176,20 @@ func normalizeJdkRoot(root string) string {
 	return root
 }
 
-// ExtractVersion 从目录名中提取纯版本号
-// 例如: jdk-1.8.412 -> 1.8.412, node-v18.14.0-win-x64 -> 18.14.0, go1.25.11 -> 1.25.11
+// ExtractVersion extracts a pure version number from a directory name
+// e.g. jdk-1.8.412 -> 1.8.412, node-v18.14.0-win-x64 -> 18.14.0, go1.25.11 -> 1.25.11
 func ExtractVersion(dirName string) string {
-	// 匹配版本号模式: 数字.数字[.数字][_数字][-rc1 等]
+	// Match version patterns: digits.digits[.digits][_digits][-rc1 etc.]
 	re := regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?(?:[._]\d+)?(?:[-.](?:rc|alpha|beta)\d*)?)`)
 	match := re.FindString(dirName)
 	if match != "" {
-		// 将 _ 替换为 . 以统一格式
+		// Replace _ with . to normalize the format
 		return strings.ReplaceAll(match, "_", ".")
 	}
 	return dirName
 }
 
-// CopyDir 递归复制目录
+// CopyDir recursively copies a directory
 func CopyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -220,4 +222,55 @@ func copyFile(src, dst string, mode os.FileMode) error {
 
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// GetDesktopDir returns the current user's desktop directory (cross-platform)
+func GetDesktopDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	desktop := filepath.Join(home, "Desktop")
+	if info, err := os.Stat(desktop); err == nil && info.IsDir() {
+		return desktop, nil
+	}
+
+	// On macOS the desktop is ~/Desktop; if it does not exist, fall back to <home>/Desktop
+	if _, err := os.Stat(desktop); os.IsNotExist(err) {
+		// Try to create the desktop directory if the user does not have one
+		if err := os.MkdirAll(desktop, 0755); err == nil {
+			return desktop, nil
+		}
+	}
+
+	return home, nil
+}
+
+// BackupDir copies a directory to the desktop with a timestamped name
+func BackupDir(src string) (string, error) {
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return "", fmt.Errorf("source directory does not exist: %s", src)
+	}
+
+	desktop, err := GetDesktopDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get desktop directory: %w", err)
+	}
+
+	baseName := filepath.Base(src)
+	timestamp := time.Now().Format("20060102-150405")
+	backupName := fmt.Sprintf("%s_backup_%s", baseName, timestamp)
+	backupPath := filepath.Join(desktop, backupName)
+
+	if _, err := os.Stat(backupPath); err == nil {
+		// Edge case: multiple backups in the same second; add a random suffix
+		backupPath = filepath.Join(desktop, fmt.Sprintf("%s_%d", backupName, time.Now().UnixNano()%10000))
+	}
+
+	if err := CopyDir(src, backupPath); err != nil {
+		return "", fmt.Errorf("failed to backup directory: %w", err)
+	}
+
+	return backupPath, nil
 }

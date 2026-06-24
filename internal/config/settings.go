@@ -2,41 +2,42 @@ package config
 
 import (
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"sdk_version_control/internal/logger"
 )
 
 const settingsFile = "settings.json"
 
-// ProxySettings 代理配置
+// ProxySettings proxy configuration
 type ProxySettings struct {
-	Enabled  bool   `json:"enabled"`  // 是否启用代理
+	Enabled  bool   `json:"enabled"`  // whether proxy is enabled
 	Mode     string `json:"mode"`     // "system" | "custom"
-	URL      string `json:"url"`      // 自定义代理地址
-	Protocol string `json:"protocol"` // "http" | "socks5"（自定义代理无 scheme 时使用）
+	URL      string `json:"url"`      // custom proxy URL
+	Protocol string `json:"protocol"` // "http" | "socks5" (used when custom proxy has no scheme)
 }
 
-// AppSettings 应用设置
+// AppSettings application settings
 type AppSettings struct {
 	Theme           string            `json:"theme"`           // "system", "dark", "light"
 	Language        string            `json:"language"`        // "zh", "en"
 	Proxy           ProxySettings     `json:"proxy"`
 	Endpoints       map[string]string `json:"endpoints"`       // sdkType -> custom endpoint URL
-	InstallPath     string            `json:"installPath"`     // 自定义安装目录，空=默认 ~/.svc
-	GithubMirror    string            `json:"githubMirror"`    // GitHub 镜像地址，空=不替换
-	DownloadThreads int               `json:"downloadThreads"` // 下载线程数，0=默认4
+	InstallPath     string            `json:"installPath"`     // custom install directory, empty = default ~/.svc
+	GithubMirror    string            `json:"githubMirror"`    // GitHub mirror URL, empty = no replacement
+	DownloadThreads int               `json:"downloadThreads"` // download thread count, 0 = default 4
 }
 
-// SettingsManager 管理应用设置
+// SettingsManager manages application settings
 type SettingsManager struct {
 	mu       sync.RWMutex
 	svcDir   string
 	settings AppSettings
 }
 
-// NewSettingsManager 创建设置管理器
+// NewSettingsManager creates a settings manager
 func NewSettingsManager(svcDir string) *SettingsManager {
 	sm := &SettingsManager{
 		svcDir: svcDir,
@@ -58,7 +59,7 @@ func (s *SettingsManager) load() {
 		return
 	}
 	if err := json.Unmarshal(data, &s.settings); err != nil {
-		log.Printf("警告: 设置文件解析失败 (%s): %v，将使用默认设置", path, err)
+		logger.Warn("Failed to parse settings file (%s): %v, using default settings", path, err)
 	}
 }
 
@@ -70,14 +71,14 @@ func (s *SettingsManager) save() error {
 	return os.WriteFile(filepath.Join(s.svcDir, settingsFile), data, 0644)
 }
 
-// Get 获取当前设置
+// Get returns current settings
 func (s *SettingsManager) Get() AppSettings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.settings
 }
 
-// Update 更新设置
+// Update updates settings
 func (s *SettingsManager) Update(settings AppSettings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

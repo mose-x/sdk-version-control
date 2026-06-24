@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/sdk"
 )
 
@@ -25,20 +26,26 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 		return err
 	}
 
+	logger.Info("Uninstalling %s version: %s", sdkType, version)
+
 	active := a.cfg.GetActiveVersion(sdkType)
 	if active == version {
-		return fmt.Errorf("不能卸载当前活跃版本，请先切换到其他版本")
+		logger.Warn("Cannot uninstall active version: %s %s", sdkType, version)
+		return fmt.Errorf("cannot uninstall the currently active version, please switch to another version first")
 	}
 
 	versionDir := a.cfg.SdkVersionDir(sdkType, version)
 	if _, err := os.Stat(versionDir); os.IsNotExist(err) {
-		return fmt.Errorf("版本目录不存在: %s", version)
+		logger.Error("Version directory does not exist: %s", versionDir)
+		return fmt.Errorf("version directory does not exist: %s", version)
 	}
 
 	if err := os.RemoveAll(versionDir); err != nil {
-		return fmt.Errorf("删除版本目录失败: %w", err)
+		logger.Error("Failed to delete version directory %s: %v", versionDir, err)
+		return fmt.Errorf("failed to delete version directory: %w", err)
 	}
 
+	logger.Info("Successfully uninstalled %s version %s", sdkType, version)
 	return nil
 }
 
@@ -82,11 +89,14 @@ func (a *App) CleanTmpCache() error {
 	tmpDir := a.cfg.TmpDir()
 	entries, err := os.ReadDir(tmpDir)
 	if err != nil {
-		return fmt.Errorf("读取缓存目录失败: %w", err)
+		logger.Error("Failed to read cache directory %s: %v", tmpDir, err)
+		return fmt.Errorf("failed to read cache directory: %w", err)
 	}
+	logger.Info("Cleaning temporary cache: %d items in %s", len(entries), tmpDir)
 	for _, e := range entries {
 		os.RemoveAll(filepath.Join(tmpDir, e.Name()))
 	}
+	logger.Info("Temporary cache cleaned")
 	return nil
 }
 
@@ -99,9 +109,11 @@ func (a *App) CleanInactiveVersions(sdkType string) error {
 	sdkDir := a.cfg.SdkDir(sdkType)
 	entries, err := os.ReadDir(sdkDir)
 	if err != nil {
-		return fmt.Errorf("读取目录失败: %w", err)
+		logger.Error("Failed to read directory %s: %v", sdkDir, err)
+		return fmt.Errorf("failed to read directory: %w", err)
 	}
 
+	var cleaned int
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -109,10 +121,14 @@ func (a *App) CleanInactiveVersions(sdkType string) error {
 		if e.Name() == active {
 			continue
 		}
+		logger.Info("Removing inactive version: %s %s", sdkType, e.Name())
 		if err := os.RemoveAll(filepath.Join(sdkDir, e.Name())); err != nil {
-			return fmt.Errorf("删除 %s 失败: %w", e.Name(), err)
+			logger.Error("Failed to delete %s: %v", e.Name(), err)
+			return fmt.Errorf("failed to delete %s: %w", e.Name(), err)
 		}
+		cleaned++
 	}
+	logger.Info("Cleaned %d inactive versions for %s", cleaned, sdkType)
 	return nil
 }
 

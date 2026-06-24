@@ -51,7 +51,7 @@ function App() {
       const statuses = await GetAllSdkStatus()
       setSdkStatuses(statuses || [])
     } catch (e) {
-      console.error('获取SDK状态失败:', e)
+      console.error('Failed to get SDK status:', e)
     }
   }, [])
 

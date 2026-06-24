@@ -45,16 +45,16 @@ func (f *PerlFetcher) VerifyCommand() (string, []string)  { return "perl", []str
 func (f *PerlFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://strawberryperl.com/releases.html"))
 	if err != nil {
-		return nil, fmt.Errorf("获取Perl版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch Perl version list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("读取Perl版本数据失败: %w", err)
+		return nil, fmt.Errorf("failed to read Perl version data: %w", err)
 	}
 
-	// 匹配 strawberry-perl-X.Y.Z.X-64bit-portable.zip
+	// Match strawberry-perl-X.Y.Z.X-64bit-portable.zip
 	re := regexp.MustCompile(`strawberry-perl-(\d+\.\d+\.\d+\.\d+)-64bit-portable\.zip`)
 	seen := make(map[string]bool)
 	var versions []VersionInfo

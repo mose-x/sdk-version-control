@@ -58,24 +58,24 @@ type UpdateInfo struct {
 
 func (a *App) CheckUpdate() (UpdateInfo, error) {
 	if a.appInfo.UpdateURL == "" {
-		return UpdateInfo{}, fmt.Errorf("未配置更新地址")
+		return UpdateInfo{}, fmt.Errorf("update URL is not configured")
 	}
 
 	client := &http.Client{Transport: a.buildProxyTransport(), Timeout: 15 * time.Second}
 
 	resp, err := client.Get(a.appInfo.UpdateURL)
 	if err != nil {
-		return UpdateInfo{}, fmt.Errorf("请求失败: %w", err)
+		return UpdateInfo{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return UpdateInfo{}, fmt.Errorf("服务器返回错误状态: %d", resp.StatusCode)
+		return UpdateInfo{}, fmt.Errorf("server returned error status: %d", resp.StatusCode)
 	}
 
 	var remote VersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&remote); err != nil {
-		return UpdateInfo{}, fmt.Errorf("解析版本信息失败: %w", err)
+		return UpdateInfo{}, fmt.Errorf("failed to parse version info: %w", err)
 	}
 
 	hasUpdate := sdk.CompareVersions(remote.Version, a.appInfo.Version) > 0
@@ -108,7 +108,7 @@ type UpdateProgress struct {
 
 func (a *App) DownloadUpdate(downloadURL string) error {
 	if downloadURL == "" {
-		return fmt.Errorf("下载地址为空")
+		return fmt.Errorf("download URL is empty")
 	}
 	downloadURL = a.applyGithubMirror(downloadURL)
 
@@ -140,7 +140,7 @@ func (a *App) DownloadUpdate(downloadURL string) error {
 		})
 	}, proxyCfg, threads)
 	if err != nil {
-		return fmt.Errorf("下载失败: %w", err)
+		return fmt.Errorf("download failed: %w", err)
 	}
 
 	a.emitUpdateProgress(UpdateProgress{

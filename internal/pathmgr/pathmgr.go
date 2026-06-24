@@ -1,31 +1,27 @@
 package pathmgr
 
-// PathEntry 描述一个 PATH 条目
+// PathEntry describes a PATH entry
 type PathEntry struct {
 	Path      string `json:"path"`
-	IsManaged bool   `json:"isManaged"` // 是否在 .svc 下
-	SdkType   string `json:"sdkType"`   // 识别出的 SDK 类型（空=未知）
+	IsManaged bool   `json:"isManaged"` // whether under .svc
+	SdkType   string `json:"sdkType"`   // identified SDK type (empty = unknown)
+	Source    string `json:"source"`    // "user", "system", or "external"
 }
 
-// PathManager 管理系统 PATH 环境变量
+// PathManager manages system PATH environment variables
 type PathManager interface {
-	// ConfigureSdk 将指定 SDK 版本的 bin 目录添加到 PATH（持久化）
+	// ConfigureSdk adds the specified SDK version's bin directory to PATH (persistent)
 	ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error
-
-	// RemoveSdk 将指定 SDK 从 PATH 中移除
+	// RemoveSdk removes the specified SDK from PATH
 	RemoveSdk(sdkType string, extraEnvVars map[string]string) error
-
-	// GetCurrentConfig 获取当前 SVC 管理的 PATH 条目
-	GetCurrentConfig() (map[string]string, error) // envVar -> value
-
-	// GetAllPathEntries 获取所有 PATH 条目
+	// GetCurrentConfig returns the PATH entries currently managed by SVC
+	GetCurrentConfig() (map[string]string, error)
+	// GetAllPathEntries returns all PATH entries
 	GetAllPathEntries() ([]PathEntry, error)
-
-	// CleanExternalPaths 清理非 SVC 管理的、匹配同 SDK 类型和版本的外部 PATH 条目
-	// sourcePath 是导入来源的具体路径，会优先匹配移除
-	CleanExternalPaths(sdkType string, version string, sourcePath string) error
-
-	// DetectSystemConflicts 检测系统级是否有匹配该 SDK 的环境变量配置
-	// 返回冲突的条目列表，空列表表示无冲突
-	DetectSystemConflicts(sdkType string, extraEnvVarKeys []string) []string
+	// CleanExternalPaths cleans non-SVC-managed external PATH entries matching the same SDK type and version
+	// sourcePath is the specific source path of the import; matched entries are removed first
+	CleanExternalPaths(sdkType string, version string, sourcePath string)
+	// DetectSystemConflicts checks whether the system level contains env var configs matching the SDK
+	// Returns the list of conflicting entries; empty list means no conflicts
+	DetectSystemConflicts(sdkType string, envKeys []string) []string
 }

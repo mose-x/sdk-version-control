@@ -46,11 +46,11 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
     setLoading(true)
     try {
       const result = await GetPathEntries()
-      // 只显示未导入 SVC 的 SDK 路径
+      // Only show SDK paths not yet imported into SVC
       const filtered = (result || []).filter(e => e.sdkType && !e.isManaged)
       setEntries(filtered)
     } catch (e) {
-      console.error('获取PATH信息失败:', e)
+      console.error('Failed to get PATH information:', e)
     } finally {
       setLoading(false)
     }

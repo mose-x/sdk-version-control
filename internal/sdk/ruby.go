@@ -50,17 +50,17 @@ func (f *RubyFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		url := fmt.Sprintf("https://api.github.com/repos/oneclick/rubyinstaller2/releases?per_page=30&page=%d", page)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			return nil, fmt.Errorf("构建Ruby版本请求失败: %w", err)
+			return nil, fmt.Errorf("failed to build Ruby version request: %w", err)
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		resp, err := f.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("获取Ruby版本列表失败: %w", err)
+			return nil, fmt.Errorf("failed to fetch Ruby version list: %w", err)
 		}
 		var releases []ghRelease
 		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 			resp.Body.Close()
-			return nil, fmt.Errorf("解析Ruby版本数据失败: %w", err)
+			return nil, fmt.Errorf("failed to parse Ruby version data: %w", err)
 		}
 		resp.Body.Close()
 		if len(releases) == 0 { break }
@@ -69,7 +69,7 @@ func (f *RubyFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			if r.Draft || r.Prerelease { continue }
 			tag := strings.TrimPrefix(r.TagName, "RubyInstaller-")
 			tag = strings.TrimPrefix(tag, "v")
-			// 只保留纯版本号
+			// Only keep pure version numbers
 			ver := tag
 			if idx := strings.Index(tag, "-"); idx > 0 { ver = tag[:idx] }
 			parts := strings.Split(ver, ".")

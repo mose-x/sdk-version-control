@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-// applySystemProxy Linux 下从环境变量读取系统代理
+// applySystemProxy reads the system proxy from environment variables on Linux
 func applySystemProxy(transport *http.Transport) {
 	for _, envKey := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"} {
 		val := os.Getenv(envKey)

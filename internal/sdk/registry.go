@@ -4,17 +4,17 @@ import (
 	"sdk_version_control/internal/config"
 )
 
-// Registry SDK 注册表，管理所有 SDK 的 fetcher
+// Registry holds all SDK fetchers
 type Registry struct {
 	fetchers map[SdkType]VersionFetcher
 }
 
-// NewRegistry 创建并注册所有 SDK fetcher
+// NewRegistry creates and registers all SDK fetchers
 func NewRegistry(cfg *config.Config, sm *config.SettingsManager) *Registry {
 	r := &Registry{
 		fetchers: make(map[SdkType]VersionFetcher),
 	}
-	// 运行时 & 语言
+	// Runtimes & languages
 	r.Register(NewNodejsFetcher(cfg, sm))
 	r.Register(NewJdkFetcher(cfg, sm))
 	r.Register(NewGolangFetcher(cfg, sm))
@@ -24,27 +24,27 @@ func NewRegistry(cfg *config.Config, sm *config.SettingsManager) *Registry {
 	r.Register(NewDotNetFetcher(cfg, sm))
 	r.Register(NewPHPFetcher(cfg, sm))
 	r.Register(NewPerlFetcher(cfg, sm))
-	// 构建工具
+	// Build tools
 	r.Register(NewMavenFetcher(cfg, sm))
 	r.Register(NewGradleFetcher(cfg, sm))
-	// 移动开发
+	// Mobile development
 	r.Register(NewFlutterFetcher(cfg, sm))
 	r.Register(NewAndroidFetcher(cfg, sm))
 	r.Register(NewDartFetcher(cfg, sm))
 	return r
 }
 
-// Register 注册一个 SDK fetcher
+// Register registers an SDK fetcher
 func (r *Registry) Register(f VersionFetcher) {
 	r.fetchers[f.Type()] = f
 }
 
-// Get 获取指定 SDK 的 fetcher
+// Get returns the fetcher for the specified SDK
 func (r *Registry) Get(t SdkType) VersionFetcher {
 	return r.fetchers[t]
 }
 
-// All 获取所有 SDK fetcher（按顺序）
+// All returns all SDK fetchers (in order)
 func (r *Registry) All() []VersionFetcher {
 	types := AllSdkTypes()
 	result := make([]VersionFetcher, 0, len(types))

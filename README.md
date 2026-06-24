@@ -2,7 +2,7 @@
 
 A cross-platform desktop application for unified management of multiple SDK versions (Node.js, JDK, Go, Python, Rust, etc.), including installation, switching, and environment variable configuration.
 
-[中文文档](README.ZH_CN.md)
+[Chinese Documentation](README.ZH_CN.md)
 
 ## Features
 
@@ -24,7 +24,7 @@ A cross-platform desktop application for unified management of multiple SDK vers
 
 ### System Settings
 - **Theme**: Dark / Light / Follow System, with synchronized window title bar
-- **i18n**: 中文 / English
+- **i18n**: Chinese / English
 - **Proxy**: System proxy or custom proxy support
 - **Custom Endpoints**: Configure custom download endpoints per SDK
 - **Auto Update**: In-app updates via OSS-hosted version.json

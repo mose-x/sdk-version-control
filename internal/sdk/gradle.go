@@ -12,7 +12,7 @@ import (
 	"sdk_version_control/internal/config"
 )
 
-// GradleFetcher Gradle 版本获取器
+// GradleFetcher Gradle version fetcher
 type GradleFetcher struct {
 	cfg        *config.Config
 	sm         *config.SettingsManager
@@ -47,7 +47,7 @@ func (f *GradleFetcher) GetBinDir() string {
 
 func (f *GradleFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{
-		"GRADLE_HOME": "", // 根目录
+		"GRADLE_HOME": "", // Root directory
 	}
 }
 
@@ -66,13 +66,13 @@ type gradleVersionJSON struct {
 func (f *GradleFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://services.gradle.org/versions/all"))
 	if err != nil {
-		return nil, fmt.Errorf("获取Gradle版本列表失败: %w", err)
+		return nil, fmt.Errorf("failed to fetch Gradle version list: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var raw []gradleVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("解析Gradle版本数据失败: %w", err)
+		return nil, fmt.Errorf("failed to parse Gradle version data: %w", err)
 	}
 
 	var versions []VersionInfo
@@ -113,7 +113,7 @@ func (f *GradleFetcher) GetDownloadURL(version string) (string, string, error) {
 	for _, v := range raw {
 		if v.Version == version {
 			dlURL := v.DownloadURL
-			// 应用自定义端点
+			// Apply custom endpoint
 			if f.sm != nil {
 				if custom := f.sm.Get().Endpoints[string(Gradle)]; custom != "" {
 					dlURL = strings.Replace(dlURL, "https://services.gradle.org", custom, -1)
@@ -123,7 +123,7 @@ func (f *GradleFetcher) GetDownloadURL(version string) (string, string, error) {
 		}
 	}
 
-	return "", "", fmt.Errorf("未找到Gradle版本: %s", version)
+	return "", "", fmt.Errorf("Gradle version not found: %s", version)
 }
 
 func (f *GradleFetcher) GetLocalStatus() (*SdkStatus, error) {

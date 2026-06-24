@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
 	"sdk_version_control/internal/extractor"
+	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/pathmgr"
 	"sdk_version_control/internal/sdk"
 
@@ -15,23 +15,23 @@ import (
 
 func (a *App) SelectLocalFile() (string, error) {
 	if a.ctx == nil {
-		return "", fmt.Errorf("应用未初始化")
+		return "", fmt.Errorf("app not initialized")
 	}
 	return wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "选择压缩包文件",
+		Title: "Select Archive File",
 		Filters: []wailsRuntime.FileFilter{
-			{DisplayName: "压缩包", Pattern: "*.zip;*.tar.gz;*.tgz;*.tar.xz;*.7z"},
-			{DisplayName: "所有文件", Pattern: "*.*"},
+			{DisplayName: "Archive", Pattern: "*.zip;*.tar.gz;*.tgz;*.tar.xz;*.7z"},
+			{DisplayName: "All Files", Pattern: "*.*"},
 		},
 	})
 }
 
 func (a *App) SelectLocalDir() (string, error) {
 	if a.ctx == nil {
-		return "", fmt.Errorf("应用未初始化")
+		return "", fmt.Errorf("app not initialized")
 	}
 	return wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "选择 SDK 目录",
+		Title: "Select SDK Directory",
 	})
 }
 
@@ -42,12 +42,15 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 	sdkType := sdk.SdkType(sdkTypeStr)
 	f := a.registry.Get(sdkType)
 	if f == nil {
-		return fmt.Errorf("未知的SDK类型: %s", sdkTypeStr)
+		return fmt.Errorf("unknown SDK type: %s", sdkTypeStr)
 	}
+
+	logger.Info("Importing local SDK: %s from %s", sdkTypeStr, localPath)
 
 	info, err := os.Stat(localPath)
 	if err != nil {
-		return fmt.Errorf("路径不存在: %s", localPath)
+		logger.Error("Path does not exist: %s", localPath)
+		return fmt.Errorf("path does not exist: %s", localPath)
 	}
 
 	var sourceDir string
@@ -57,22 +60,22 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 	} else {
 		tmpDir := filepath.Join(a.cfg.TmpDir(), "import_"+filepath.Base(localPath))
 		if err := os.RemoveAll(tmpDir); err != nil {
-			return fmt.Errorf("清理临时目录失败: %w", err)
+			return fmt.Errorf("failed to clean temp directory: %w", err)
 		}
 		if err := os.MkdirAll(tmpDir, 0755); err != nil {
-			return fmt.Errorf("创建临时目录失败: %w", err)
+			return fmt.Errorf("failed to create temp directory: %w", err)
 		}
 		defer os.RemoveAll(tmpDir)
 
 		ext, err := extractor.NewExtractor(filepath.Base(localPath))
 		if err != nil {
-			return fmt.Errorf("不支持的压缩格式: %w", err)
+			return fmt.Errorf("unsupported archive format: %w", err)
 		}
 		if err := ext.Extract(localPath, tmpDir); err != nil {
-			return fmt.Errorf("解压失败: %w", err)
+			return fmt.Errorf("extraction failed: %w", err)
 		}
 		if err := extractor.StripTopDir(tmpDir); err != nil {
-			return fmt.Errorf("解压失败: %w", err)
+			return fmt.Errorf("extraction failed: %w", err)
 		}
 		sourceDir = pathmgr.DetectSdkRoot(tmpDir, sdkTypeStr)
 	}
@@ -82,7 +85,7 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		versionName = ver
 	} else {
 		if err != nil {
-			log.Printf("运行验证命令获取版本失败 (%s): %v", sdkTypeStr, err)
+			logger.Warn("Failed to run verify command to get version (%s): %v", sdkTypeStr, err)
 		}
 		dirName := filepath.Base(sourceDir)
 		versionName = pathmgr.ExtractVersion(dirName)
@@ -93,11 +96,11 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
 	if err := os.RemoveAll(targetDir); err != nil {
-		return fmt.Errorf("清理目标目录失败: %w", err)
+		return fmt.Errorf("failed to clean target directory: %w", err)
 	}
 
 	if err := pathmgr.CopyDir(sourceDir, targetDir); err != nil {
-		return fmt.Errorf("复制SDK失败: %w", err)
+		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
 	binDir := ""
@@ -106,11 +109,12 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDir, nil); err != nil {
-		return fmt.Errorf("配置PATH失败: %w", err)
+		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	a.pathMgr.CleanExternalPaths(sdkTypeStr, versionName, sourceDir)
 
+	logger.Info("Successfully imported local SDK: %s %s", sdkTypeStr, versionName)
 	return a.cfg.SetActiveVersion(sdkTypeStr, versionName)
 }
 
@@ -118,6 +122,7 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 	if err := validatePathSegment(sdkType); err != nil {
 		return err
 	}
+	logger.Info("Importing SDK: %s from %s", sdkType, externalPath)
 	sdkRoot := pathmgr.DetectSdkRoot(externalPath, sdkType)
 
 	dirName := filepath.Base(sdkRoot)
@@ -129,11 +134,11 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 	targetDir := a.cfg.SdkVersionDir(sdkType, versionName)
 
 	if err := os.RemoveAll(targetDir); err != nil {
-		return fmt.Errorf("清理目标目录失败: %w", err)
+		return fmt.Errorf("failed to clean target directory: %w", err)
 	}
 
 	if err := pathmgr.CopyDir(sdkRoot, targetDir); err != nil {
-		return fmt.Errorf("复制SDK失败: %w", err)
+		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
 	binDir := ""
@@ -142,11 +147,12 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDir, nil); err != nil {
-		return fmt.Errorf("配置PATH失败: %w", err)
+		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	a.pathMgr.CleanExternalPaths(sdkType, versionName, sdkRoot)
 
+	logger.Info("Successfully imported SDK: %s %s", sdkType, versionName)
 	return a.cfg.SetActiveVersion(sdkType, versionName)
 }
 
@@ -154,16 +160,17 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 	if err := validatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}
+	logger.Info("Importing SDK from system PATH: %s", sdkTypeStr)
 	sdkType := sdk.SdkType(sdkTypeStr)
 	f := a.registry.Get(sdkType)
 	if f == nil {
-		return fmt.Errorf("未知的SDK类型: %s", sdkTypeStr)
+		return fmt.Errorf("unknown SDK type: %s", sdkTypeStr)
 	}
 
 	cmdName, _ := f.VerifyCommand()
 	binPath := resolveCommand(cmdName)
 	if binPath == "" {
-		return fmt.Errorf("在系统 PATH 中未找到 %s", cmdName)
+		return fmt.Errorf("%s not found in system PATH", cmdName)
 	}
 
 	binDir := filepath.Dir(binPath)
@@ -182,11 +189,11 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
 	if err := os.RemoveAll(targetDir); err != nil {
-		return fmt.Errorf("清理目标目录失败: %w", err)
+		return fmt.Errorf("failed to clean target directory: %w", err)
 	}
 
 	if err := pathmgr.CopyDir(sdkRoot, targetDir); err != nil {
-		return fmt.Errorf("复制SDK失败: %w", err)
+		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
 	relBinDir := ""
@@ -195,10 +202,11 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, relBinDir, f.GetExtraEnvVars()); err != nil {
-		return fmt.Errorf("配置PATH失败: %w", err)
+		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	a.pathMgr.CleanExternalPaths(sdkTypeStr, versionName, sdkRoot)
 
+	logger.Info("Successfully imported SDK from PATH: %s %s", sdkTypeStr, versionName)
 	return a.cfg.SetActiveVersion(sdkTypeStr, versionName)
 }
