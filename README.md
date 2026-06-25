@@ -50,6 +50,29 @@ A cross-platform desktop application for unified management of multiple SDK vers
 #### setting
 ![setting](./image/setting.png)
 
+## Comparison with Alternatives
+
+| Feature | SVC (This Project) | nvm / sdkman / pyenv etc. | VS Code Plugins |
+|---|:---:|:---:|:---:|
+| Unified SDK management (18+ types) | ✅ | ❌ Single SDK per tool | ❌ Scattered |
+| Graphical user interface | ✅ | ❌ CLI only | ✅ |
+| Auto PATH configuration | ✅ | ⚠️ Requires shell setup | ❌ |
+| Cross-platform desktop app | ✅ | ✅ | ✅ |
+| Multi-threaded download | ✅ | ❌ | – |
+| Custom download endpoints | ✅ | ⚠️ Partial support | – |
+| Package manager companion | ✅ | ⚠️ Partial support | – |
+| PATH visualization | ✅ | ❌ | ❌ |
+| One-click SDK import (archive/folder) | ✅ | ❌ | ❌ |
+| Install path migration with backup | ✅ | ❌ | ❌ |
+| System-wide (works with all IDEs/terminals) | ✅ | ⚠️ Shell-scoped | ❌ VS Code only |
+| Conflict detection & cleanup | ✅ | ❌ | ❌ |
+
+### Summary
+
+The core advantage of this project lies in its **"one-stop, graphical, cross-platform"** SDK version management experience. It solves the pain point of developers having to install and manage multiple SDK versions by unifying what previously required multiple command-line tools (nvm, sdkman, pyenv, rustup, etc.) into a single, intuitive desktop application.
+
+No more memorizing CLI commands for each language, no more fiddling with shell config files, no more PATH bloat — just a clean GUI that works consistently across Windows, macOS, and Linux.
+
 ## Tech Stack
 
 - **Backend**: Go 1.25 + Wails v2
