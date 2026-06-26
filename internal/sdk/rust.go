@@ -24,7 +24,7 @@ func NewRustFetcher(cfg *config.Config, sm *config.SettingsManager) *RustFetcher
 }
 
 func (f *RustFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *RustFetcher) StripArchiveTopDir() bool           { return true }
+func (f *RustFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *RustFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -37,10 +37,10 @@ func (f *RustFetcher) useEndpoint(defaultURL string) string {
 	return strings.Replace(defaultURL, "https://static.rust-lang.org", custom, -1)
 }
 
-func (f *RustFetcher) Type() SdkType { return Rust }
-func (f *RustFetcher) GetBinDir() string { return "bin" }
+func (f *RustFetcher) Type() SdkType     { return Rust }
+func (f *RustFetcher) GetBinDir() string { return "cargo/bin" }
 func (f *RustFetcher) GetExtraEnvVars() map[string]string {
-	return map[string]string{"CARGO_HOME": ""}
+	return nil
 }
 func (f *RustFetcher) VerifyCommand() (string, []string) { return "rustc", []string{"--version"} }
 
@@ -71,12 +71,18 @@ func (f *RustFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			return nil, fmt.Errorf("failed to parse Rust version data: %w", err)
 		}
 		resp.Body.Close()
-		if len(releases) == 0 { break }
+		if len(releases) == 0 {
+			break
+		}
 
 		for _, r := range releases {
-			if r.Draft || r.Prerelease { continue }
+			if r.Draft || r.Prerelease {
+				continue
+			}
 			tag := r.TagName
-			if strings.Contains(tag, "beta") || strings.Contains(tag, "nightly") || strings.Contains(tag, "alpha") { continue }
+			if strings.Contains(tag, "beta") || strings.Contains(tag, "nightly") || strings.Contains(tag, "alpha") {
+				continue
+			}
 			parts := strings.Split(strings.TrimPrefix(tag, "v"), ".")
 			major, _ := strconv.Atoi(parts[0])
 			date := ""
@@ -106,20 +112,28 @@ func (f *RustFetcher) GetDownloadURL(version string) (string, string, error) {
 
 func (f *RustFetcher) buildDownloadURL(version string) string {
 	target := "x86_64-pc-windows-msvc"
-	if runtime.GOOS == "linux" { target = "x86_64-unknown-linux-gnu" }
+	if runtime.GOOS == "linux" {
+		target = "x86_64-unknown-linux-gnu"
+	}
 	if runtime.GOOS == "darwin" {
 		target = "x86_64-apple-darwin"
-		if runtime.GOARCH == "arm64" { target = "aarch64-apple-darwin" }
+		if runtime.GOARCH == "arm64" {
+			target = "aarch64-apple-darwin"
+		}
 	}
 	return f.useEndpoint(fmt.Sprintf("https://static.rust-lang.org/dist/rust-%s-%s.tar.gz", version, target))
 }
 
 func (f *RustFetcher) buildFileName(version string) string {
 	target := "x86_64-pc-windows-msvc"
-	if runtime.GOOS == "linux" { target = "x86_64-unknown-linux-gnu" }
+	if runtime.GOOS == "linux" {
+		target = "x86_64-unknown-linux-gnu"
+	}
 	if runtime.GOOS == "darwin" {
 		target = "x86_64-apple-darwin"
-		if runtime.GOARCH == "arm64" { target = "aarch64-apple-darwin" }
+		if runtime.GOARCH == "arm64" {
+			target = "aarch64-apple-darwin"
+		}
 	}
 	return fmt.Sprintf("rust-%s-%s.tar.gz", version, target)
 }
@@ -131,7 +145,7 @@ func (f *RustFetcher) GetLocalStatus() (*SdkStatus, error) {
 	return &SdkStatus{
 		SdkType: Rust, DisplayName: SdkDisplayName(Rust),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("rustc"),
-		CurrentVersion: active,
+		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(Rust)),
 	}, nil
 }

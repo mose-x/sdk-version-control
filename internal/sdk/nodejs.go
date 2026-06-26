@@ -33,7 +33,7 @@ func NewNodejsFetcher(cfg *config.Config, sm *config.SettingsManager) *NodejsFet
 }
 
 func (f *NodejsFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *NodejsFetcher) StripArchiveTopDir() bool           { return true }
+func (f *NodejsFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *NodejsFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -52,7 +52,7 @@ func (f *NodejsFetcher) Type() SdkType {
 
 func (f *NodejsFetcher) GetBinDir() string {
 	if config.IsWindows() {
-		return "bin" // node.exe is in the root directory on Windows
+		return "" // node.exe is in the root directory on Windows
 	}
 	return "bin"
 }
