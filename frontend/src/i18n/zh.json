@@ -18,7 +18,8 @@
     "importConfirm": "导入 {{sdk}} 到 SVC？",
     "importConfirmDesc": "将自动检测 PATH 中的 SDK 并复制到 SVC 管理目录，同时更新环境变量",
     "importSuccess": "{{sdk}} 导入成功！",
-    "importFail": "导入失败: {{error}}"
+    "importFail": "导入失败: {{error}}",
+    "needsSwitch": "激活版本已不存在，请切换到其他版本"
   },
   "categories": {
     "runtime": "运行时 & 语言",
@@ -73,8 +74,12 @@
     "systemConflictMsg": "检测到以下系统级环境变量配置，可能导致 SVC 配置无法生效。请手动删除后重启终端：",
     "uninstallConfirm": "卸载 {{sdk}} {{version}}？",
     "uninstallConfirmDesc": "卸载后将删除该版本的所有本地文件，此操作不可撤销",
+    "uninstallActiveConfirm": "卸载当前激活版本 {{sdk}} {{version}}？",
+    "uninstallActiveConfirmDesc": "这是当前激活的版本，卸载后将清除激活配置。如果有其他已安装版本，请先切换到其他版本。",
     "uninstallSuccess": "{{version}} 已卸载",
     "uninstallFail": "卸载失败: {{error}}",
+    "activeVersionDeleted": "{{sdk}} 激活版本已删除，请在左侧列表中切换到其他已安装版本。",
+    "needsSwitch": "当前版本已不存在，请切换到其他已安装版本",
     "pmInstallSuccess": "{{name}} 安装成功",
     "pmInstallFail": "{{name}} 安装失败: {{error}}",
     "pmUpdateSuccess": "{{name}} 更新成功",

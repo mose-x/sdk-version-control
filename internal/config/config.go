@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	svcDirName   = ".svc"
-	configFile   = "config.json"
-	tmpDirName   = "tmp"
-	envShFile    = "env.sh"
+	svcDirName = ".svc"
+	configFile = "config.json"
+	tmpDirName = "tmp"
+	envShFile  = "env.sh"
 )
 
 // Config manages the ~/.svc directory and application configuration
@@ -155,6 +155,14 @@ func (c *Config) SetActiveVersion(sdkType string, version string) error {
 	defer c.mu.Unlock()
 	c.data.ActiveVersions[sdkType] = version
 	return c.save()
+}
+
+// ClearActiveVersion clears the active version for the specified SDK type
+func (c *Config) ClearActiveVersion(sdkType string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.data.ActiveVersions, sdkType)
+	c.save()
 }
 
 // GetInstalledVersions returns all locally installed versions

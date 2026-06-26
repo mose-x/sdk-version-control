@@ -13,6 +13,7 @@ import {
   ImportOutlined,
   FolderOpenOutlined,
   FileOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import { SdkStatus, VersionInfo, InstallProgress, PackageManagerInfo } from '../../types/sdk'
@@ -228,9 +229,10 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
 
   const handleUninstallVersion = (version: string) => {
     if (!status) return
+    const isActive = version === status.currentVersion
     Modal.confirm({
-      title: t('detail.uninstallConfirm', { sdk: status.displayName, version }),
-      content: t('detail.uninstallConfirmDesc'),
+      title: isActive ? t('detail.uninstallActiveConfirm', { sdk: status.displayName, version }) : t('detail.uninstallConfirm', { sdk: status.displayName, version }),
+      content: isActive ? t('detail.uninstallActiveConfirmDesc') : t('detail.uninstallConfirmDesc'),
       okText: t('app.confirm'),
       okButtonProps: { danger: true },
       cancelText: t('app.cancel'),
@@ -240,7 +242,13 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
           msgApi.success(t('detail.uninstallSuccess', { version }))
           onRefresh()
         } catch (e: any) {
-          msgApi.error(t('detail.uninstallFail', { error: e?.message || e }))
+          const msg = e?.message || String(e)
+          if (msg.startsWith('ACTIVE_VERSION_DELETED:')) {
+            msgApi.warning(t('detail.activeVersionDeleted', { sdk: status.displayName }))
+            onRefresh()
+          } else {
+            msgApi.error(t('detail.uninstallFail', { error: msg }))
+          }
         }
       },
     })
@@ -413,9 +421,23 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
               style={{
                 position: 'absolute',
                 top: 12,
-                right: 12,
+                right: status.needsSwitch ? 36 : 12,
                 fontSize: 18,
                 color: '#ff4d4f',
+                cursor: 'pointer',
+              }}
+            />
+          </Tooltip>
+        )}
+        {status.needsSwitch && (
+          <Tooltip title={t('detail.needsSwitch')}>
+            <WarningOutlined
+              style={{
+                position: 'absolute',
+                top: 12,
+                right: 12,
+                fontSize: 20,
+                color: '#faad14',
                 cursor: 'pointer',
               }}
             />
@@ -458,15 +480,13 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
                   >
                     {isCurrent && <CheckCircleFilled style={{ marginRight: 4, fontSize: 10 }} />}
                     {v}
-                    {!isCurrent && (
-                      <DeleteOutlined
-                        style={{ marginLeft: 6, fontSize: 10, color: '#999' }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleUninstallVersion(v)
-                        }}
-                      />
-                    )}
+                    <DeleteOutlined
+                      style={{ marginLeft: 6, fontSize: 10, color: '#999' }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleUninstallVersion(v)
+                      }}
+                    />
                   </Tag>
                 </Tooltip>
               )

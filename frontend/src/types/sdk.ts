@@ -19,6 +19,7 @@ export interface SdkStatus {
   currentVersion: string;
   installedVersions: string[];
   installPath: string;
+  needsSwitch: boolean;     // true if currentVersion is not in installedVersions
 }
 
 export interface VersionInfo {

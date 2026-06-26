@@ -221,6 +221,7 @@ export namespace sdk {
 	    currentVersion: string;
 	    installedVersions: string[];
 	    installPath: string;
+	    needsSwitch: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SdkStatus(source);
@@ -236,6 +237,7 @@ export namespace sdk {
 	        this.currentVersion = source["currentVersion"];
 	        this.installedVersions = source["installedVersions"];
 	        this.installPath = source["installPath"];
+	        this.needsSwitch = source["needsSwitch"];
 	    }
 	}
 	export class VersionInfo {

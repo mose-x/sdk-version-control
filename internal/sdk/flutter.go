@@ -24,7 +24,7 @@ func NewFlutterFetcher(cfg *config.Config, sm *config.SettingsManager) *FlutterF
 }
 
 func (f *FlutterFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *FlutterFetcher) StripArchiveTopDir() bool           { return true }
+func (f *FlutterFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *FlutterFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -36,8 +36,8 @@ func (f *FlutterFetcher) useEndpoint(defaultURL string) string {
 	}
 	return strings.Replace(defaultURL, "https://storage.googleapis.com", custom, -1)
 }
-func (f *FlutterFetcher) Type() SdkType                    { return Flutter }
-func (f *FlutterFetcher) GetBinDir() string                 { return "bin" }
+func (f *FlutterFetcher) Type() SdkType     { return Flutter }
+func (f *FlutterFetcher) GetBinDir() string { return "bin" }
 func (f *FlutterFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{"FLUTTER_ROOT": ""}
 }
@@ -63,23 +63,35 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			return nil, fmt.Errorf("failed to parse Flutter version data: %w", err)
 		}
 		resp.Body.Close()
-		if len(releases) == 0 { break }
+		if len(releases) == 0 {
+			break
+		}
 
 		for _, r := range releases {
-			if r.Draft || r.Prerelease { continue }
+			if r.Draft || r.Prerelease {
+				continue
+			}
 			tag := r.TagName
-			if strings.Contains(tag, "beta") || strings.Contains(tag, "dev") { continue }
+			if strings.Contains(tag, "beta") || strings.Contains(tag, "dev") {
+				continue
+			}
 			ver := strings.TrimPrefix(tag, "v")
 			parts := strings.Split(ver, ".")
-			if len(parts) < 2 { continue }
+			if len(parts) < 2 {
+				continue
+			}
 			major, _ := strconv.Atoi(parts[0])
 			date := ""
 			if t, err := time.Parse(time.RFC3339, r.PublishedAt); err == nil {
 				date = t.Format("2006-01-02")
 			}
 			osName := "windows"
-			if runtime.GOOS == "linux" { osName = "linux" }
-			if runtime.GOOS == "darwin" { osName = "macos" }
+			if runtime.GOOS == "linux" {
+				osName = "linux"
+			}
+			if runtime.GOOS == "darwin" {
+				osName = "macos"
+			}
 			versions = append(versions, VersionInfo{
 				Version: ver, Major: major, ReleaseDate: date,
 				DownloadURL: f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s_%s-stable.zip", osName, osName, ver)),
@@ -94,8 +106,12 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 
 func (f *FlutterFetcher) GetDownloadURL(version string) (string, string, error) {
 	osName := "windows"
-	if runtime.GOOS == "linux" { osName = "linux" }
-	if runtime.GOOS == "darwin" { osName = "macos" }
+	if runtime.GOOS == "linux" {
+		osName = "linux"
+	}
+	if runtime.GOOS == "darwin" {
+		osName = "macos"
+	}
 	url := f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s_%s-stable.zip", osName, osName, version))
 	return url, fmt.Sprintf("flutter_%s_%s-stable.zip", osName, version), nil
 }
@@ -104,10 +120,24 @@ func (f *FlutterFetcher) GetLocalStatus() (*SdkStatus, error) {
 	installed := f.cfg.GetInstalledVersions(string(Flutter))
 	active := f.cfg.GetActiveVersion(string(Flutter))
 	configured := active != ""
+
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType: Flutter, DisplayName: SdkDisplayName(Flutter),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("flutter"),
-		CurrentVersion: active,
+		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(Flutter)),
+		NeedsSwitch: needsSwitch,
 	}, nil
 }

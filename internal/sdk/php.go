@@ -25,7 +25,7 @@ func NewPHPFetcher(cfg *config.Config, sm *config.SettingsManager) *PHPFetcher {
 }
 
 func (f *PHPFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *PHPFetcher) StripArchiveTopDir() bool           { return true }
+func (f *PHPFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *PHPFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -39,7 +39,7 @@ func (f *PHPFetcher) useEndpoint(defaultURL string) string {
 	defaultURL = strings.Replace(defaultURL, "https://www.php.net", custom, -1)
 	return defaultURL
 }
-func (f *PHPFetcher) Type() SdkType                { return PHP }
+func (f *PHPFetcher) Type() SdkType { return PHP }
 func (f *PHPFetcher) GetBinDir() string {
 	if runtime.GOOS != "windows" {
 		return "bin"
@@ -69,7 +69,9 @@ func (f *PHPFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	matches := re.FindAllStringSubmatch(string(body), -1)
 	for _, m := range matches {
 		ver := m[1]
-		if seen[ver] { continue }
+		if seen[ver] {
+			continue
+		}
 		seen[ver] = true
 		parts := strings.Split(ver, ".")
 		major, _ := strconv.Atoi(parts[0])
@@ -107,10 +109,24 @@ func (f *PHPFetcher) GetLocalStatus() (*SdkStatus, error) {
 	installed := f.cfg.GetInstalledVersions(string(PHP))
 	active := f.cfg.GetActiveVersion(string(PHP))
 	configured := active != ""
+
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType: PHP, DisplayName: SdkDisplayName(PHP),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("php"),
-		CurrentVersion: active,
+		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(PHP)),
+		NeedsSwitch: needsSwitch,
 	}, nil
 }

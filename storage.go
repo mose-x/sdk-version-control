@@ -29,10 +29,7 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 	logger.Info("Uninstalling %s version: %s", sdkType, version)
 
 	active := a.cfg.GetActiveVersion(sdkType)
-	if active == version {
-		logger.Warn("Cannot uninstall active version: %s %s", sdkType, version)
-		return fmt.Errorf("cannot uninstall the currently active version, please switch to another version first")
-	}
+	wasActive := active == version
 
 	versionDir := a.cfg.SdkVersionDir(sdkType, version)
 	if _, err := os.Stat(versionDir); os.IsNotExist(err) {
@@ -43,6 +40,14 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 	if err := os.RemoveAll(versionDir); err != nil {
 		logger.Error("Failed to delete version directory %s: %v", versionDir, err)
 		return fmt.Errorf("failed to delete version directory: %w", err)
+	}
+
+	// If we deleted the active version, clear the active version config
+	if wasActive {
+		logger.Info("Deleted active version, clearing active version config")
+		a.cfg.ClearActiveVersion(sdkType)
+		// Return special error to signal frontend to refresh and show warning
+		return fmt.Errorf("ACTIVE_VERSION_DELETED:%s", sdkType)
 	}
 
 	logger.Info("Successfully uninstalled %s version %s", sdkType, version)

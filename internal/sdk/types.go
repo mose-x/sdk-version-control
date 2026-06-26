@@ -53,20 +53,20 @@ func IsCommandAvailable(cmd string) bool {
 type SdkType string
 
 const (
-	NodeJS SdkType = "nodejs"
-	JDK    SdkType = "jdk"
-	Golang SdkType = "go"
-	Python SdkType = "python"
-	Rust   SdkType = "rust"
-	Ruby   SdkType = "ruby"
-	DotNet SdkType = "dotnet"
-	PHP    SdkType = "php"
-	Perl   SdkType = "perl"
-	Maven  SdkType = "maven"
-	Gradle SdkType = "gradle"
-	Flutter  SdkType = "flutter"
-	Android  SdkType = "android"
-	Dart     SdkType = "dart"
+	NodeJS  SdkType = "nodejs"
+	JDK     SdkType = "jdk"
+	Golang  SdkType = "go"
+	Python  SdkType = "python"
+	Rust    SdkType = "rust"
+	Ruby    SdkType = "ruby"
+	DotNet  SdkType = "dotnet"
+	PHP     SdkType = "php"
+	Perl    SdkType = "perl"
+	Maven   SdkType = "maven"
+	Gradle  SdkType = "gradle"
+	Flutter SdkType = "flutter"
+	Android SdkType = "android"
+	Dart    SdkType = "dart"
 )
 
 // AllSdkTypes returns all supported SDK types (in display order)
@@ -133,12 +133,13 @@ type VersionInfo struct {
 type SdkStatus struct {
 	SdkType           SdkType  `json:"sdkType"`
 	DisplayName       string   `json:"displayName"`
-	Configured        bool     `json:"configured"`        // configured in .svc
-	PathConfigured    bool     `json:"pathConfigured"`    // present in PATH but not in .svc
-	PathVersion       string   `json:"pathVersion"`       // version detected in PATH
+	Configured        bool     `json:"configured"`     // configured in .svc
+	PathConfigured    bool     `json:"pathConfigured"` // present in PATH but not in .svc
+	PathVersion       string   `json:"pathVersion"`    // version detected in PATH
 	CurrentVersion    string   `json:"currentVersion"`
 	InstalledVersions []string `json:"installedVersions"`
 	InstallPath       string   `json:"installPath"`
+	NeedsSwitch       bool     `json:"needsSwitch"` // true if currentVersion is not in installedVersions (dangling reference)
 }
 
 // InstallProgress is the install progress (pushed to the frontend via Wails Events)

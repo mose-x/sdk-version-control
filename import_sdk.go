@@ -36,6 +36,9 @@ func (a *App) SelectLocalDir() (string, error) {
 }
 
 func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
+	if a.registry == nil {
+		return fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}
@@ -157,6 +160,9 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 }
 
 func (a *App) ImportPathSdk(sdkTypeStr string) error {
+	if a.registry == nil {
+		return fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import {
   HomeOutlined,
   ImportOutlined,
   SyncOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import { Tooltip, Modal, App } from 'antd'
 import { useTranslation } from 'react-i18next'
@@ -261,6 +262,10 @@ const Sidebar: React.FC<SidebarProps> = ({ statuses, selectedSdk, downloadingSdk
                   </div>
                   {downloadingSdks.has(status.sdkType) ? (
                     <SyncOutlined spin style={{ color: '#1677ff', fontSize: 14 }} />
+                  ) : status.needsSwitch ? (
+                    <Tooltip title={t('sidebar.needsSwitch')}>
+                      <WarningOutlined style={{ color: '#faad14', fontSize: 16 }} />
+                    </Tooltip>
                   ) : (
                     <div className={`sdk-item-status ${
                       status.configured ? 'configured' :

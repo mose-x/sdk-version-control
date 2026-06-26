@@ -24,7 +24,7 @@ func NewRubyFetcher(cfg *config.Config, sm *config.SettingsManager) *RubyFetcher
 }
 
 func (f *RubyFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *RubyFetcher) StripArchiveTopDir() bool           { return true }
+func (f *RubyFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *RubyFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -38,8 +38,8 @@ func (f *RubyFetcher) useEndpoint(defaultURL string) string {
 	defaultURL = strings.Replace(defaultURL, "https://cache.ruby-lang.org", custom, -1)
 	return defaultURL
 }
-func (f *RubyFetcher) Type() SdkType                 { return Ruby }
-func (f *RubyFetcher) GetBinDir() string              { return "bin" }
+func (f *RubyFetcher) Type() SdkType                      { return Ruby }
+func (f *RubyFetcher) GetBinDir() string                  { return "bin" }
 func (f *RubyFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *RubyFetcher) VerifyCommand() (string, []string)  { return "ruby", []string{"--version"} }
 
@@ -63,17 +63,25 @@ func (f *RubyFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			return nil, fmt.Errorf("failed to parse Ruby version data: %w", err)
 		}
 		resp.Body.Close()
-		if len(releases) == 0 { break }
+		if len(releases) == 0 {
+			break
+		}
 
 		for _, r := range releases {
-			if r.Draft || r.Prerelease { continue }
+			if r.Draft || r.Prerelease {
+				continue
+			}
 			tag := strings.TrimPrefix(r.TagName, "RubyInstaller-")
 			tag = strings.TrimPrefix(tag, "v")
 			// Only keep pure version numbers
 			ver := tag
-			if idx := strings.Index(tag, "-"); idx > 0 { ver = tag[:idx] }
+			if idx := strings.Index(tag, "-"); idx > 0 {
+				ver = tag[:idx]
+			}
 			parts := strings.Split(ver, ".")
-			if len(parts) < 2 { continue }
+			if len(parts) < 2 {
+				continue
+			}
 			major, _ := strconv.Atoi(parts[0])
 			date := ""
 			if t, err := time.Parse(time.RFC3339, r.PublishedAt); err == nil {
@@ -121,10 +129,24 @@ func (f *RubyFetcher) GetLocalStatus() (*SdkStatus, error) {
 	installed := f.cfg.GetInstalledVersions(string(Ruby))
 	active := f.cfg.GetActiveVersion(string(Ruby))
 	configured := active != ""
+
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType: Ruby, DisplayName: SdkDisplayName(Ruby),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("ruby"),
-		CurrentVersion: active,
+		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(Ruby)),
+		NeedsSwitch: needsSwitch,
 	}, nil
 }

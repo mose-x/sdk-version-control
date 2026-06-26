@@ -18,7 +18,8 @@
     "importConfirm": "Import {{sdk}} into SVC?",
     "importConfirmDesc": "This will detect the SDK in PATH, copy it to the SVC managed directory, and update environment variables.",
     "importSuccess": "{{sdk}} imported successfully!",
-    "importFail": "Import failed: {{error}}"
+    "importFail": "Import failed: {{error}}",
+    "needsSwitch": "Active version missing, please switch to another version"
   },
   "categories": {
     "runtime": "Runtime & Languages",
@@ -73,8 +74,12 @@
     "systemConflictMsg": "The following system-level environment variables were detected and may prevent SVC configuration from taking effect. Please remove them manually and restart your terminal:",
     "uninstallConfirm": "Uninstall {{sdk}} {{version}}?",
     "uninstallConfirmDesc": "This will permanently delete all local files for this version",
+    "uninstallActiveConfirm": "Uninstall Active Version {{sdk}} {{version}}?",
+    "uninstallActiveConfirmDesc": "This is the currently active version. Uninstalling will clear the active configuration. Please switch to another version if available.",
     "uninstallSuccess": "{{version}} uninstalled",
     "uninstallFail": "Uninstall failed: {{error}}",
+    "activeVersionDeleted": "{{sdk}} active version deleted. Please switch to another installed version.",
+    "needsSwitch": "Current version is no longer installed. Please switch to another version.",
     "pmInstallSuccess": "{{name}} installed successfully",
     "pmInstallFail": "{{name}} install failed: {{error}}",
     "pmUpdateSuccess": "{{name}} updated successfully",

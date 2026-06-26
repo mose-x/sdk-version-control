@@ -25,7 +25,7 @@ func NewJdkFetcher(cfg *config.Config, sm *config.SettingsManager) *JdkFetcher {
 }
 
 func (f *JdkFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *JdkFetcher) StripArchiveTopDir() bool           { return true }
+func (f *JdkFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *JdkFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -169,6 +169,18 @@ func (f *JdkFetcher) GetLocalStatus() (*SdkStatus, error) {
 	active := f.cfg.GetActiveVersion(string(JDK))
 	configured := active != ""
 
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType:           JDK,
 		DisplayName:       SdkDisplayName(JDK),
@@ -177,6 +189,7 @@ func (f *JdkFetcher) GetLocalStatus() (*SdkStatus, error) {
 		CurrentVersion:    active,
 		InstalledVersions: installed,
 		InstallPath:       f.cfg.SdkDir(string(JDK)),
+		NeedsSwitch:       needsSwitch,
 	}, nil
 }
 

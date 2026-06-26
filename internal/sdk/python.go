@@ -179,6 +179,18 @@ func (f *PythonFetcher) GetLocalStatus() (*SdkStatus, error) {
 	active := f.cfg.GetActiveVersion(string(Python))
 	configured := active != ""
 
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType:           Python,
 		DisplayName:       SdkDisplayName(Python),
@@ -187,5 +199,6 @@ func (f *PythonFetcher) GetLocalStatus() (*SdkStatus, error) {
 		CurrentVersion:    active,
 		InstalledVersions: installed,
 		InstallPath:       f.cfg.SdkDir(string(Python)),
+		NeedsSwitch:       needsSwitch,
 	}, nil
 }

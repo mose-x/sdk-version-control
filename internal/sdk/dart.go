@@ -25,7 +25,7 @@ func NewDartFetcher(cfg *config.Config, sm *config.SettingsManager) *DartFetcher
 }
 
 func (f *DartFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *DartFetcher) StripArchiveTopDir() bool           { return false }
+func (f *DartFetcher) StripArchiveTopDir() bool          { return false }
 
 func (f *DartFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -37,8 +37,8 @@ func (f *DartFetcher) useEndpoint(defaultURL string) string {
 	}
 	return strings.Replace(defaultURL, "https://storage.googleapis.com", custom, -1)
 }
-func (f *DartFetcher) Type() SdkType                 { return Dart }
-func (f *DartFetcher) GetBinDir() string              { return "dart-sdk/bin" }
+func (f *DartFetcher) Type() SdkType                      { return Dart }
+func (f *DartFetcher) GetBinDir() string                  { return "dart-sdk/bin" }
 func (f *DartFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *DartFetcher) VerifyCommand() (string, []string)  { return "dart", []string{"--version"} }
 
@@ -137,10 +137,24 @@ func (f *DartFetcher) GetLocalStatus() (*SdkStatus, error) {
 	installed := f.cfg.GetInstalledVersions(string(Dart))
 	active := f.cfg.GetActiveVersion(string(Dart))
 	configured := active != ""
+
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType: Dart, DisplayName: SdkDisplayName(Dart),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("dart"),
-		CurrentVersion: active,
+		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(Dart)),
+		NeedsSwitch: needsSwitch,
 	}, nil
 }

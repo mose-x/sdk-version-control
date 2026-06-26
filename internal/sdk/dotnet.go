@@ -24,7 +24,7 @@ func NewDotNetFetcher(cfg *config.Config, sm *config.SettingsManager) *DotNetFet
 }
 
 func (f *DotNetFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *DotNetFetcher) StripArchiveTopDir() bool           { return true }
+func (f *DotNetFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *DotNetFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -37,8 +37,8 @@ func (f *DotNetFetcher) useEndpoint(defaultURL string) string {
 	defaultURL = strings.Replace(defaultURL, "https://dotnetcli.blob.core.windows.net", custom, -1)
 	return strings.Replace(defaultURL, "https://dotnetcli.azureedge.net", custom, -1)
 }
-func (f *DotNetFetcher) Type() SdkType                  { return DotNet }
-func (f *DotNetFetcher) GetBinDir() string               { return "" }
+func (f *DotNetFetcher) Type() SdkType     { return DotNet }
+func (f *DotNetFetcher) GetBinDir() string { return "" }
 func (f *DotNetFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{"DOTNET_ROOT": ""}
 }
@@ -85,20 +85,28 @@ func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 
 func (f *DotNetFetcher) buildURL(version string) string {
 	rid := "win-x64"
-	if runtime.GOOS == "linux" { rid = "linux-x64" }
+	if runtime.GOOS == "linux" {
+		rid = "linux-x64"
+	}
 	if runtime.GOOS == "darwin" {
 		rid = "osx-x64"
-		if runtime.GOARCH == "arm64" { rid = "osx-arm64" }
+		if runtime.GOARCH == "arm64" {
+			rid = "osx-arm64"
+		}
 	}
 	return f.useEndpoint(fmt.Sprintf("https://dotnetcli.azureedge.net/dotnet/Sdk/%s/dotnet-sdk-%s-%s.zip", version, version, rid))
 }
 
 func (f *DotNetFetcher) buildFileName(version string) string {
 	rid := "win-x64"
-	if runtime.GOOS == "linux" { rid = "linux-x64" }
+	if runtime.GOOS == "linux" {
+		rid = "linux-x64"
+	}
 	if runtime.GOOS == "darwin" {
 		rid = "osx-x64"
-		if runtime.GOARCH == "arm64" { rid = "osx-arm64" }
+		if runtime.GOARCH == "arm64" {
+			rid = "osx-arm64"
+		}
 	}
 	return fmt.Sprintf("dotnet-sdk-%s-%s.zip", version, rid)
 }
@@ -111,10 +119,24 @@ func (f *DotNetFetcher) GetLocalStatus() (*SdkStatus, error) {
 	installed := f.cfg.GetInstalledVersions(string(DotNet))
 	active := f.cfg.GetActiveVersion(string(DotNet))
 	configured := active != ""
+
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType: DotNet, DisplayName: SdkDisplayName(DotNet),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("dotnet"),
-		CurrentVersion: active,
+		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(DotNet)),
+		NeedsSwitch: needsSwitch,
 	}, nil
 }

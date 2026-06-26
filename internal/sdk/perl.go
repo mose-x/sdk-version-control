@@ -25,7 +25,7 @@ func NewPerlFetcher(cfg *config.Config, sm *config.SettingsManager) *PerlFetcher
 }
 
 func (f *PerlFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *PerlFetcher) StripArchiveTopDir() bool           { return false }
+func (f *PerlFetcher) StripArchiveTopDir() bool          { return false }
 
 func (f *PerlFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -37,8 +37,8 @@ func (f *PerlFetcher) useEndpoint(defaultURL string) string {
 	}
 	return strings.Replace(defaultURL, "https://strawberryperl.com", custom, -1)
 }
-func (f *PerlFetcher) Type() SdkType                 { return Perl }
-func (f *PerlFetcher) GetBinDir() string              { return "perl/bin" }
+func (f *PerlFetcher) Type() SdkType                      { return Perl }
+func (f *PerlFetcher) GetBinDir() string                  { return "perl/bin" }
 func (f *PerlFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *PerlFetcher) VerifyCommand() (string, []string)  { return "perl", []string{"--version"} }
 
@@ -62,7 +62,9 @@ func (f *PerlFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	matches := re.FindAllStringSubmatch(string(body), -1)
 	for _, m := range matches {
 		ver := m[1]
-		if seen[ver] { continue }
+		if seen[ver] {
+			continue
+		}
 		seen[ver] = true
 		parts := strings.Split(ver, ".")
 		major, _ := strconv.Atoi(parts[0])
@@ -100,10 +102,24 @@ func (f *PerlFetcher) GetLocalStatus() (*SdkStatus, error) {
 	installed := f.cfg.GetInstalledVersions(string(Perl))
 	active := f.cfg.GetActiveVersion(string(Perl))
 	configured := active != ""
+
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType: Perl, DisplayName: SdkDisplayName(Perl),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("perl"),
-		CurrentVersion: active,
+		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(Perl)),
+		NeedsSwitch: needsSwitch,
 	}, nil
 }

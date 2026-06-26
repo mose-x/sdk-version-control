@@ -112,6 +112,18 @@ func (f *MavenFetcher) GetLocalStatus() (*SdkStatus, error) {
 	active := f.cfg.GetActiveVersion(string(Maven))
 	configured := active != ""
 
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType:           Maven,
 		DisplayName:       SdkDisplayName(Maven),
@@ -120,5 +132,6 @@ func (f *MavenFetcher) GetLocalStatus() (*SdkStatus, error) {
 		CurrentVersion:    active,
 		InstalledVersions: installed,
 		InstallPath:       f.cfg.SdkDir(string(Maven)),
+		NeedsSwitch:      needsSwitch,
 	}, nil
 }

@@ -14,6 +14,9 @@ import (
 )
 
 func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
+	if a.registry == nil {
+		return nil
+	}
 	var statuses []sdk.SdkStatus
 	for _, f := range a.registry.All() {
 		status, err := f.GetLocalStatus()
@@ -35,6 +38,9 @@ func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
 }
 
 func (a *App) GetSdkStatus(sdkType string) (*sdk.SdkStatus, error) {
+	if a.registry == nil {
+		return nil, fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
@@ -46,6 +52,9 @@ func (a *App) GetSdkStatus(sdkType string) (*sdk.SdkStatus, error) {
 }
 
 func (a *App) CheckSystemConflicts(sdkType string) ([]string, error) {
+	if a.registry == nil {
+		return nil, fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
@@ -63,6 +72,9 @@ func (a *App) CheckSystemConflicts(sdkType string) ([]string, error) {
 }
 
 func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
+	if a.registry == nil {
+		return nil, fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
@@ -78,6 +90,9 @@ func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
 }
 
 func (a *App) InstallSdk(sdkTypeStr string, version string) error {
+	if a.registry == nil {
+		return fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}
@@ -190,6 +205,9 @@ func (a *App) GetInstallDir(sdkType string) string {
 }
 
 func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
+	if a.registry == nil {
+		return fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}
@@ -225,6 +243,9 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 }
 
 func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) {
+	if a.registry == nil {
+		return "", fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkType); err != nil {
 		return "", err
 	}
@@ -243,6 +264,9 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 }
 
 func (a *App) DetectPathVersion(sdkType string) string {
+	if a.registry == nil {
+		return ""
+	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
 		return ""

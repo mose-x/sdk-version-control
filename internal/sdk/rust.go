@@ -142,10 +142,24 @@ func (f *RustFetcher) GetLocalStatus() (*SdkStatus, error) {
 	installed := f.cfg.GetInstalledVersions(string(Rust))
 	active := f.cfg.GetActiveVersion(string(Rust))
 	configured := active != ""
+
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType: Rust, DisplayName: SdkDisplayName(Rust),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("rustc"),
 		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(Rust)),
+		NeedsSwitch: needsSwitch,
 	}, nil
 }

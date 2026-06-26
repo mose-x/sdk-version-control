@@ -24,7 +24,7 @@ func NewAndroidFetcher(cfg *config.Config, sm *config.SettingsManager) *AndroidF
 }
 
 func (f *AndroidFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *AndroidFetcher) StripArchiveTopDir() bool           { return false }
+func (f *AndroidFetcher) StripArchiveTopDir() bool          { return false }
 
 func (f *AndroidFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -36,16 +36,18 @@ func (f *AndroidFetcher) useEndpoint(defaultURL string) string {
 	}
 	return strings.Replace(defaultURL, "https://dl.google.com", custom, -1)
 }
-func (f *AndroidFetcher) Type() SdkType                    { return Android }
-func (f *AndroidFetcher) GetBinDir() string                 { return "cmdline-tools/latest/bin" }
+func (f *AndroidFetcher) Type() SdkType     { return Android }
+func (f *AndroidFetcher) GetBinDir() string { return "cmdline-tools/latest/bin" }
 func (f *AndroidFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{"ANDROID_HOME": "", "ANDROID_SDK_ROOT": ""}
 }
-func (f *AndroidFetcher) VerifyCommand() (string, []string) { return "sdkmanager", []string{"--version"} }
+func (f *AndroidFetcher) VerifyCommand() (string, []string) {
+	return "sdkmanager", []string{"--version"}
+}
 
 // Android repository XML structure
 type androidRepository struct {
-	XMLName xml.Name         `xml:"sdk-repository"`
+	XMLName  xml.Name         `xml:"sdk-repository"`
 	Packages []androidPackage `xml:"remotePackage"`
 }
 
@@ -88,8 +90,12 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	}
 
 	osKey := "windows"
-	if runtime.GOOS == "linux" { osKey = "linux" }
-	if runtime.GOOS == "darwin" { osKey = "macosx" }
+	if runtime.GOOS == "linux" {
+		osKey = "linux"
+	}
+	if runtime.GOOS == "darwin" {
+		osKey = "macosx"
+	}
 
 	seen := make(map[string]bool)
 	var versions []VersionInfo
@@ -98,7 +104,9 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			continue
 		}
 		ver := fmt.Sprintf("%d.%d.%d", pkg.Revision.Major, pkg.Revision.Minor, pkg.Revision.Micro)
-		if seen[ver] { continue }
+		if seen[ver] {
+			continue
+		}
 		seen[ver] = true
 
 		// Find the download URL matching the current platform
@@ -134,8 +142,12 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 
 func (f *AndroidFetcher) fallbackVersions() []VersionInfo {
 	osKey := "win"
-	if runtime.GOOS == "linux" { osKey = "linux" }
-	if runtime.GOOS == "darwin" { osKey = "mac" }
+	if runtime.GOOS == "linux" {
+		osKey = "linux"
+	}
+	if runtime.GOOS == "darwin" {
+		osKey = "mac"
+	}
 	build := "14742923"
 	return []VersionInfo{{
 		Version:     "14.0",
@@ -154,8 +166,12 @@ func (f *AndroidFetcher) GetDownloadURL(version string) (string, string, error) 
 		}
 	}
 	osKey := "win"
-	if runtime.GOOS == "linux" { osKey = "linux" }
-	if runtime.GOOS == "darwin" { osKey = "mac" }
+	if runtime.GOOS == "linux" {
+		osKey = "linux"
+	}
+	if runtime.GOOS == "darwin" {
+		osKey = "mac"
+	}
 	build := "14742923"
 	return f.useEndpoint(fmt.Sprintf("https://dl.google.com/android/repository/commandlinetools-%s-%s_latest.zip", osKey, build)),
 		fmt.Sprintf("commandlinetools-%s-%s_latest.zip", osKey, build), nil
@@ -165,10 +181,24 @@ func (f *AndroidFetcher) GetLocalStatus() (*SdkStatus, error) {
 	installed := f.cfg.GetInstalledVersions(string(Android))
 	active := f.cfg.GetActiveVersion(string(Android))
 	configured := active != ""
+
+	needsSwitch := false
+	if active != "" {
+		found := false
+		for _, v := range installed {
+			if v == active {
+				found = true
+				break
+			}
+		}
+		needsSwitch = !found
+	}
+
 	return &SdkStatus{
 		SdkType: Android, DisplayName: SdkDisplayName(Android),
 		Configured: configured, PathConfigured: !configured && IsCommandAvailable("sdkmanager"),
-		CurrentVersion: active,
+		CurrentVersion:    active,
 		InstalledVersions: installed, InstallPath: f.cfg.SdkDir(string(Android)),
+		NeedsSwitch: needsSwitch,
 	}, nil
 }
