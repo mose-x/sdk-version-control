@@ -38,7 +38,7 @@ func (f *PerlFetcher) useEndpoint(defaultURL string) string {
 	return strings.Replace(defaultURL, "https://strawberryperl.com", custom, -1)
 }
 func (f *PerlFetcher) Type() SdkType                      { return Perl }
-func (f *PerlFetcher) GetBinDir() string                  { return "perl/bin" }
+func (f *PerlFetcher) GetBinDirs() []string               { return []string{"perl/bin"} }
 func (f *PerlFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *PerlFetcher) VerifyCommand() (string, []string)  { return "perl", []string{"--version"} }
 

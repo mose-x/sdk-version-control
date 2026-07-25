@@ -41,8 +41,8 @@ func (f *MavenFetcher) Type() SdkType {
 	return Maven
 }
 
-func (f *MavenFetcher) GetBinDir() string {
-	return "bin"
+func (f *MavenFetcher) GetBinDirs() []string {
+	return []string{"bin"}
 }
 
 func (f *MavenFetcher) GetExtraEnvVars() map[string]string {

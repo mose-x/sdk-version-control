@@ -36,8 +36,8 @@ func (f *FlutterFetcher) useEndpoint(defaultURL string) string {
 	}
 	return strings.Replace(defaultURL, "https://storage.googleapis.com", custom, -1)
 }
-func (f *FlutterFetcher) Type() SdkType     { return Flutter }
-func (f *FlutterFetcher) GetBinDir() string { return "bin" }
+func (f *FlutterFetcher) Type() SdkType        { return Flutter }
+func (f *FlutterFetcher) GetBinDirs() []string { return []string{"bin"} }
 func (f *FlutterFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{"FLUTTER_ROOT": ""}
 }

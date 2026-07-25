@@ -50,11 +50,11 @@ func (f *NodejsFetcher) Type() SdkType {
 	return NodeJS
 }
 
-func (f *NodejsFetcher) GetBinDir() string {
+func (f *NodejsFetcher) GetBinDirs() []string {
 	if config.IsWindows() {
-		return "" // node.exe is in the root directory on Windows
+		return []string{""} // node.exe is in the root directory on Windows
 	}
-	return "bin"
+	return []string{"bin"}
 }
 
 func (f *NodejsFetcher) GetExtraEnvVars() map[string]string {

@@ -33,17 +33,23 @@ func (m *UnixPathManager) SetShimManager(mgr ShimConfigurer) {
 	m.shim = mgr
 }
 
-func (m *UnixPathManager) ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error {
+func (m *UnixPathManager) ConfigureSdk(sdkType string, versionDir string, binDirs []string, extraEnvVars map[string]string) error {
 	// Shims model: delegate entirely to the shim manager.
 	if m.shim != nil {
-		return m.shim.ConfigureSdk(sdkType, versionDir, binDir, extraEnvVars)
+		return m.shim.ConfigureSdk(sdkType, versionDir, binDirs, extraEnvVars)
 	}
 
 	// Legacy fallback (no shim manager injected): write env.sh + shell rc.
-	binPath := versionDir
-	if binDir != "" {
-		binPath = filepath.Join(versionDir, binDir)
+	// Join all binDirs into the PATH (first one is the primary).
+	var binPaths []string
+	for _, binDir := range binDirs {
+		binPath := versionDir
+		if binDir != "" {
+			binPath = filepath.Join(versionDir, binDir)
+		}
+		binPaths = append(binPaths, binPath)
 	}
+	binPath := strings.Join(binPaths, ":")
 
 	if err := m.writeEnvSh(sdkType, binPath, extraEnvVars, versionDir); err != nil {
 		return fmt.Errorf("failed to write env.sh: %w", err)

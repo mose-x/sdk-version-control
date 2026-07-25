@@ -78,7 +78,7 @@ func (a *App) MigrateInstallPath(newPath string) error {
 		}
 		versionDir := a.cfg.SdkVersionDir(sdkTypeStr, activeVersion)
 		logger.Info("Re-configuring: %s %s", sdkTypeStr, activeVersion)
-		if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDir(), f.GetExtraEnvVars()); err != nil {
+		if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 			logger.Warn("Failed to re-configure %s: %v", sdkTypeStr, err)
 		}
 	}

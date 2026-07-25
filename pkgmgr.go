@@ -95,7 +95,7 @@ func (a *App) UpdatePackageManager(name string) error {
 	}
 }
 
-// buildSdkPath builds a PATH containing only the bin directory of the specified SDK's active version
+// buildSdkPath builds a PATH containing only the bin directories of the specified SDK's active version
 func (a *App) buildSdkPath(parent sdk.SdkType) string {
 	active := a.cfg.GetActiveVersion(string(parent))
 	if active == "" {
@@ -106,8 +106,19 @@ func (a *App) buildSdkPath(parent sdk.SdkType) string {
 		return ""
 	}
 	versionDir := a.cfg.SdkVersionDir(string(parent), active)
-	binDir := filepath.Join(versionDir, f.GetBinDir())
-	return binDir
+	var paths []string
+	for _, binDir := range f.GetBinDirs() {
+		if binDir == "" {
+			paths = append(paths, versionDir)
+		} else {
+			paths = append(paths, filepath.Join(versionDir, binDir))
+		}
+	}
+	sep := ":"
+	if os.PathListSeparator == ';' {
+		sep = ";"
+	}
+	return strings.Join(paths, sep)
 }
 
 // resolveInPath looks up a command in the specified PATH (bypasses system PATH)

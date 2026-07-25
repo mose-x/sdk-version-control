@@ -106,12 +106,12 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	binDir := ""
+	binDirs := []string{""}
 	if _, err := os.Stat(filepath.Join(targetDir, "bin")); err == nil {
-		binDir = "bin"
+		binDirs = []string{"bin"}
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDir, nil); err != nil {
+	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, nil); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
@@ -144,12 +144,12 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	binDir := ""
+	binDirs := []string{""}
 	if _, err := os.Stat(filepath.Join(targetDir, "bin")); err == nil {
-		binDir = "bin"
+		binDirs = []string{"bin"}
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDir, nil); err != nil {
+	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDirs, nil); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
@@ -202,12 +202,12 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	relBinDir := ""
+	relBinDirs := []string{""}
 	if isDir(filepath.Join(targetDir, "bin")) {
-		relBinDir = "bin"
+		relBinDirs = []string{"bin"}
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, relBinDir, f.GetExtraEnvVars()); err != nil {
+	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, relBinDirs, f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
