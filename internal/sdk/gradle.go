@@ -41,8 +41,8 @@ func (f *GradleFetcher) Type() SdkType {
 	return Gradle
 }
 
-func (f *GradleFetcher) GetBinDir() string {
-	return "bin"
+func (f *GradleFetcher) GetBinDirs() []string {
+	return []string{"bin"}
 }
 
 func (f *GradleFetcher) GetExtraEnvVars() map[string]string {

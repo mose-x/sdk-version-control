@@ -43,11 +43,11 @@ func (f *PythonFetcher) Type() SdkType {
 	return Python
 }
 
-func (f *PythonFetcher) GetBinDir() string {
+func (f *PythonFetcher) GetBinDirs() []string {
 	if config.IsWindows() {
-		return "" // python.exe is in the root directory
+		return []string{""} // python.exe is in the root directory
 	}
-	return "bin"
+	return []string{"bin"}
 }
 
 func (f *PythonFetcher) GetExtraEnvVars() map[string]string {

@@ -10,8 +10,12 @@ type VersionFetcher interface {
 	GetLocalStatus() (*SdkStatus, error)
 	// GetDownloadURL returns the download link for the specified version on the current OS
 	GetDownloadURL(version string) (string, string, error)
-	// GetBinDir returns the relative path of the bin directory after install (relative to the version directory)
-	GetBinDir() string
+	// GetBinDirs returns the relative paths of the bin directories after install
+	// (relative to the version directory). Most SDKs have a single bin dir, but
+	// some (e.g. Rust tarball) ship commands across multiple dirs (cargo/bin,
+	// rustc/bin, rustfmt-preview/bin). Order matters: earlier dirs win on name
+	// conflicts. An empty string means the version root itself is the bin dir.
+	GetBinDirs() []string
 	// GetExtraEnvVars returns the additional env vars that need to be set (e.g. JAVA_HOME, GOROOT)
 	// key -> value mapping; value is the path relative to the version install directory
 	GetExtraEnvVars() map[string]string

@@ -37,8 +37,8 @@ func (f *DotNetFetcher) useEndpoint(defaultURL string) string {
 	defaultURL = strings.Replace(defaultURL, "https://dotnetcli.blob.core.windows.net", custom, -1)
 	return strings.Replace(defaultURL, "https://dotnetcli.azureedge.net", custom, -1)
 }
-func (f *DotNetFetcher) Type() SdkType     { return DotNet }
-func (f *DotNetFetcher) GetBinDir() string { return "" }
+func (f *DotNetFetcher) Type() SdkType        { return DotNet }
+func (f *DotNetFetcher) GetBinDirs() []string { return []string{""} }
 func (f *DotNetFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{"DOTNET_ROOT": ""}
 }

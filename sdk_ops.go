@@ -175,7 +175,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 
 	logger.Info("Extraction completed, configuring environment...")
 	a.emitProgress(sdkType, version, "configuring_path", 0, "Configuring environment...", 0, 0, 0, downloadURL)
-	if err := a.pathMgr.ConfigureSdk(string(sdkType), versionDir, f.GetBinDir(), f.GetExtraEnvVars()); err != nil {
+	if err := a.pathMgr.ConfigureSdk(string(sdkType), versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
@@ -228,7 +228,7 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 		return fmt.Errorf("version directory does not exist: %s", version)
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDir(), f.GetExtraEnvVars()); err != nil {
+	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 		logger.Error("Failed to configure PATH for %s %s: %v", sdkTypeStr, version, err)
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}

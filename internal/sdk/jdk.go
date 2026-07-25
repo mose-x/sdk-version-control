@@ -42,8 +42,8 @@ func (f *JdkFetcher) Type() SdkType {
 	return JDK
 }
 
-func (f *JdkFetcher) GetBinDir() string {
-	return "bin"
+func (f *JdkFetcher) GetBinDirs() []string {
+	return []string{"bin"}
 }
 
 func (f *JdkFetcher) GetExtraEnvVars() map[string]string {

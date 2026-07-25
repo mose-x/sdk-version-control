@@ -16,7 +16,7 @@ type ShimConfig struct {
 
 // SdkShimEntry describes how to route a command for a given SDK type
 type SdkShimEntry struct {
-	BinDir  string            `json:"binDir"`  // relative bin dir (e.g. "bin", "go/bin")
+	BinDirs []string          `json:"binDirs"` // relative bin dirs (e.g. ["bin"], ["go/bin"], ["cargo/bin","rustc/bin"]); "" = versionDir itself
 	EnvVars map[string]string `json:"envVars"` // key -> relative path ("" = versionDir itself)
 }
 
@@ -75,14 +75,10 @@ func Run() {
 	}
 
 	versionDir := filepath.Join(svcHome, sdkType, version)
-	binPath := versionDir
-	if sdkCfg.BinDir != "" {
-		binPath = filepath.Join(versionDir, sdkCfg.BinDir)
-	}
 
-	realBinary := resolveRealBinary(binPath, inv.Command)
+	realBinary := resolveRealBinaryMulti(versionDir, sdkCfg.BinDirs, inv.Command)
 	if realBinary == "" {
-		fmt.Fprintf(os.Stderr, "shim: executable not found for %q in %s\n", inv.Command, binPath)
+		fmt.Fprintf(os.Stderr, "shim: executable not found for %q under %s\n", inv.Command, versionDir)
 		os.Exit(1)
 	}
 
@@ -96,6 +92,23 @@ func Run() {
 	}
 
 	execBinary(realBinary, inv.Args)
+}
+
+// resolveRealBinaryMulti finds the real executable for a command by trying
+// each binDir (relative to versionDir) in order. First match wins. This
+// supports SDKs that ship commands across multiple bin directories (e.g. Rust
+// tarball has cargo/bin, rustc/bin, rustfmt-preview/bin).
+func resolveRealBinaryMulti(versionDir string, binDirs []string, name string) string {
+	for _, binDir := range binDirs {
+		binPath := versionDir
+		if binDir != "" {
+			binPath = filepath.Join(versionDir, binDir)
+		}
+		if p := resolveRealBinary(binPath, name); p != "" {
+			return p
+		}
+	}
+	return ""
 }
 
 // resolveRealBinary finds the real executable for a command name in binPath.

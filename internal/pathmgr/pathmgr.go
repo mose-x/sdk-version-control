@@ -13,15 +13,15 @@ type PathEntry struct {
 // through the shims model (one shims dir in PATH + .svc.rc), instead of
 // writing per-SDK entries to shell rc files or the registry PATH.
 type ShimConfigurer interface {
-	ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error
+	ConfigureSdk(sdkType string, versionDir string, binDirs []string, extraEnvVars map[string]string) error
 	RemoveSdk(sdkType string, extraEnvVars map[string]string) error
 	EnsureSetup() error
 }
 
 // PathManager manages system PATH environment variables
 type PathManager interface {
-	// ConfigureSdk adds the specified SDK version's bin directory to PATH (persistent)
-	ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error
+	// ConfigureSdk adds the specified SDK version's bin directories to PATH (persistent)
+	ConfigureSdk(sdkType string, versionDir string, binDirs []string, extraEnvVars map[string]string) error
 	// RemoveSdk removes the specified SDK from PATH
 	RemoveSdk(sdkType string, extraEnvVars map[string]string) error
 	// GetCurrentConfig returns the PATH entries currently managed by SVC

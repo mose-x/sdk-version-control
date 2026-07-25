@@ -79,23 +79,20 @@ func (m *Manager) ensureShimBinary() error {
 	return nil
 }
 
-// ConfigureSdk creates shims for all executables in the SDK's bin directory,
-// updates shims.json with the command→sdkType mapping, and updates .svc.rc.
-func (m *Manager) ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error {
-	// Compute the bin directory path
-	binPath := versionDir
-	if binDir != "" {
-		binPath = filepath.Join(versionDir, binDir)
-	}
-
-	// Scan the bin directory for executables and create shims
-	createdShims, err := m.createShimsForDir(binPath, sdkType)
+// ConfigureSdk creates shims for all executables across the SDK's bin
+// directories, updates shims.json with the command→sdkType mapping, and
+// updates .svc.rc. binDirs are relative to versionDir; "" means versionDir
+// itself. Earlier binDirs win on command-name conflicts (first match wins).
+func (m *Manager) ConfigureSdk(sdkType string, versionDir string, binDirs []string, extraEnvVars map[string]string) error {
+	// Scan all bin directories for executables and create shims.
+	// Commands are deduped by name across dirs (first dir wins).
+	createdShims, err := m.createShimsForDirs(versionDir, binDirs, sdkType)
 	if err != nil {
 		logger.Warn("Failed to create some shims for %s: %v", sdkType, err)
 	}
 
 	// Update shims.json with the SDK config
-	if err := m.updateShimConfig(sdkType, binDir, extraEnvVars, createdShims); err != nil {
+	if err := m.updateShimConfig(sdkType, binDirs, extraEnvVars, createdShims); err != nil {
 		return fmt.Errorf("failed to update shim config: %w", err)
 	}
 
@@ -134,46 +131,53 @@ func (m *Manager) RemoveSdk(sdkType string, extraEnvVars map[string]string) erro
 	return nil
 }
 
-// createShimsForDir scans a directory and creates a shim for each executable.
-// On Windows it shims .exe (via hardlink) and .cmd/.bat (via wrapper scripts);
-// on Unix it shims every file with an executable bit. Commands are deduped by
-// name (without extension); the first match wins (e.g. npm.exe shadows npm.cmd).
-func (m *Manager) createShimsForDir(dir string, sdkType string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read bin directory %s: %w", dir, err)
-	}
-
+// createShimsForDirs scans all bin directories (relative to versionDir) and
+// creates a shim for each executable. Commands are deduped by name across all
+// dirs: the first dir (in binDirs order) that provides a command wins. This
+// matters for SDKs like Rust where cargo/bin hardlinks to rustc/bin/rustc;
+// we want cargo/bin's copy to be the one shimmed (it is the merged entry).
+func (m *Manager) createShimsForDirs(versionDir string, binDirs []string, sdkType string) ([]string, error) {
 	created := make(map[string]bool)
 	var result []string
-	for _, entry := range entries {
-		if entry.IsDir() {
+	for _, binDir := range binDirs {
+		binPath := versionDir
+		if binDir != "" {
+			binPath = filepath.Join(versionDir, binDir)
+		}
+		entries, err := os.ReadDir(binPath)
+		if err != nil {
+			logger.Warn("Cannot read bin directory %s: %v", binPath, err)
 			continue
 		}
-		name := entry.Name()
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
 
-		cmdName, ext, ok := classifyExecutable(name)
-		if !ok {
-			continue
-		}
-		if runtime.GOOS != "windows" {
-			info, err := entry.Info()
-			if err != nil {
+			cmdName, ext, ok := classifyExecutable(name)
+			if !ok {
 				continue
 			}
-			if info.Mode().Perm()&0111 == 0 {
+			if runtime.GOOS != "windows" {
+				info, err := entry.Info()
+				if err != nil {
+					continue
+				}
+				if info.Mode().Perm()&0111 == 0 {
+					continue
+				}
+			}
+			if created[cmdName] {
 				continue
 			}
+			if err := m.createShimFor(cmdName, ext); err != nil {
+				logger.Warn("Failed to create shim for %s: %v", name, err)
+				continue
+			}
+			created[cmdName] = true
+			result = append(result, cmdName)
 		}
-		if created[cmdName] {
-			continue
-		}
-		if err := m.createShimFor(cmdName, ext); err != nil {
-			logger.Warn("Failed to create shim for %s: %v", name, err)
-			continue
-		}
-		created[cmdName] = true
-		result = append(result, cmdName)
 	}
 
 	return result, nil
@@ -200,6 +204,11 @@ func classifyExecutable(name string) (cmdName, ext string, ok bool) {
 
 // createShimFor creates a shim for a command.
 //   - "" or ".exe" (Unix, or Windows .exe): hardlink to the base shim binary.
+//     On Unix, if the base shim is itself a symlink (rare), resolve it first
+//     so the hardlink points at the real file, not a possibly-stale symlink
+//     node. This matters when SDKs ship commands as symlinks (pip -> pip3);
+//     a hardlink to a symlink survives the link being retargeted only if the
+//     hardlink is to the symlink itself, but resolving avoids edge cases.
 //   - ".cmd"/".bat" (Windows): write a wrapper batch script that delegates to
 //     svc-shim.exe with the command name as argv[1], so the shim runtime can
 //     route it to the active SDK version. A hardlink cannot be used here
@@ -209,10 +218,18 @@ func (m *Manager) createShimFor(cmdName, ext string) error {
 		shimPath := m.getShimBinaryPath()
 		linkPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
 		os.Remove(linkPath)
-		if err := os.Link(shimPath, linkPath); err == nil {
+		// Resolve symlinks on Unix so the hardlink targets the real file.
+		// On Windows os.Stat already follows; SymlinkTarget is not needed.
+		target := shimPath
+		if runtime.GOOS != "windows" {
+			if resolved, err := filepath.EvalSymlinks(shimPath); err == nil {
+				target = resolved
+			}
+		}
+		if err := os.Link(target, linkPath); err == nil {
 			return nil
 		}
-		return copyFile(shimPath, linkPath, 0755)
+		return copyFile(target, linkPath, 0755)
 	}
 
 	// Windows .cmd / .bat wrapper. %~dp0 resolves to the shims directory.
@@ -242,7 +259,7 @@ func (m *Manager) getShimBinaryPath() string {
 }
 
 // updateShimConfig updates shims.json with the SDK type config and its commands.
-func (m *Manager) updateShimConfig(sdkType string, binDir string, envVars map[string]string, commands []string) error {
+func (m *Manager) updateShimConfig(sdkType string, binDirs []string, envVars map[string]string, commands []string) error {
 	cfgPath := m.cfg.ShimsConfigPath()
 	cfg := m.loadShimConfig()
 
@@ -272,7 +289,7 @@ func (m *Manager) updateShimConfig(sdkType string, binDir string, envVars map[st
 
 	// Update SDK type config
 	cfg.SdkTypes[sdkType] = shim.SdkShimEntry{
-		BinDir:  binDir,
+		BinDirs: binDirs,
 		EnvVars: envVars,
 	}
 

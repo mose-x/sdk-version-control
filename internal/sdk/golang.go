@@ -41,8 +41,8 @@ func (f *GolangFetcher) Type() SdkType {
 	return Golang
 }
 
-func (f *GolangFetcher) GetBinDir() string {
-	return "go/bin" // After extraction Go has a go/ subdirectory
+func (f *GolangFetcher) GetBinDirs() []string {
+	return []string{"go/bin"} // After extraction Go has a go/ subdirectory
 }
 
 func (f *GolangFetcher) GetExtraEnvVars() map[string]string {

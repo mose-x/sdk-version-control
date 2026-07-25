@@ -37,22 +37,24 @@ func (m *WindowsPathManager) SetShimManager(mgr ShimConfigurer) {
 	m.shim = mgr
 }
 
-func (m *WindowsPathManager) ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error {
+func (m *WindowsPathManager) ConfigureSdk(sdkType string, versionDir string, binDirs []string, extraEnvVars map[string]string) error {
 	// Shims model: delegate entirely to the shim manager. The shim manager
 	// creates shims, updates shims.json, writes env vars to the registry, and
 	// keeps .svc.rc in sync. The user PATH already contains only the shims dir.
 	if m.shim != nil {
-		return m.shim.ConfigureSdk(sdkType, versionDir, binDir, extraEnvVars)
+		return m.shim.ConfigureSdk(sdkType, versionDir, binDirs, extraEnvVars)
 	}
 
 	// Legacy fallback (no shim manager injected): write per-SDK PATH entries.
-	binPath := versionDir
-	if binDir != "" {
-		binPath = filepath.Join(versionDir, binDir)
-	}
-
-	if err := m.addToUserPath(binPath, sdkType); err != nil {
-		return fmt.Errorf("failed to add to user PATH: %w", err)
+	// Add each binDir to PATH (first one is primary).
+	for _, binDir := range binDirs {
+		binPath := versionDir
+		if binDir != "" {
+			binPath = filepath.Join(versionDir, binDir)
+		}
+		if err := m.addToUserPath(binPath, sdkType); err != nil {
+			return fmt.Errorf("failed to add to user PATH: %w", err)
+		}
 	}
 
 	for key, relPath := range extraEnvVars {

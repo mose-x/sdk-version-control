@@ -38,7 +38,7 @@ func (f *DartFetcher) useEndpoint(defaultURL string) string {
 	return strings.Replace(defaultURL, "https://storage.googleapis.com", custom, -1)
 }
 func (f *DartFetcher) Type() SdkType                      { return Dart }
-func (f *DartFetcher) GetBinDir() string                  { return "dart-sdk/bin" }
+func (f *DartFetcher) GetBinDirs() []string               { return []string{"dart-sdk/bin"} }
 func (f *DartFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *DartFetcher) VerifyCommand() (string, []string)  { return "dart", []string{"--version"} }
 

@@ -40,11 +40,11 @@ func (f *PHPFetcher) useEndpoint(defaultURL string) string {
 	return defaultURL
 }
 func (f *PHPFetcher) Type() SdkType { return PHP }
-func (f *PHPFetcher) GetBinDir() string {
+func (f *PHPFetcher) GetBinDirs() []string {
 	if runtime.GOOS != "windows" {
-		return "bin"
+		return []string{"bin"}
 	}
-	return ""
+	return []string{""}
 }
 func (f *PHPFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *PHPFetcher) VerifyCommand() (string, []string)  { return "php", []string{"--version"} }

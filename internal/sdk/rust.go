@@ -37,8 +37,14 @@ func (f *RustFetcher) useEndpoint(defaultURL string) string {
 	return strings.Replace(defaultURL, "https://static.rust-lang.org", custom, -1)
 }
 
-func (f *RustFetcher) Type() SdkType     { return Rust }
-func (f *RustFetcher) GetBinDir() string { return "cargo/bin" }
+func (f *RustFetcher) Type() SdkType { return Rust }
+func (f *RustFetcher) GetBinDirs() []string {
+	// Rust tarball ships commands across multiple bin dirs. cargo/bin is the
+	// merged entry (hardlinks to the others), listed first so it wins on
+	// conflicts. rustc/bin and rustfmt-preview/bin hold the real files, listed
+	// as fallback in case hardlinks were lost during cross-filesystem extract.
+	return []string{"cargo/bin", "rustc/bin", "rustfmt-preview/bin"}
+}
 func (f *RustFetcher) GetExtraEnvVars() map[string]string {
 	return nil
 }

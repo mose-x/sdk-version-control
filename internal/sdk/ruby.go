@@ -39,7 +39,7 @@ func (f *RubyFetcher) useEndpoint(defaultURL string) string {
 	return defaultURL
 }
 func (f *RubyFetcher) Type() SdkType                      { return Ruby }
-func (f *RubyFetcher) GetBinDir() string                  { return "bin" }
+func (f *RubyFetcher) GetBinDirs() []string               { return []string{"bin"} }
 func (f *RubyFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *RubyFetcher) VerifyCommand() (string, []string)  { return "ruby", []string{"--version"} }
 
