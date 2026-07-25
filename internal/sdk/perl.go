@@ -37,8 +37,17 @@ func (f *PerlFetcher) useEndpoint(defaultURL string) string {
 	}
 	return strings.Replace(defaultURL, "https://strawberryperl.com", custom, -1)
 }
-func (f *PerlFetcher) Type() SdkType                      { return Perl }
-func (f *PerlFetcher) GetBinDirs() []string               { return []string{"perl/bin"} }
+func (f *PerlFetcher) Type() SdkType { return Perl }
+func (f *PerlFetcher) GetBinDirs() []string {
+	// Strawberry Perl (Windows portable) ships commands across two bin dirs:
+	//   - perl/bin: perl.exe, cpan, prove, pl2bat, perldoc, ...
+	//   - c/bin: bundled MinGW toolchain (gcc, g++, dmake, make, patch, tar, ...)
+	// Both are added to PATH by the official installer. Listing perl/bin first
+	// so it wins on name conflicts (e.g. a perl-shipped tool vs a MinGW one).
+	// On Unix this fetcher pulls the source tarball; neither dir exists until
+	// built, but createShimsForDirs skips missing dirs safely.
+	return []string{"perl/bin", "c/bin"}
+}
 func (f *PerlFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *PerlFetcher) VerifyCommand() (string, []string)  { return "perl", []string{"--version"} }
 
