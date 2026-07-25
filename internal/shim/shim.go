@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 )
 
 // ShimConfig is the shims.json structure that maps commands to SDK types
@@ -32,10 +31,11 @@ type settings struct {
 }
 
 // Run executes the shim: looks up the real binary and execs it.
-// This is called when the app binary is invoked via a hardlink named after a command.
+// This is called when the app binary is invoked via a hardlink named after a
+// command, or via a .cmd/.bat wrapper that delegates to svc-shim.exe.
 func Run() {
-	name := shimName()
-	if name == "" {
+	inv := parseInvocation()
+	if inv.Command == "" {
 		fmt.Fprintln(os.Stderr, "shim: cannot determine command name")
 		os.Exit(1)
 	}
@@ -52,9 +52,9 @@ func Run() {
 		os.Exit(1)
 	}
 
-	sdkType, ok := shimCfg.Commands[name]
+	sdkType, ok := shimCfg.Commands[inv.Command]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "shim: unknown command %q\n", name)
+		fmt.Fprintf(os.Stderr, "shim: unknown command %q\n", inv.Command)
 		os.Exit(1)
 	}
 
@@ -80,13 +80,9 @@ func Run() {
 		binPath = filepath.Join(versionDir, sdkCfg.BinDir)
 	}
 
-	realBinary := filepath.Join(binPath, name)
-	if runtime.GOOS == "windows" {
-		realBinary += ".exe"
-	}
-
-	if _, err := os.Stat(realBinary); err != nil {
-		fmt.Fprintf(os.Stderr, "shim: executable not found: %s\n", realBinary)
+	realBinary := resolveRealBinary(binPath, inv.Command)
+	if realBinary == "" {
+		fmt.Fprintf(os.Stderr, "shim: executable not found for %q in %s\n", inv.Command, binPath)
 		os.Exit(1)
 	}
 
@@ -99,22 +95,28 @@ func Run() {
 		os.Setenv(key, val)
 	}
 
-	execBinary(realBinary)
+	execBinary(realBinary, inv.Args)
 }
 
-// shimName extracts the command name from argv[0].
-// e.g. /home/user/.svc/shims/go -> "go"
-//
-//	C:\Users\user\.svc\shims\go.exe -> "go"
-func shimName() string {
-	if len(os.Args) == 0 {
+// resolveRealBinary finds the real executable for a command name in binPath.
+// On Unix: returns <binPath>/<name>. On Windows: tries .exe, .cmd, .bat in
+// order and returns the first existing match (commands may ship as any of
+// these depending on the SDK, e.g. npm.cmd, gradle.bat).
+func resolveRealBinary(binPath, name string) string {
+	if runtime.GOOS == "windows" {
+		for _, ext := range []string{".exe", ".cmd", ".bat"} {
+			candidate := filepath.Join(binPath, name+ext)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
 		return ""
 	}
-	name := filepath.Base(os.Args[0])
-	if runtime.GOOS == "windows" {
-		name = strings.TrimSuffix(name, ".exe")
+	candidate := filepath.Join(binPath, name)
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
 	}
-	return name
+	return ""
 }
 
 // resolveSvcHome finds the .svc directory.
