@@ -1,26 +1,14 @@
 package shim
 
-import (
-	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
-)
+import "strings"
 
 // IsShimMode checks whether the binary was invoked as a shim (i.e. its name
-// is not the app name but a known SDK command). This is determined by reading
-// argv[0] and checking if the name exists in shims.json.
+// is not the app name but a known SDK command). This works for both invocation
+// modes: hardlink (argv[0] is the command name) and wrapper (argv[0] is
+// "svc-shim.exe", argv[1] is the command name).
 func IsShimMode() bool {
-	if len(os.Args) == 0 {
-		return false
-	}
-	name := filepath.Base(os.Args[0])
-	if runtime.GOOS == "windows" {
-		name = strings.TrimSuffix(name, ".exe")
-	}
-
-	// If the name matches the app binary name, it's not shim mode
-	if isAppName(name) {
+	inv := parseInvocation()
+	if inv.Command == "" || isAppName(inv.Command) {
 		return false
 	}
 
@@ -33,7 +21,7 @@ func IsShimMode() bool {
 	if err != nil {
 		return false
 	}
-	_, ok := cfg.Commands[name]
+	_, ok := cfg.Commands[inv.Command]
 	return ok
 }
 
@@ -41,7 +29,7 @@ func IsShimMode() bool {
 func isAppName(name string) bool {
 	lower := strings.ToLower(name)
 	switch lower {
-	case "svc", "sdk_version_control", "sdk version control":
+	case "svc", "svc-shim", "sdk_version_control", "sdk version control":
 		return true
 	}
 	return false

@@ -134,27 +134,29 @@ func (m *Manager) RemoveSdk(sdkType string, extraEnvVars map[string]string) erro
 	return nil
 }
 
-// createShimsForDir scans a directory and creates a shim (hardlink) for each executable.
+// createShimsForDir scans a directory and creates a shim for each executable.
+// On Windows it shims .exe (via hardlink) and .cmd/.bat (via wrapper scripts);
+// on Unix it shims every file with an executable bit. Commands are deduped by
+// name (without extension); the first match wins (e.g. npm.exe shadows npm.cmd).
 func (m *Manager) createShimsForDir(dir string, sdkType string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read bin directory %s: %w", dir, err)
 	}
 
-	var created []string
+	created := make(map[string]bool)
+	var result []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
 
-		// On Windows, only shim .exe files; skip .cmd/.bat (they'd need wrappers)
-		if runtime.GOOS == "windows" {
-			if !strings.HasSuffix(strings.ToLower(name), ".exe") {
-				continue
-			}
-		} else {
-			// On Unix, check if the file is executable
+		cmdName, ext, ok := classifyExecutable(name)
+		if !ok {
+			continue
+		}
+		if runtime.GOOS != "windows" {
 			info, err := entry.Info()
 			if err != nil {
 				continue
@@ -163,38 +165,71 @@ func (m *Manager) createShimsForDir(dir string, sdkType string) ([]string, error
 				continue
 			}
 		}
-
-		if err := m.createShim(name); err != nil {
+		if created[cmdName] {
+			continue
+		}
+		if err := m.createShimFor(cmdName, ext); err != nil {
 			logger.Warn("Failed to create shim for %s: %v", name, err)
 			continue
 		}
-		created = append(created, name)
+		created[cmdName] = true
+		result = append(result, cmdName)
 	}
 
-	return created, nil
+	return result, nil
 }
 
-// createShim creates a hardlink from ~/.svc/shims/{name} → ~/.svc/shims/svc-shim
-func (m *Manager) createShim(name string) error {
-	shimPath := m.getShimBinaryPath()
-	linkPath := filepath.Join(m.cfg.ShimsDir(), name)
+// classifyExecutable splits a filename into command name (without extension),
+// extension, and whether it is shim-able on the current OS.
+func classifyExecutable(name string) (cmdName, ext string, ok bool) {
+	if runtime.GOOS == "windows" {
+		lower := strings.ToLower(name)
+		switch {
+		case strings.HasSuffix(lower, ".exe"):
+			return name[:len(name)-len(".exe")], ".exe", true
+		case strings.HasSuffix(lower, ".cmd"):
+			return name[:len(name)-len(".cmd")], ".cmd", true
+		case strings.HasSuffix(lower, ".bat"):
+			return name[:len(name)-len(".bat")], ".bat", true
+		default:
+			return "", "", false
+		}
+	}
+	return name, "", true
+}
 
-	// Remove existing shim if present
-	os.Remove(linkPath)
-
-	// Try hardlink first (same directory, should always work)
-	if err := os.Link(shimPath, linkPath); err == nil {
-		return nil
+// createShimFor creates a shim for a command.
+//   - "" or ".exe" (Unix, or Windows .exe): hardlink to the base shim binary.
+//   - ".cmd"/".bat" (Windows): write a wrapper batch script that delegates to
+//     svc-shim.exe with the command name as argv[1], so the shim runtime can
+//     route it to the active SDK version. A hardlink cannot be used here
+//     because cmd.exe would try to interpret the PE binary as a batch script.
+func (m *Manager) createShimFor(cmdName, ext string) error {
+	if ext == "" || ext == ".exe" {
+		shimPath := m.getShimBinaryPath()
+		linkPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
+		os.Remove(linkPath)
+		if err := os.Link(shimPath, linkPath); err == nil {
+			return nil
+		}
+		return copyFile(shimPath, linkPath, 0755)
 	}
 
-	// Fallback: copy the shim binary
-	return copyFile(shimPath, linkPath, 0755)
+	// Windows .cmd / .bat wrapper. %~dp0 resolves to the shims directory.
+	wrapperPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
+	content := fmt.Sprintf("@echo off\r\n\"%%~dp0svc-shim.exe\" %s %%*\r\n", cmdName)
+	return os.WriteFile(wrapperPath, []byte(content), 0644)
 }
 
-// removeShim removes a single shim file.
+// removeShim removes a shim and any platform-specific variants for the command.
 func (m *Manager) removeShim(name string) {
-	linkPath := filepath.Join(m.cfg.ShimsDir(), name)
-	os.Remove(linkPath)
+	dir := m.cfg.ShimsDir()
+	os.Remove(filepath.Join(dir, name))
+	if runtime.GOOS == "windows" {
+		os.Remove(filepath.Join(dir, name+".exe"))
+		os.Remove(filepath.Join(dir, name+".cmd"))
+		os.Remove(filepath.Join(dir, name+".bat"))
+	}
 }
 
 // getShimBinaryPath returns the path to the base shim binary.
