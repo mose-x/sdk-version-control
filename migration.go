@@ -58,26 +58,29 @@ func (a *App) MigrateInstallPath(newPath string) error {
 		}
 	}
 
-	logger.Info("Updating PATH configuration for %d active SDKs", len(installedSDKs))
-
-	for sdkTypeStr := range installedSDKs {
-		f := a.registry.Get(sdk.SdkType(sdkTypeStr))
-		if f != nil {
-			logger.Info("Removing old PATH entry for: %s", sdkTypeStr)
-			a.pathMgr.RemoveSdk(sdkTypeStr, f.GetExtraEnvVars())
-		}
-	}
-
+	// Switch the config to the new directory. The shell rc source line points
+	// to the fixed ~/.svc.rc location, so it never needs updating; only the
+	// SVC_HOME variable inside .svc.rc changes.
 	a.cfg.SetSvcDir(newDir)
 
+	// Re-run shim setup at the new location: recreates the shims dir, refreshes
+	// the shim binary, and regenerates .svc.rc with the new SVC_HOME.
+	if err := a.shimMgr.EnsureSetup(); err != nil {
+		logger.Warn("Shim setup at new location failed: %v", err)
+	}
+
+	// Re-create shims for every active SDK at the new install path.
+	logger.Info("Re-configuring %d active SDKs at new location", len(installedSDKs))
 	for sdkTypeStr, activeVersion := range installedSDKs {
 		f := a.registry.Get(sdk.SdkType(sdkTypeStr))
 		if f == nil {
 			continue
 		}
 		versionDir := a.cfg.SdkVersionDir(sdkTypeStr, activeVersion)
-		logger.Info("Adding new PATH entry for: %s %s", sdkTypeStr, activeVersion)
-		a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDir(), f.GetExtraEnvVars())
+		logger.Info("Re-configuring: %s %s", sdkTypeStr, activeVersion)
+		if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDir(), f.GetExtraEnvVars()); err != nil {
+			logger.Warn("Failed to re-configure %s: %v", sdkTypeStr, err)
+		}
 	}
 
 	s := a.settings.Get()

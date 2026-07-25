@@ -1,0 +1,214 @@
+//go:build !windows
+
+package shimmanager
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"sdk_version_control/internal/config"
+	"sdk_version_control/internal/logger"
+)
+
+// generateRcContent generates the .svc.rc shell script content (Unix).
+func (m *Manager) generateRcContent(envVars []envVarEntry) string {
+	svcHome := m.cfg.SvcDir()
+	home := m.cfg.HomeDir()
+
+	var lines []string
+	lines = append(lines, "# ~/.svc.rc - Managed by SVC. You may edit manually.")
+	lines = append(lines, "# This file is sourced by your shell (one line added to .zshrc/.bashrc).")
+	lines = append(lines, "# Do not move this file; SVC reads it from this exact location.")
+	lines = append(lines, "")
+
+	// Use SVC_HOME variable so migration only needs updating one line
+	if svcHome == filepath.Join(home, ".svc") {
+		lines = append(lines, `export SVC_HOME="$HOME/.svc"`)
+	} else {
+		lines = append(lines, fmt.Sprintf("export SVC_HOME=%q", svcHome))
+	}
+	lines = append(lines, `export PATH="$SVC_HOME/shims:$PATH"`)
+
+	if len(envVars) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "# SDK environment variables (updated on version switch)")
+		for _, e := range envVars {
+			// Use $SVC_HOME prefix where possible for portability
+			val := e.Value
+			if strings.HasPrefix(val, svcHome) {
+				rel, err := filepath.Rel(svcHome, val)
+				if err == nil {
+					val = fmt.Sprintf("$SVC_HOME/%s", rel)
+				}
+			}
+			lines = append(lines, fmt.Sprintf("export %s=%q", e.Key, val))
+		}
+	}
+
+	lines = append(lines, "")
+	return strings.Join(lines, "\n")
+}
+
+// ensurePathEntry adds the source line to the user's default shell rc (one-time).
+func (m *Manager) ensurePathEntry() error {
+	// Detect default shell
+	shell := os.Getenv("SHELL")
+	defaultShell := ""
+	if strings.Contains(shell, "zsh") {
+		defaultShell = "zsh"
+	} else if strings.Contains(shell, "bash") {
+		defaultShell = "bash"
+	} else if strings.Contains(shell, "fish") {
+		defaultShell = "fish"
+	}
+
+	// Add source line to default shell rc
+	written := 0
+	if defaultShell != "" {
+		if err := m.addSourceLine(defaultShell); err != nil {
+			logger.Warn("Failed to add source line to %s: %v", defaultShell, err)
+		} else {
+			written++
+		}
+	}
+
+	// If no default shell detected, try common files
+	if written == 0 {
+		for _, name := range []string{"zsh", "bash"} {
+			if err := m.addSourceLine(name); err == nil {
+				written++
+			}
+		}
+	}
+
+	// Always try fish config (non-fatal if fails)
+	m.addSourceLine("fish")
+
+	if written == 0 {
+		logger.Warn("Could not add source line to any shell config file")
+	}
+
+	return nil
+}
+
+// detectConfiguredShells returns the list of shell config files containing the SVC source line.
+func (m *Manager) detectConfiguredShells() []string {
+	rcPath := m.cfg.RcFilePath()
+	var configured []string
+
+	for _, shell := range config.AvailableShells() {
+		data, err := os.ReadFile(shell.FullPath)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(data), rcPath) || strings.Contains(string(data), ".svc.rc") {
+			configured = append(configured, shell.Name)
+		}
+	}
+
+	return configured
+}
+
+// removeAllSourceLines removes the SVC source line from all shell config files.
+func (m *Manager) removeAllSourceLines() error {
+	rcPath := m.cfg.RcFilePath()
+
+	for _, shell := range config.AvailableShells() {
+		if err := removeSourceLineFromFile(shell.FullPath, rcPath); err != nil {
+			logger.Warn("Failed to remove source line from %s: %v", shell.RcFile, err)
+		}
+	}
+
+	// Also remove fish env file
+	fishEnv := filepath.Join(m.cfg.SvcDir(), "env.sh.fish")
+	os.Remove(fishEnv)
+
+	return nil
+}
+
+// addSourceLine adds the SVC source line to a specific shell config file.
+func (m *Manager) addSourceLine(shellName string) error {
+	rcPath := m.cfg.RcFilePath()
+
+	switch shellName {
+	case "fish":
+		fishRc := filepath.Join(m.cfg.SvcDir(), "env.sh.fish")
+		_ = os.WriteFile(fishRc, []byte(fmt.Sprintf("set -gx PATH %s $PATH\n", filepath.Join(m.cfg.SvcDir(), "shims"))), 0644)
+		fishSourceLine := fmt.Sprintf("test -f %s; and source %s", fishRc, fishRc)
+		fishFile := filepath.Join(m.cfg.HomeDir(), ".config", "fish", "conf.d", "svc.fish")
+		return appendLineIfMissing(fishFile, fishSourceLine, fishRc)
+
+	case "zsh", "bash", "bash_profile", "profile", "zshenv":
+		// Find the file path
+		for _, shell := range config.AvailableShells() {
+			if shell.Name == shellName {
+				sourceLine := fmt.Sprintf(`[[ -f %s ]] && source %s`, rcPath, rcPath)
+				return appendLineIfMissing(shell.FullPath, sourceLine, rcPath)
+			}
+		}
+		return fmt.Errorf("unknown shell: %s", shellName)
+
+	case "powershell":
+		// Not applicable on Unix
+		return nil
+	}
+
+	return fmt.Errorf("unknown shell: %s", shellName)
+}
+
+// appendLineIfMissing appends a line to a file if it doesn't already contain the check string.
+func appendLineIfMissing(filePath, line, checkStr string) error {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Create the file with the line
+			dir := filepath.Dir(filePath)
+			os.MkdirAll(dir, 0755)
+			return os.WriteFile(filePath, []byte(line+"\n"), 0644)
+		}
+		return err
+	}
+
+	if strings.Contains(string(data), checkStr) {
+		return nil // Already has the line
+	}
+
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("\n" + line + "\n")
+	return err
+}
+
+// removeSourceLineFromFile removes all lines containing the check string from a file.
+func removeSourceLineFromFile(filePath, checkStr string) error {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var filtered []string
+	removed := false
+	for _, line := range lines {
+		if strings.Contains(line, checkStr) || strings.Contains(line, ".svc.rc") {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+
+	if !removed {
+		return nil
+	}
+
+	return os.WriteFile(filePath, []byte(strings.Join(filtered, "\n")), 0644)
+}

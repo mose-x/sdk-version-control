@@ -13,9 +13,14 @@ import (
 	"sdk_version_control/internal/logger"
 )
 
-// UnixPathManager handles PATH management on Linux/macOS (via user-level shell config files)
+// UnixPathManager handles PATH management on Linux/macOS.
+// When a ShimConfigurer is injected (via SetShimManager), all SDK configuration
+// is routed through the shims model: a single ~/.svc/shims entry in PATH and a
+// single "source ~/.svc.rc" line in the shell rc. This avoids writing one PATH
+// entry per SDK version.
 type UnixPathManager struct {
-	cfg *config.Config
+	cfg  *config.Config
+	shim ShimConfigurer
 }
 
 // NewPathManager creates a PathManager for Linux/macOS
@@ -23,7 +28,18 @@ func NewPathManager(cfg *config.Config) PathManager {
 	return &UnixPathManager{cfg: cfg}
 }
 
+// SetShimManager injects a shim-based configurator.
+func (m *UnixPathManager) SetShimManager(mgr ShimConfigurer) {
+	m.shim = mgr
+}
+
 func (m *UnixPathManager) ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error {
+	// Shims model: delegate entirely to the shim manager.
+	if m.shim != nil {
+		return m.shim.ConfigureSdk(sdkType, versionDir, binDir, extraEnvVars)
+	}
+
+	// Legacy fallback (no shim manager injected): write env.sh + shell rc.
 	binPath := versionDir
 	if binDir != "" {
 		binPath = filepath.Join(versionDir, binDir)
@@ -45,6 +61,12 @@ func (m *UnixPathManager) ConfigureSdk(sdkType string, versionDir string, binDir
 }
 
 func (m *UnixPathManager) RemoveSdk(sdkType string, extraEnvVars map[string]string) error {
+	// Shims model: delegate entirely to the shim manager.
+	if m.shim != nil {
+		return m.shim.RemoveSdk(sdkType, extraEnvVars)
+	}
+
+	// Legacy fallback.
 	err1 := m.writeEnvSh(sdkType, "", nil, "")
 	err2 := m.writeFishEnvSh(sdkType, "", nil, "")
 	if err1 != nil {

@@ -8,6 +8,16 @@ type PathEntry struct {
 	Source    string `json:"source"`    // "user", "system", or "external"
 }
 
+// ShimConfigurer is implemented by shimmanager.Manager. When injected into a
+// PathManager via SetShimManager, all SDK path/env configuration is routed
+// through the shims model (one shims dir in PATH + .svc.rc), instead of
+// writing per-SDK entries to shell rc files or the registry PATH.
+type ShimConfigurer interface {
+	ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error
+	RemoveSdk(sdkType string, extraEnvVars map[string]string) error
+	EnsureSetup() error
+}
+
 // PathManager manages system PATH environment variables
 type PathManager interface {
 	// ConfigureSdk adds the specified SDK version's bin directory to PATH (persistent)
@@ -24,4 +34,7 @@ type PathManager interface {
 	// DetectSystemConflicts checks whether the system level contains env var configs matching the SDK
 	// Returns the list of conflicting entries; empty list means no conflicts
 	DetectSystemConflicts(sdkType string, envKeys []string) []string
+	// SetShimManager injects a shim-based configurator. Once set, ConfigureSdk
+	// and RemoveSdk delegate to it instead of touching shell rc / registry PATH.
+	SetShimManager(mgr ShimConfigurer)
 }

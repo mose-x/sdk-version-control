@@ -17,9 +17,14 @@ const (
 	userEnvKey   = `Environment`
 )
 
-// WindowsPathManager handles PATH management on Windows (via the user-level registry HKCU)
+// WindowsPathManager handles PATH management on Windows.
+// When a ShimConfigurer is injected (via SetShimManager), all SDK configuration
+// is routed through the shims model: a single shims dir entry is added to the
+// user PATH in the registry (once), and per-SDK env vars are written to the
+// registry by the shim manager. This avoids writing one PATH entry per SDK.
 type WindowsPathManager struct {
-	cfg *config.Config
+	cfg  *config.Config
+	shim ShimConfigurer
 }
 
 // NewPathManager creates a PathManager for Windows
@@ -27,7 +32,20 @@ func NewPathManager(cfg *config.Config) PathManager {
 	return &WindowsPathManager{cfg: cfg}
 }
 
+// SetShimManager injects a shim-based configurator.
+func (m *WindowsPathManager) SetShimManager(mgr ShimConfigurer) {
+	m.shim = mgr
+}
+
 func (m *WindowsPathManager) ConfigureSdk(sdkType string, versionDir string, binDir string, extraEnvVars map[string]string) error {
+	// Shims model: delegate entirely to the shim manager. The shim manager
+	// creates shims, updates shims.json, writes env vars to the registry, and
+	// keeps .svc.rc in sync. The user PATH already contains only the shims dir.
+	if m.shim != nil {
+		return m.shim.ConfigureSdk(sdkType, versionDir, binDir, extraEnvVars)
+	}
+
+	// Legacy fallback (no shim manager injected): write per-SDK PATH entries.
 	binPath := versionDir
 	if binDir != "" {
 		binPath = filepath.Join(versionDir, binDir)
@@ -52,6 +70,12 @@ func (m *WindowsPathManager) ConfigureSdk(sdkType string, versionDir string, bin
 }
 
 func (m *WindowsPathManager) RemoveSdk(sdkType string, extraEnvVars map[string]string) error {
+	// Shims model: delegate entirely to the shim manager.
+	if m.shim != nil {
+		return m.shim.RemoveSdk(sdkType, extraEnvVars)
+	}
+
+	// Legacy fallback.
 	if err := m.removeSvcPathsFromUserPath(sdkType); err != nil {
 		return err
 	}

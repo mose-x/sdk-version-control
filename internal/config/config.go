@@ -11,10 +11,13 @@ import (
 )
 
 const (
-	svcDirName = ".svc"
-	configFile = "config.json"
-	tmpDirName = "tmp"
-	envShFile  = "env.sh"
+	svcDirName    = ".svc"
+	configFile    = "config.json"
+	tmpDirName    = "tmp"
+	envShFile     = "env.sh"
+	shimsDirName  = "shims"
+	shimsCfgFile  = "shims.json"
+	rcFileName    = ".svc.rc"
 )
 
 // Config manages the ~/.svc directory and application configuration
@@ -187,6 +190,21 @@ func (c *Config) GetInstalledVersions(sdkType string) []string {
 // EnvShPath returns the env.sh file path (used on Linux/macOS)
 func (c *Config) EnvShPath() string {
 	return filepath.Join(c.svcDir, envShFile)
+}
+
+// ShimsDir returns the shims directory path (~/.svc/shims)
+func (c *Config) ShimsDir() string {
+	return filepath.Join(c.svcDir, shimsDirName)
+}
+
+// ShimsConfigPath returns the shims.json file path (~/.svc/shims.json)
+func (c *Config) ShimsConfigPath() string {
+	return filepath.Join(c.svcDir, shimsCfgFile)
+}
+
+// RcFilePath returns the .svc.rc file path (~/ .svc.rc, fixed location)
+func (c *Config) RcFilePath() string {
+	return filepath.Join(c.homeDir, rcFileName)
 }
 
 // IsWindows reports whether the current OS is Windows

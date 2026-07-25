@@ -13,6 +13,7 @@ import (
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/pathmgr"
 	"sdk_version_control/internal/sdk"
+	"sdk_version_control/internal/shimmanager"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -27,6 +28,7 @@ type App struct {
 	registry    *sdk.Registry
 	downloader  *downloader.Downloader
 	pathMgr     pathmgr.PathManager
+	shimMgr     *shimmanager.Manager
 	settings    *config.SettingsManager
 	appInfo     AppInfo
 	cancelMu    sync.Mutex
@@ -44,10 +46,15 @@ func NewApp() *App {
 	logger.Init(cfg.SvcDir())
 	logger.Info("Application starting...")
 
+	shimMgr := shimmanager.New(cfg)
+	pathMgr := pathmgr.NewPathManager(cfg)
+	pathMgr.SetShimManager(shimMgr)
+
 	app := &App{
 		cfg:         cfg,
 		settings:    config.NewSettingsManager(cfg.SvcDir()),
-		pathMgr:     pathmgr.NewPathManager(cfg),
+		pathMgr:     pathMgr,
+		shimMgr:     shimMgr,
 		downloader:  downloader.NewDownloader(),
 		cancelFuncs: make(map[string]context.CancelFunc),
 	}
@@ -65,6 +72,13 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.registry = sdk.NewRegistry(a.cfg, a.settings)
 	logger.Info("SDK registry initialized with %d SDK types", len(a.registry.All()))
+
+	// One-time shims setup: creates ~/.svc/shims, installs the shim binary,
+	// and adds the single .svc.rc source line (Unix) / shims PATH entry (Windows).
+	// This is the only place SVC ever touches the shell rc or registry PATH.
+	if err := a.shimMgr.EnsureSetup(); err != nil {
+		logger.Warn("Shim setup failed (run 'svc init' to retry): %v", err)
+	}
 
 	// Clean up temp directory
 	if entries, err := os.ReadDir(a.cfg.TmpDir()); err == nil && len(entries) > 0 {
