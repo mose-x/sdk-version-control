@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -6,28 +6,68 @@ on:
   pull_request:
     branches: [main, dev]
 
+# Cancel in-progress runs for the same ref when a new commit is pushed,
+# so we don't waste CI minutes on superseded PR commits.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GO_VERSION: '1.25'
   NODE_VERSION: '18'
   # Pure-Go build: Wails CGO (webview) is exercised by build.yml on tag
-  # releases. ci.yml uses CGO_ENABLED=0 for fast, dependency-free feedback
+  # releases. CI uses CGO_ENABLED=0 for fast, dependency-free feedback
   # across all three OSes without GTK/webkit dev packages.
   CGO_ENABLED: '0'
 
 jobs:
-  # ---- Build (cross-platform matrix) ----
-  build:
-    name: build (${{ matrix.os }})
+  # Lint runs once on Linux: gofmt + go vet are platform-independent and
+  # running them 3x would just burn CI minutes.
+  lint:
+    name: fmt + vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Check formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "::error::Files need gofmt:"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Go vet
+        run: go vet ./...
+
+  # Tests + build run on all three OSes so Windows-specific code paths
+  # (registry PATH, path_windows.go) and macOS get real regression
+  # coverage instead of only cross-compiling.
+  test:
+    name: test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            file-name: svc
-          - os: macos-latest
-            file-name: svc
-          - os: windows-latest
-            file-name: svc.exe
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -51,83 +91,74 @@ jobs:
           npm ci
           npm run build
 
-      - name: Build Go binary
-        run: go build -o ${{ matrix.file-name }} .
+      - name: Build
+        run: go build ./...
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: svc-${{ matrix.os }}
-          path: ${{ matrix.file-name }}
+      - name: Tests
+        run: go test ./...
 
-  # ---- Test ----
-  test:
-    name: test
+  # commit-lint: enforce commit message + identity rules on every PR commit.
+  # Reuses the code-hooks repo's hooks as the single source of truth:
+  #   - `commit-msg` hook: subject/conventional/ASCII/length/forbidden-token rules
+  #   - `pre-push` hook's `required_email`: author+committer email check
+  # Squash merges generated on GitHub bypass local hooks; this is the CI backstop.
+  commit-lint:
+    name: commit-lint
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
+          fetch-depth: 0  # full history needed to scan the PR commit range
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Build frontend
-        working-directory: frontend
+      - name: Configure SSH deploy key for code-hooks
+        env:
+          CODE_HOOKS_DEPLOY_KEY: ${{ secrets.CODE_HOOKS_DEPLOY_KEY }}
         run: |
-          npm ci
-          npm run build
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CODE_HOOKS_DEPLOY_KEY" > ~/.ssh/code_hooks_deploy_key
+          chmod 600 ~/.ssh/code_hooks_deploy_key
+          # Pin GitHub's well-known ed25519 host key (avoids ssh-keyscan MITM).
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<'EOF'
+          Host github.com
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/code_hooks_deploy_key
+            IdentitiesOnly yes
+          EOF
 
-      - name: Run tests
-        run: go test ./... -v
+      - name: Clone code-hooks (private, via deploy key)
+        run: git clone --depth 1 git@github.com:mose-x/code-hooks.git /tmp/code-hooks
 
-      - name: Cross-compile check (Windows)
-        run: GOOS=windows GOARCH=amd64 go build ./...
-
-      - name: Cross-compile check (macOS)
-        run: GOOS=darwin GOARCH=amd64 go build ./...
-
-  # ---- Lint ----
-  lint:
-    name: lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Build frontend
-        working-directory: frontend
+      - name: Lint commit messages + identities in PR range
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          npm ci
-          npm run build
-
-      - name: Go vet
-        run: go vet ./...
-
-      - name: Go format check
-        run: |
-          if [ -n "$(gofmt -l .)" ]; then
-            echo "::error::Files need gofmt:"
-            gofmt -l .
-            exit 1
-          fi
+          set -euo pipefail
+          # Read required_email from code-hooks/pre-push (single source of truth).
+          required_email=$(grep -E '^required_email=' /tmp/code-hooks/pre-push \
+            | head -1 | sed -E 's/^required_email="([^"]*)".*/\1/')
+          echo "Required email: $required_email"
+          echo "Scanning commits ${BASE:0:7}..${HEAD:0:7}"
+          fail=0
+          for sha in $(git rev-list --reverse "$BASE..$HEAD"); do
+            subj=$(git log -1 --format='%s' "$sha")
+            echo "::group::$sha $subj"
+            # 1. commit-msg rules (subject len, conventional, ASCII, <=200, forbidden tokens)
+            git log -1 --format='%B' "$sha" > /tmp/commit-msg.txt
+            if ! /tmp/code-hooks/commit-msg /tmp/commit-msg.txt; then
+              fail=1
+            fi
+            # 2. author + committer email (mirrors code-hooks/pre-push identity check)
+            ae=$(git log -1 --format='%ae' "$sha")
+            ce=$(git log -1 --format='%ce' "$sha")
+            if [ "$ae" != "$required_email" ] || [ "$ce" != "$required_email" ]; then
+              echo "commit-lint: reject" >&2
+              echo "  $sha: author=$ae committer=$ce (expected $required_email)" >&2
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $fail
