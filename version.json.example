@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "changelog": "## 0.2.0\n- Added proxy connectivity check (Baidu/Google)\n- SDK version list now supports proxy\n- Fixed macOS/Linux build compatibility\n- Refactored code structure",
+  "downloads": {
+    "windows-amd64": {
+      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl.exe",
+      "filename": "SDKVersionControl.exe"
+    },
+    "darwin-amd64": {
+      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl_darwin_amd64.bin",
+      "filename": "SDKVersionControl"
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl_darwin_arm64.bin",
+      "filename": "SDKVersionControl"
+    },
+    "linux-amd64": {
+      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl",
+      "filename": "SDKVersionControl"
+    }
+  }
+}

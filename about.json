@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "buildDate": "2026-06-20",
+  "goVersion": "1.25",
+  "license": "MIT License",
+  "repoUrl": "https://github.com/example/sdk-version-control",
+  "updateUrl": "https://your-oss-bucket.oss-cn-hangzhou.aliyuncs.com/releases/version.json"
+}

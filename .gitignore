@@ -1,0 +1,51 @@
+# Git
+.git/
+
+# Dependencies
+node_modules/
+
+# Build outputs
+build/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Frontend
+frontend/dist/
+frontend/package.json.md5
+
+# Go
+*.test
+*.out
+vendor/
+*.syso
+!winres/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Qoder
+.qoder/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.bak
