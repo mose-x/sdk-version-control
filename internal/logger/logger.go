@@ -19,9 +19,9 @@ const (
 const logsDirName = "logs"
 
 type Logger struct {
-	mu      sync.Mutex
-	logDir  string
-	file    *os.File
+	mu          sync.Mutex
+	logDir      string
+	file        *os.File
 	currentDate string
 }
 

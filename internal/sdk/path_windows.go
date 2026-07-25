@@ -123,9 +123,15 @@ func splitByDriveLetter(s string) []string {
 func cleanUnicode(s string) string {
 	return strings.Map(func(r rune) rune {
 		// Remove Unicode bidirectional control characters and BOM
-		if r >= 0x202A && r <= 0x202E { return -1 }
-		if r >= 0x2066 && r <= 0x2069 { return -1 }
-		if r == 0xFEFF { return -1 }
+		if r >= 0x202A && r <= 0x202E {
+			return -1
+		}
+		if r >= 0x2066 && r <= 0x2069 {
+			return -1
+		}
+		if r == 0xFEFF {
+			return -1
+		}
 		return r
 	}, s)
 }

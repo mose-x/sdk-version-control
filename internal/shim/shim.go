@@ -104,7 +104,8 @@ func Run() {
 
 // shimName extracts the command name from argv[0].
 // e.g. /home/user/.svc/shims/go -> "go"
-//      C:\Users\user\.svc\shims\go.exe -> "go"
+//
+//	C:\Users\user\.svc\shims\go.exe -> "go"
 func shimName() string {
 	if len(os.Args) == 0 {
 		return ""

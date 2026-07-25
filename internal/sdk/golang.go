@@ -24,7 +24,7 @@ func NewGolangFetcher(cfg *config.Config, sm *config.SettingsManager) *GolangFet
 }
 
 func (f *GolangFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *GolangFetcher) StripArchiveTopDir() bool           { return false }
+func (f *GolangFetcher) StripArchiveTopDir() bool          { return false }
 
 func (f *GolangFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {

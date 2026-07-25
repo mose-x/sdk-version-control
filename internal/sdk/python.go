@@ -26,7 +26,7 @@ func NewPythonFetcher(cfg *config.Config, sm *config.SettingsManager) *PythonFet
 }
 
 func (f *PythonFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *PythonFetcher) StripArchiveTopDir() bool           { return true }
+func (f *PythonFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *PythonFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {

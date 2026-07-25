@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	svcDirName    = ".svc"
-	configFile    = "config.json"
-	tmpDirName    = "tmp"
-	envShFile     = "env.sh"
-	shimsDirName  = "shims"
-	shimsCfgFile  = "shims.json"
-	rcFileName    = ".svc.rc"
+	svcDirName   = ".svc"
+	configFile   = "config.json"
+	tmpDirName   = "tmp"
+	envShFile    = "env.sh"
+	shimsDirName = "shims"
+	shimsCfgFile = "shims.json"
+	rcFileName   = ".svc.rc"
 )
 
 // Config manages the ~/.svc directory and application configuration

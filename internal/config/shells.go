@@ -9,7 +9,7 @@ import (
 // ShellInfo describes a shell that can be configured with the SVC source line.
 type ShellInfo struct {
 	Name     string `json:"name"`     // e.g. "zsh", "bash", "fish"
-	 RcFile  string `json:"rcFile"`   // e.g. "~/.zshrc"
+	RcFile   string `json:"rcFile"`   // e.g. "~/.zshrc"
 	FullPath string `json:"fullPath"` // absolute path
 }
 

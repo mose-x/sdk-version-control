@@ -24,7 +24,7 @@ func NewGradleFetcher(cfg *config.Config, sm *config.SettingsManager) *GradleFet
 }
 
 func (f *GradleFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *GradleFetcher) StripArchiveTopDir() bool           { return true }
+func (f *GradleFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *GradleFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -151,6 +151,6 @@ func (f *GradleFetcher) GetLocalStatus() (*SdkStatus, error) {
 		CurrentVersion:    active,
 		InstalledVersions: installed,
 		InstallPath:       f.cfg.SdkDir(string(Gradle)),
-		NeedsSwitch:      needsSwitch,
+		NeedsSwitch:       needsSwitch,
 	}, nil
 }

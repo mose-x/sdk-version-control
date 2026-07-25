@@ -24,7 +24,7 @@ func NewMavenFetcher(cfg *config.Config, sm *config.SettingsManager) *MavenFetch
 }
 
 func (f *MavenFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *MavenFetcher) StripArchiveTopDir() bool           { return true }
+func (f *MavenFetcher) StripArchiveTopDir() bool          { return true }
 
 func (f *MavenFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -132,6 +132,6 @@ func (f *MavenFetcher) GetLocalStatus() (*SdkStatus, error) {
 		CurrentVersion:    active,
 		InstalledVersions: installed,
 		InstallPath:       f.cfg.SdkDir(string(Maven)),
-		NeedsSwitch:      needsSwitch,
+		NeedsSwitch:       needsSwitch,
 	}, nil
 }

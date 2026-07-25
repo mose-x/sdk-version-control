@@ -21,8 +21,8 @@ type ProxySettings struct {
 
 // AppSettings application settings
 type AppSettings struct {
-	Theme           string            `json:"theme"`           // "system", "dark", "light"
-	Language        string            `json:"language"`        // "zh", "en"
+	Theme           string            `json:"theme"`    // "system", "dark", "light"
+	Language        string            `json:"language"` // "zh", "en"
 	Proxy           ProxySettings     `json:"proxy"`
 	Endpoints       map[string]string `json:"endpoints"`       // sdkType -> custom endpoint URL
 	InstallPath     string            `json:"installPath"`     // custom install directory, empty = default ~/.svc

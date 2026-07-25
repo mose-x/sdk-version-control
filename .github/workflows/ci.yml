@@ -1,0 +1,133 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  GO_VERSION: '1.25'
+  NODE_VERSION: '18'
+  # Pure-Go build: Wails CGO (webview) is exercised by build.yml on tag
+  # releases. ci.yml uses CGO_ENABLED=0 for fast, dependency-free feedback
+  # across all three OSes without GTK/webkit dev packages.
+  CGO_ENABLED: '0'
+
+jobs:
+  # ---- Build (cross-platform matrix) ----
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            file-name: svc
+          - os: macos-latest
+            file-name: svc
+          - os: windows-latest
+            file-name: svc.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Go binary
+        run: go build -o ${{ matrix.file-name }} .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: svc-${{ matrix.os }}
+          path: ${{ matrix.file-name }}
+
+  # ---- Test ----
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run tests
+        run: go test ./... -v
+
+      - name: Cross-compile check (Windows)
+        run: GOOS=windows GOARCH=amd64 go build ./...
+
+      - name: Cross-compile check (macOS)
+        run: GOOS=darwin GOARCH=amd64 go build ./...
+
+  # ---- Lint ----
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go format check
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "::error::Files need gofmt:"
+            gofmt -l .
+            exit 1
+          fi
