@@ -136,6 +136,7 @@ export namespace main {
 	    changelog: string;
 	    downloadUrl: string;
 	    filename: string;
+	    sha256: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateInfo(source);
@@ -148,6 +149,7 @@ export namespace main {
 	        this.changelog = source["changelog"];
 	        this.downloadUrl = source["downloadUrl"];
 	        this.filename = source["filename"];
+	        this.sha256 = source["sha256"];
 	    }
 	}
 

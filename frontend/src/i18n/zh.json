@@ -94,7 +94,8 @@
     "error": "下载失败: {{error}}",
     "updateDownloading": "下载中...",
     "updateDownloadProgress": "下载中 {{downloaded}}MB / {{total}}MB",
-    "updateDone": "下载完成"
+    "updateDone": "下载完成",
+    "verifying": "验证完整性中..."
   },
   "path": {
     "title": "系统 PATH 配置",
@@ -133,6 +134,10 @@
     "installPathBackupHint": "迁移前会自动备份当前安装目录到桌面（备份文件命名格式：<原目录名>_backup_<时间戳>）。",
     "checkUpdate": "检查更新",
     "checkUpdateBtn": "检查",
+    "rollbackBtn": "回滚",
+    "rollbackConfirm": "回滚到上一版本？",
+    "rollbackConfirmDesc": "将从上次升级时备份的 .bak 文件恢复上一个版本，然后重启应用。当前版本将被覆盖。",
+    "rollbackFail": "回滚失败: {{error}}",
     "version": "版本信息",
     "license": "开源协议",
     "repo": "项目地址",

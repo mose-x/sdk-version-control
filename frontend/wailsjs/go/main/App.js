@@ -42,8 +42,8 @@ export function DetectPathVersion(arg1) {
   return window['go']['main']['App']['DetectPathVersion'](arg1);
 }
 
-export function DownloadUpdate(arg1) {
-  return window['go']['main']['App']['DownloadUpdate'](arg1);
+export function DownloadUpdate(arg1, arg2) {
+  return window['go']['main']['App']['DownloadUpdate'](arg1, arg2);
 }
 
 export function GetAllSdkStatus() {
@@ -140,6 +140,10 @@ export function InstallSdk(arg1, arg2) {
 
 export function MigrateInstallPath(arg1) {
   return window['go']['main']['App']['MigrateInstallPath'](arg1);
+}
+
+export function RollbackUpdate() {
+  return window['go']['main']['App']['RollbackUpdate']();
 }
 
 export function SaveEndpoints(arg1) {

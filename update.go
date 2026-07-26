@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"runtime"
@@ -39,13 +42,19 @@ func (a *App) GetAppInfo() AppInfo {
 	return a.appInfo
 }
 
+// VersionDownload describes a single platform's update asset. The Sha256 field
+// is optional (older releases may not include it); when present, DownloadUpdate
+// verifies the downloaded file against it before reporting success.
+type VersionDownload struct {
+	URL      string `json:"url"`
+	Filename string `json:"filename"`
+	Sha256   string `json:"sha256,omitempty"`
+}
+
 type VersionJSON struct {
-	Version   string `json:"version"`
-	Changelog string `json:"changelog"`
-	Downloads map[string]struct {
-		URL      string `json:"url"`
-		Filename string `json:"filename"`
-	} `json:"downloads"`
+	Version   string                     `json:"version"`
+	Changelog string                     `json:"changelog"`
+	Downloads map[string]VersionDownload `json:"downloads"`
 }
 
 type UpdateInfo struct {
@@ -54,6 +63,7 @@ type UpdateInfo struct {
 	Changelog     string `json:"changelog"`
 	DownloadURL   string `json:"downloadUrl"`
 	Filename      string `json:"filename"`
+	Sha256        string `json:"sha256"`
 }
 
 func (a *App) CheckUpdate() (UpdateInfo, error) {
@@ -81,19 +91,15 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	hasUpdate := sdk.CompareVersions(remote.Version, a.appInfo.Version) > 0
 
 	platformKey := runtime.GOOS + "-" + runtime.GOARCH
-	dlURL := ""
-	filename := ""
-	if dl, ok := remote.Downloads[platformKey]; ok {
-		dlURL = dl.URL
-		filename = dl.Filename
-	}
+	dl := remote.Downloads[platformKey]
 
 	return UpdateInfo{
 		HasUpdate:     hasUpdate,
 		LatestVersion: remote.Version,
 		Changelog:     remote.Changelog,
-		DownloadURL:   dlURL,
-		Filename:      filename,
+		DownloadURL:   dl.URL,
+		Filename:      dl.Filename,
+		Sha256:        dl.Sha256,
 	}, nil
 }
 
@@ -106,7 +112,10 @@ type UpdateProgress struct {
 	Message          string `json:"message"`
 }
 
-func (a *App) DownloadUpdate(downloadURL string) error {
+// DownloadUpdate fetches the new binary to a temp path, then (if expectedSha256
+// is non-empty) verifies the SHA256 before reporting success. On mismatch the
+// downloaded file is deleted so ApplyUpdate cannot pick up a corrupt payload.
+func (a *App) DownloadUpdate(downloadURL, expectedSha256 string) error {
 	if downloadURL == "" {
 		return fmt.Errorf("download URL is empty")
 	}
@@ -143,6 +152,25 @@ func (a *App) DownloadUpdate(downloadURL string) error {
 		return fmt.Errorf("download failed: %w", err)
 	}
 
+	// Verify integrity if the server published a SHA256 for this asset.
+	// Older releases without the field skip verification (lenient fallback).
+	if expectedSha256 != "" {
+		a.emitUpdateProgress(UpdateProgress{
+			Stage:   "verifying",
+			Percent: 100,
+			Message: "Verifying integrity...",
+		})
+		actual, err := sha256OfFile(tmpPath)
+		if err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("failed to hash downloaded file: %w", err)
+		}
+		if actual != expectedSha256 {
+			os.Remove(tmpPath)
+			return fmt.Errorf("integrity check failed: expected %s, got %s", expectedSha256, actual)
+		}
+	}
+
 	a.emitUpdateProgress(UpdateProgress{
 		Stage:   "done",
 		Percent: 100,
@@ -150,6 +178,20 @@ func (a *App) DownloadUpdate(downloadURL string) error {
 	})
 
 	return nil
+}
+
+// sha256OfFile streams the file through a SHA256 hasher and returns the hex digest.
+func sha256OfFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func (a *App) emitUpdateProgress(p UpdateProgress) {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Radio, Divider, Button, App, Tabs, Descriptions, Switch, Input, Modal, Progress } from 'antd'
+import { Radio, Divider, Button, App, Tabs, Descriptions, Switch, Input, Modal, Progress, Space } from 'antd'
 import {
   SettingOutlined,
   BgColorsOutlined,
@@ -14,9 +14,10 @@ import {
   DeleteOutlined,
   FileTextOutlined,
   ReloadOutlined,
+  UndoOutlined,
 } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
-import { GetSettings, SaveSettings, GetAppInfo, GetDefaultEndpoints, GetEndpoints, SaveEndpoints, GetDefaultInstallPath, GetInstallPath, MigrateInstallPath, CheckUpdate, DownloadUpdate, ApplyUpdate, GetTmpCacheSize, CleanTmpCache, CheckProxy, GetLogFiles, GetLogContent, CleanLogs, GetLogDir, DeleteLogFile } from '../../../wailsjs/go/main/App'
+import { GetSettings, SaveSettings, GetAppInfo, GetDefaultEndpoints, GetEndpoints, SaveEndpoints, GetDefaultInstallPath, GetInstallPath, MigrateInstallPath, CheckUpdate, DownloadUpdate, ApplyUpdate, RollbackUpdate, GetTmpCacheSize, CleanTmpCache, CheckProxy, GetLogFiles, GetLogContent, CleanLogs, GetLogDir, DeleteLogFile } from '../../../wailsjs/go/main/App'
 import { BrowserOpenURL, EventsOn } from '../../../wailsjs/runtime/runtime'
 
 interface AppSettings {
@@ -52,6 +53,7 @@ interface UpdateInfo {
   changelog: string
   downloadUrl: string
   filename: string
+  sha256: string
 }
 
 interface SettingsPageProps {
@@ -303,6 +305,23 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
     } finally {
       setChecking(false)
     }
+  }
+
+  const handleRollback = () => {
+    Modal.confirm({
+      title: t('about.rollbackConfirm'),
+      content: t('about.rollbackConfirmDesc'),
+      okText: t('about.rollbackBtn'),
+      cancelText: t('app.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await RollbackUpdate()
+        } catch (e: any) {
+          msgApi.error(t('about.rollbackFail', { error: e?.message || e }))
+        }
+      },
+    })
   }
 
   // Install path
@@ -837,13 +856,21 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                   <SyncOutlined style={{ marginRight: 8 }} />
                   {t('about.checkUpdate')}
                 </div>
-                <Button
-                  icon={<SyncOutlined spin={checking} />}
-                  onClick={handleCheckUpdate}
-                  loading={checking}
-                >
-                  {t('about.checkUpdateBtn')}
-                </Button>
+                <Space>
+                  <Button
+                    icon={<SyncOutlined spin={checking} />}
+                    onClick={handleCheckUpdate}
+                    loading={checking}
+                  >
+                    {t('about.checkUpdateBtn')}
+                  </Button>
+                  <Button
+                    icon={<UndoOutlined />}
+                    onClick={handleRollback}
+                  >
+                    {t('about.rollbackBtn')}
+                  </Button>
+                </Space>
               </div>
 
               <Divider />
@@ -931,7 +958,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                 setDownloadProgress(null)
                 setDownloadDone(false)
                 try {
-                  await DownloadUpdate(updateInfo.downloadUrl)
+                  await DownloadUpdate(updateInfo.downloadUrl, updateInfo.sha256 || '')
                 } catch (e: any) {
                   setDownloading(false)
                   msgApi.error(t('about.downloadFail', { error: e?.message || e }))
@@ -955,7 +982,9 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                 ? t('progress.updateDone')
                 : downloadProgress.stage === 'downloading'
                   ? t('progress.updateDownloading')
-                  : downloadProgress.message}
+                  : downloadProgress.stage === 'verifying'
+                    ? t('progress.verifying')
+                    : downloadProgress.message}
             </div>
           </div>
         )}
