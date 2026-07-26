@@ -45,16 +45,18 @@ jobs:
         run: |
           wails build -nopackage -platform windows/${{ matrix.arch }} -o SDKVersionControl.exe
           # Wails appends the arch suffix when cross-compiling; normalize to
-          # the plain name so the upload step can find it.
+          # the plain name first, then rename with arch so amd64/arm64 don't
+          # clobber each other when uploaded to the same release.
           if [ -f "build/bin/SDKVersionControl-${{ matrix.arch }}.exe" ] && [ ! -f "build/bin/SDKVersionControl.exe" ]; then
             mv "build/bin/SDKVersionControl-${{ matrix.arch }}.exe" "build/bin/SDKVersionControl.exe"
           fi
+          mv build/bin/SDKVersionControl.exe "build/bin/SDKVersionControl_windows_${{ matrix.arch }}.exe"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SDKVersionControl_windows_${{ matrix.arch }}
-          path: build/bin/SDKVersionControl.exe
+          path: build/bin/SDKVersionControl_windows_${{ matrix.arch }}.exe
 
   # ====== macOS ======
   build-macos:
@@ -155,16 +157,18 @@ jobs:
         run: |
           wails build -platform linux/${{ matrix.arch }} -o SDKVersionControl
           # Wails appends the arch suffix when cross-compiling; normalize to
-          # the plain name so the upload step can find it.
+          # the plain name first, then rename with arch so amd64/arm64 don't
+          # clobber each other when uploaded to the same release.
           if [ -f "build/bin/SDKVersionControl-${{ matrix.arch }}" ] && [ ! -f "build/bin/SDKVersionControl" ]; then
             mv "build/bin/SDKVersionControl-${{ matrix.arch }}" "build/bin/SDKVersionControl"
           fi
+          mv build/bin/SDKVersionControl "build/bin/SDKVersionControl_linux_${{ matrix.arch }}"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SDKVersionControl_linux_${{ matrix.arch }}
-          path: build/bin/SDKVersionControl
+          path: build/bin/SDKVersionControl_linux_${{ matrix.arch }}
 
   # ====== Release ======
   release:
