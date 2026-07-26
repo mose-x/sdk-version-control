@@ -34,6 +34,23 @@ jobs:
           go install github.com/wailsapp/wails/v2/cmd/wails@latest
           go install github.com/tc-hib/go-winres@latest
 
+      - name: Compute version & asset arch
+        # Tag form: refs/tags/v1.2.3 → version 1.2.3
+        # Map Go GOARCH → asset arch following nvm-rust convention (amd64 → x64).
+        # Fallback for workflow_dispatch (no tag): 0.0.0-dev.
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF" ]; then
+            VERSION="0.0.0-dev"
+          fi
+          case "${{ matrix.arch }}" in
+            amd64) ASSET_ARCH="x64" ;;
+            *)     ASSET_ARCH="${{ matrix.arch }}" ;;
+          esac
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
+
       - name: Generate Windows Resources
         run: |
           go-winres make --arch ${{ matrix.arch }} --out resource --no-suffix
@@ -45,18 +62,20 @@ jobs:
         run: |
           wails build -nopackage -platform windows/${{ matrix.arch }} -o SDKVersionControl.exe
           # Wails appends the arch suffix when cross-compiling; normalize to
-          # the plain name first, then rename with arch so amd64/arm64 don't
-          # clobber each other when uploaded to the same release.
+          # the plain name first, then rename with the final asset name so
+          # amd64/arm64 don't clobber each other when uploaded to the same release.
           if [ -f "build/bin/SDKVersionControl-${{ matrix.arch }}.exe" ] && [ ! -f "build/bin/SDKVersionControl.exe" ]; then
             mv "build/bin/SDKVersionControl-${{ matrix.arch }}.exe" "build/bin/SDKVersionControl.exe"
           fi
-          mv build/bin/SDKVersionControl.exe "build/bin/SDKVersionControl_windows_${{ matrix.arch }}.exe"
+          ASSET_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}.exe"
+          mv build/bin/SDKVersionControl.exe "build/bin/${ASSET_NAME}"
+          echo "ASSET_NAME=$ASSET_NAME" >> $GITHUB_ENV
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SDKVersionControl_windows_${{ matrix.arch }}
-          path: build/bin/SDKVersionControl_windows_${{ matrix.arch }}.exe
+          name: ${{ env.ASSET_NAME }}
+          path: build/bin/${{ env.ASSET_NAME }}
 
   # ====== macOS ======
   build-macos:
@@ -81,6 +100,20 @@ jobs:
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
+      - name: Compute version & asset arch
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF" ]; then
+            VERSION="0.0.0-dev"
+          fi
+          case "${{ matrix.arch }}" in
+            amd64) ASSET_ARCH="x64" ;;
+            *)     ASSET_ARCH="${{ matrix.arch }}" ;;
+          esac
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
+
       - name: Build .app
         run: |
           wails build -platform darwin/${{ matrix.arch }} \
@@ -91,27 +124,34 @@ jobs:
         # the macOS .app bundle directory name, while the inner binary keeps
         # the outputfilename ("SDKVersionControl"). Reference the spaced path.
         run: |
+          DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
           hdiutil create -volname "SDKVersionControl" \
             -srcfolder "build/bin/SDK Version Control.app" \
             -ov -format UDZO \
-            build/bin/SDKVersionControl_darwin_${{ matrix.arch }}.dmg
+            "build/bin/${DMG_NAME}"
+          echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
 
       - name: Extract binary for self-update
+        # ApplyUpdate replaces the bare executable inside the .app bundle, not
+        # the bundle itself, so ship the inner binary as a separate .bin asset
+        # for the in-app updater to download.
         run: |
+          BIN_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.bin"
           cp "build/bin/SDK Version Control.app/Contents/MacOS/SDKVersionControl" \
-            build/bin/SDKVersionControl_darwin_${{ matrix.arch }}.bin
+            "build/bin/${BIN_NAME}"
+          echo "BIN_NAME=$BIN_NAME" >> $GITHUB_ENV
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: SDKVersionControl_darwin_${{ matrix.arch }}_dmg
-          path: build/bin/SDKVersionControl_darwin_${{ matrix.arch }}.dmg
+          name: ${{ env.DMG_NAME }}
+          path: build/bin/${{ env.DMG_NAME }}
 
       - name: Upload update binary
         uses: actions/upload-artifact@v4
         with:
-          name: SDKVersionControl_darwin_${{ matrix.arch }}_update
-          path: build/bin/SDKVersionControl_darwin_${{ matrix.arch }}.bin
+          name: ${{ env.BIN_NAME }}
+          path: build/bin/${{ env.BIN_NAME }}
 
   # ====== Linux ======
   build-linux:
@@ -153,22 +193,38 @@ jobs:
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
+      - name: Compute version & asset arch
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF" ]; then
+            VERSION="0.0.0-dev"
+          fi
+          case "${{ matrix.arch }}" in
+            amd64) ASSET_ARCH="x64" ;;
+            *)     ASSET_ARCH="${{ matrix.arch }}" ;;
+          esac
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
+
       - name: Build
         run: |
           wails build -platform linux/${{ matrix.arch }} -o SDKVersionControl
           # Wails appends the arch suffix when cross-compiling; normalize to
-          # the plain name first, then rename with arch so amd64/arm64 don't
-          # clobber each other when uploaded to the same release.
+          # the plain name first, then rename with the final asset name so
+          # amd64/arm64 don't clobber each other when uploaded to the same release.
           if [ -f "build/bin/SDKVersionControl-${{ matrix.arch }}" ] && [ ! -f "build/bin/SDKVersionControl" ]; then
             mv "build/bin/SDKVersionControl-${{ matrix.arch }}" "build/bin/SDKVersionControl"
           fi
-          mv build/bin/SDKVersionControl "build/bin/SDKVersionControl_linux_${{ matrix.arch }}"
+          ASSET_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}"
+          mv build/bin/SDKVersionControl "build/bin/${ASSET_NAME}"
+          echo "ASSET_NAME=$ASSET_NAME" >> $GITHUB_ENV
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SDKVersionControl_linux_${{ matrix.arch }}
-          path: build/bin/SDKVersionControl_linux_${{ matrix.arch }}
+          name: ${{ env.ASSET_NAME }}
+          path: build/bin/${{ env.ASSET_NAME }}
 
   # ====== Release ======
   release:
@@ -180,45 +236,107 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: staging
+          # Flatten all artifacts into staging/ instead of one subdirectory
+          # per artifact (download-artifact's default). Without this, an asset
+          # named `SDKVersionControl-1.0.0-windows-x64.exe` would land at
+          # `staging/SDKVersionControl-1.0.0-windows-x64.exe/SDKVersionControl-1.0.0-windows-x64.exe`,
+          # and the sha256sum glob would match the outer directory rather than
+          # the file, breaking checksum generation. Mirrors nvm-rust's setup.
+          merge-multiple: true
+
+      - name: Generate sha256sums.txt
+        # sha256sums.txt is shipped as a standalone release asset so users
+        # (and the in-app updater via version.json) can verify downloads.
+        # Only binary assets are hashed — sha256sums.txt and version.json
+        # are excluded by the SDKVersionControl-* prefix glob.
+        shell: bash
+        run: |
+          set -eu
+          cd staging
+          sha256sum SDKVersionControl-* > sha256sums.txt
+          echo "---sha256sums.txt---"
+          cat sha256sums.txt
 
       - name: Generate version.json
-        # Auto-generates version metadata for in-app self-update. about.json's
-        # updateUrl points at https://github.com/<repo>/releases/latest/download/version.json
-        # which GitHub redirects to this asset on the latest (non-draft) release.
-        # The 6 download entries match the binaries produced above (macOS uses
-        # the .bin "update binary" rather than the .dmg, since ApplyUpdate
-        # replaces the bare executable, not the .app bundle).
+        # version.json drives in-app self-update. about.json's updateUrl points
+        # at https://github.com/<repo>/releases/latest/download/version.json,
+        # which GitHub 302-redirects to this asset on the latest non-draft
+        # release. Each platform entry carries a `sha256` field so the client
+        # can verify the downloaded binary before swapping it in (defense
+        # against CDN tampering or partial downloads).
+        #
+        # The downloads map keys MUST stay `<runtime.GOOS>-<runtime.GOARCH>`
+        # (e.g. windows-amd64, darwin-arm64) because update.go looks them up
+        # with `runtime.GOOS + "-" + runtime.GOARCH` — Go's GOARCH is amd64,
+        # NOT x64. The asset filename uses x64 (nvm-rust convention), but the
+        # map key uses the Go identifier; url/filename point at the x64 file.
         shell: bash
         run: |
           set -eu
           VERSION="${GITHUB_REF#refs/tags/v}"
           REPO_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
+          cd staging
+
+          sha_field() {
+            local f="$1"
+            # sha256sum prints "<hash>  <file>"; grab just the hash.
+            sha256sum "$f" | awk '{print $1}'
+          }
+
+          WIN_X64_EXE="SDKVersionControl-${VERSION}-windows-x64.exe"
+          WIN_ARM64_EXE="SDKVersionControl-${VERSION}-windows-arm64.exe"
+          MAC_X64_BIN="SDKVersionControl-${VERSION}-macos-x64.bin"
+          MAC_ARM64_BIN="SDKVersionControl-${VERSION}-macos-arm64.bin"
+          LIN_X64="SDKVersionControl-${VERSION}-linux-x64"
+          LIN_ARM64="SDKVersionControl-${VERSION}-linux-arm64"
+
+          WIN_X64_SHA=$(sha_field "$WIN_X64_EXE")
+          WIN_ARM64_SHA=$(sha_field "$WIN_ARM64_EXE")
+          MAC_X64_SHA=$(sha_field "$MAC_X64_BIN")
+          MAC_ARM64_SHA=$(sha_field "$MAC_ARM64_BIN")
+          LIN_X64_SHA=$(sha_field "$LIN_X64")
+          LIN_ARM64_SHA=$(sha_field "$LIN_ARM64")
 
           jq -n \
             --arg version "$VERSION" \
             --arg repo "$REPO_URL" \
+            --arg winX64Exe "$WIN_X64_EXE" \
+            --arg winArm64Exe "$WIN_ARM64_EXE" \
+            --arg macX64Bin "$MAC_X64_BIN" \
+            --arg macArm64Bin "$MAC_ARM64_BIN" \
+            --arg linX64 "$LIN_X64" \
+            --arg linArm64 "$LIN_ARM64" \
+            --arg winX64Sha "$WIN_X64_SHA" \
+            --arg winArm64Sha "$WIN_ARM64_SHA" \
+            --arg macX64Sha "$MAC_X64_SHA" \
+            --arg macArm64Sha "$MAC_ARM64_SHA" \
+            --arg linX64Sha "$LIN_X64_SHA" \
+            --arg linArm64Sha "$LIN_ARM64_SHA" \
             '{
               version: $version,
               changelog: ("Release v" + $version + " — see " + $repo + " for details"),
               downloads: {
-                "windows-amd64": {url: ($repo + "/SDKVersionControl_windows_amd64.exe"), filename: "SDKVersionControl_windows_amd64.exe"},
-                "windows-arm64": {url: ($repo + "/SDKVersionControl_windows_arm64.exe"), filename: "SDKVersionControl_windows_arm64.exe"},
-                "darwin-amd64":  {url: ($repo + "/SDKVersionControl_darwin_amd64.bin"),  filename: "SDKVersionControl"},
-                "darwin-arm64":  {url: ($repo + "/SDKVersionControl_darwin_arm64.bin"),  filename: "SDKVersionControl"},
-                "linux-amd64":   {url: ($repo + "/SDKVersionControl_linux_amd64"),       filename: "SDKVersionControl"},
-                "linux-arm64":   {url: ($repo + "/SDKVersionControl_linux_arm64"),       filename: "SDKVersionControl"}
+                "windows-amd64": {url: ($repo + "/" + $winX64Exe),    filename: $winX64Exe,    sha256: $winX64Sha},
+                "windows-arm64": {url: ($repo + "/" + $winArm64Exe),   filename: $winArm64Exe,  sha256: $winArm64Sha},
+                "darwin-amd64":  {url: ($repo + "/" + $macX64Bin),     filename: "SDKVersionControl", sha256: $macX64Sha},
+                "darwin-arm64":  {url: ($repo + "/" + $macArm64Bin),   filename: "SDKVersionControl", sha256: $macArm64Sha},
+                "linux-amd64":   {url: ($repo + "/" + $linX64),        filename: "SDKVersionControl", sha256: $linX64Sha},
+                "linux-arm64":   {url: ($repo + "/" + $linArm64),      filename: "SDKVersionControl", sha256: $linArm64Sha}
               }
-            }' > artifacts/version.json
+            }' > version.json
 
           echo "Generated version.json:"
-          cat artifacts/version.json
+          cat version.json
 
       - name: Create Release
         # Publish immediately (draft:false) so releases/latest/download/version.json
         # resolves. Edit the body manually afterwards if you want custom notes.
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: |
+            staging/SDKVersionControl-*
+            staging/sha256sums.txt
+            staging/version.json
           draft: false
           generate_release_notes: true

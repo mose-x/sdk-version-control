@@ -26,7 +26,7 @@ export function DeleteLogFile(arg1:string):Promise<void>;
 
 export function DetectPathVersion(arg1:string):Promise<string>;
 
-export function DownloadUpdate(arg1:string):Promise<void>;
+export function DownloadUpdate(arg1:string,arg2:string):Promise<void>;
 
 export function GetAllSdkStatus():Promise<Array<sdk.SdkStatus>>;
 
@@ -75,6 +75,8 @@ export function InstallPackageManager(arg1:string):Promise<void>;
 export function InstallSdk(arg1:string,arg2:string):Promise<void>;
 
 export function MigrateInstallPath(arg1:string):Promise<void>;
+
+export function RollbackUpdate():Promise<void>;
 
 export function SaveEndpoints(arg1:Record<string, string>):Promise<void>;
 

@@ -94,7 +94,8 @@
     "error": "Download failed: {{error}}",
     "updateDownloading": "Downloading...",
     "updateDownloadProgress": "Downloading {{downloaded}}MB / {{total}}MB",
-    "updateDone": "Download complete"
+    "updateDone": "Download complete",
+    "verifying": "Verifying integrity..."
   },
   "path": {
     "title": "System PATH Configuration",
@@ -133,6 +134,10 @@
     "installPathBackupHint": "The current install directory will be automatically backed up to the desktop before migration (backup file name format: <original_dir_name>_backup_<timestamp>).",
     "checkUpdate": "Check for Updates",
     "checkUpdateBtn": "Check",
+    "rollbackBtn": "Rollback",
+    "rollbackConfirm": "Rollback to previous version?",
+    "rollbackConfirmDesc": "This will restore the previous binary from the .bak backup created during the last update, then restart the app. The current version will be lost.",
+    "rollbackFail": "Rollback failed: {{error}}",
     "version": "Version",
     "license": "License",
     "repo": "Repository",
