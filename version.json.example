@@ -1,21 +1,29 @@
 {
-  "version": "0.2.0",
-  "changelog": "## 0.2.0\n- Added proxy connectivity check (Baidu/Google)\n- SDK version list now supports proxy\n- Fixed macOS/Linux build compatibility\n- Refactored code structure",
+  "version": "1.0.0",
+  "changelog": "## 1.0.0\n- First official release\n- Multi-SDK management with cross-platform support (macOS/Windows/Linux, amd64/arm64)\n- Multi-bin directory support (e.g. Rust cargo/bin + rustc/bin)\n- Path migration, version switching, shim mechanism",
   "downloads": {
     "windows-amd64": {
-      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl.exe",
-      "filename": "SDKVersionControl.exe"
+      "url": "https://github.com/mose-x/sdk-version-control/releases/download/v1.0.0/SDKVersionControl_windows_amd64.exe",
+      "filename": "SDKVersionControl_windows_amd64.exe"
+    },
+    "windows-arm64": {
+      "url": "https://github.com/mose-x/sdk-version-control/releases/download/v1.0.0/SDKVersionControl_windows_arm64.exe",
+      "filename": "SDKVersionControl_windows_arm64.exe"
     },
     "darwin-amd64": {
-      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl_darwin_amd64.bin",
+      "url": "https://github.com/mose-x/sdk-version-control/releases/download/v1.0.0/SDKVersionControl_darwin_amd64.bin",
       "filename": "SDKVersionControl"
     },
     "darwin-arm64": {
-      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl_darwin_arm64.bin",
+      "url": "https://github.com/mose-x/sdk-version-control/releases/download/v1.0.0/SDKVersionControl_darwin_arm64.bin",
       "filename": "SDKVersionControl"
     },
     "linux-amd64": {
-      "url": "https://github.com/yourname/sdk-version-control/releases/download/v0.2.0/SDKVersionControl",
+      "url": "https://github.com/mose-x/sdk-version-control/releases/download/v1.0.0/SDKVersionControl_linux_amd64",
+      "filename": "SDKVersionControl"
+    },
+    "linux-arm64": {
+      "url": "https://github.com/mose-x/sdk-version-control/releases/download/v1.0.0/SDKVersionControl_linux_arm64",
       "filename": "SDKVersionControl"
     }
   }
