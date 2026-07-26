@@ -52,7 +52,7 @@ func NewApp() *App {
 
 	app := &App{
 		cfg:         cfg,
-		settings:    config.NewSettingsManager(cfg.SvcDir()),
+		settings:    config.NewSettingsManager(cfg.HomeDir()),
 		pathMgr:     pathMgr,
 		shimMgr:     shimMgr,
 		downloader:  downloader.NewDownloader(),

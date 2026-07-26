@@ -190,6 +190,15 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
+	// Refresh .svc.rc so env var lines (JAVA_HOME, GOROOT, etc.) reflect the
+	// newly-active version. ConfigureSdk ran updateRcFile before SetActiveVersion,
+	// so its env vars pointed at the previous active version; this refresh fixes
+	// that. Non-fatal: the shim runtime reads config.json directly, so a stale
+	// .svc.rc only affects tools that source it directly.
+	if err := a.shimMgr.RefreshRcFile(); err != nil {
+		logger.Warn("Failed to refresh .svc.rc after install: %v", err)
+	}
+
 	logger.Info("Installation complete: %s %s", sdkTypeStr, version)
 	a.emitProgress(sdkType, version, "done", 100, "Installation complete!", 0, 0, 0, downloadURL)
 	return nil
@@ -243,6 +252,11 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 	if err := a.cfg.SetActiveVersion(sdkTypeStr, version); err != nil {
 		logger.Error("Failed to save config for %s %s: %v", sdkTypeStr, version, err)
 		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	// Refresh .svc.rc so env var lines reflect the newly-switched version.
+	if err := a.shimMgr.RefreshRcFile(); err != nil {
+		logger.Warn("Failed to refresh .svc.rc after switch: %v", err)
 	}
 
 	logger.Info("Successfully switched %s to version %s", sdkTypeStr, version)

@@ -83,15 +83,22 @@ func (a *App) MigrateInstallPath(newPath string) error {
 		}
 	}
 
+	logger.Info("Removing old install directory: %s", oldDir)
+	if err := os.RemoveAll(oldDir); err != nil {
+		logger.Warn("Failed to delete old install directory (%s): %v", oldDir, err)
+	}
+
+	// Persist the new installPath in ~/.svc/settings.json AFTER deleting the
+	// old dir. settings.json lives at the fixed ~/.svc/ location (not inside
+	// the install dir), so the shim runtime can always discover the install
+	// path. If oldDir was ~/.svc itself, RemoveAll deleted ~/.svc/settings.json
+	// along with everything else; SettingsManager.save() recreates ~/.svc/ and
+	// writes settings.json fresh here. This MUST run after RemoveAll so the
+	// file is not deleted by the cleanup step.
 	s := a.settings.Get()
 	s.InstallPath = newDir
 	if err := a.settings.Update(s); err != nil {
 		logger.Error("Failed to save settings: %v", err)
-	}
-
-	logger.Info("Removing old install directory: %s", oldDir)
-	if err := os.RemoveAll(oldDir); err != nil {
-		logger.Warn("Failed to delete old install directory (%s): %v", oldDir, err)
 	}
 
 	logger.Info("Install path migration completed successfully")
