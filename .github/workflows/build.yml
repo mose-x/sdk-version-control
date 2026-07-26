@@ -182,9 +182,43 @@ jobs:
         with:
           path: artifacts
 
+      - name: Generate version.json
+        # Auto-generates version metadata for in-app self-update. about.json's
+        # updateUrl points at https://github.com/<repo>/releases/latest/download/version.json
+        # which GitHub redirects to this asset on the latest (non-draft) release.
+        # The 6 download entries match the binaries produced above (macOS uses
+        # the .bin "update binary" rather than the .dmg, since ApplyUpdate
+        # replaces the bare executable, not the .app bundle).
+        shell: bash
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg repo "$REPO_URL" \
+            '{
+              version: $version,
+              changelog: ("Release v" + $version + " — see " + $repo + " for details"),
+              downloads: {
+                "windows-amd64": {url: ($repo + "/SDKVersionControl_windows_amd64.exe"), filename: "SDKVersionControl_windows_amd64.exe"},
+                "windows-arm64": {url: ($repo + "/SDKVersionControl_windows_arm64.exe"), filename: "SDKVersionControl_windows_arm64.exe"},
+                "darwin-amd64":  {url: ($repo + "/SDKVersionControl_darwin_amd64.bin"),  filename: "SDKVersionControl"},
+                "darwin-arm64":  {url: ($repo + "/SDKVersionControl_darwin_arm64.bin"),  filename: "SDKVersionControl"},
+                "linux-amd64":   {url: ($repo + "/SDKVersionControl_linux_amd64"),       filename: "SDKVersionControl"},
+                "linux-arm64":   {url: ($repo + "/SDKVersionControl_linux_arm64"),       filename: "SDKVersionControl"}
+              }
+            }' > artifacts/version.json
+
+          echo "Generated version.json:"
+          cat artifacts/version.json
+
       - name: Create Release
+        # Publish immediately (draft:false) so releases/latest/download/version.json
+        # resolves. Edit the body manually afterwards if you want custom notes.
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          draft: true
+          draft: false
           generate_release_notes: true
