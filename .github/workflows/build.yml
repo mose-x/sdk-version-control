@@ -9,6 +9,12 @@ on:
 jobs:
   # ====== Windows ======
   build-windows:
+    # Wails builds Windows targets without CGO (WebView2 is loaded at runtime
+    # via COM), so arm64 can be cross-compiled on an amd64 runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,23 +36,31 @@ jobs:
 
       - name: Generate Windows Resources
         run: |
-          go-winres make --arch amd64 --out resource --no-suffix
+          go-winres make --arch ${{ matrix.arch }} --out resource --no-suffix
           Rename-Item resource resource.syso
         shell: pwsh
 
       - name: Build
-        run: wails build -nopackage -o SDKVersionControl.exe
+        shell: bash
+        run: |
+          wails build -nopackage -platform windows/${{ matrix.arch }} -o SDKVersionControl.exe
+          # Wails appends the arch suffix when cross-compiling; normalize to
+          # the plain name so the upload step can find it.
+          if [ -f "build/bin/SDKVersionControl-${{ matrix.arch }}.exe" ] && [ ! -f "build/bin/SDKVersionControl.exe" ]; then
+            mv "build/bin/SDKVersionControl-${{ matrix.arch }}.exe" "build/bin/SDKVersionControl.exe"
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SDKVersionControl_windows_amd64
+          name: SDKVersionControl_windows_${{ matrix.arch }}
           path: build/bin/SDKVersionControl.exe
 
   # ====== macOS ======
   build-macos:
     runs-on: macos-latest
     strategy:
+      fail-fast: false
       matrix:
         arch: [amd64, arm64]
     steps:
@@ -103,7 +117,17 @@ jobs:
     # Ubuntu 24.04 (noble) removed in favor of 4.1. Wails v2 does not yet
     # support 4.1 (that lands in Wails v3), so pin to ubuntu-22.04 (jammy)
     # where libwebkit2gtk-4.0-dev is still available.
-    runs-on: ubuntu-22.04
+    # Linux ARM64 cannot be cross-compiled from amd64 because Wails links
+    # webkit2gtk/gtk+-3.0 via CGO; use a native arm64 runner instead.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -128,12 +152,18 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Build
-        run: wails build -o SDKVersionControl
+        run: |
+          wails build -platform linux/${{ matrix.arch }} -o SDKVersionControl
+          # Wails appends the arch suffix when cross-compiling; normalize to
+          # the plain name so the upload step can find it.
+          if [ -f "build/bin/SDKVersionControl-${{ matrix.arch }}" ] && [ ! -f "build/bin/SDKVersionControl" ]; then
+            mv "build/bin/SDKVersionControl-${{ matrix.arch }}" "build/bin/SDKVersionControl"
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SDKVersionControl_linux_amd64
+          name: SDKVersionControl_linux_${{ matrix.arch }}
           path: build/bin/SDKVersionControl
 
   # ====== Release ======
