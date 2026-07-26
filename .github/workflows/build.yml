@@ -99,7 +99,11 @@ jobs:
 
   # ====== Linux ======
   build-linux:
-    runs-on: ubuntu-latest
+    # Wails v2 targets webkit2gtk-4.0 (pkg-config 'webkit2gtk-4.0'), which
+    # Ubuntu 24.04 (noble) removed in favor of 4.1. Wails v2 does not yet
+    # support 4.1 (that lands in Wails v3), so pin to ubuntu-22.04 (jammy)
+    # where libwebkit2gtk-4.0-dev is still available.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -114,12 +118,10 @@ jobs:
           node-version: '18'
 
       - name: Install System Dependencies
-        # Ubuntu 24.04 (noble) ships libwebkit2gtk-4.1-dev; the older 4.0
-        # variant was removed. Wails v2 supports both APIs.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libgtk-3-dev libwebkit2gtk-4.0-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
       - name: Install Wails
