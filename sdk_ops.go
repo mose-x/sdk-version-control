@@ -169,8 +169,15 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	if err := ext.Extract(tmpFile, versionDir); err != nil {
 		return fmt.Errorf("extraction failed: %w", err)
 	}
-	if err := extractor.StripTopDir(versionDir); err != nil {
-		return fmt.Errorf("extraction failed: %w", err)
+	// Strip the archive's top-level directory only when the fetcher opts in.
+	// SDKs whose GetBinDirs() already includes the top-level dir name (e.g.
+	// Go "go/bin", Dart "dart-sdk/bin", Android "cmdline-tools/bin", Perl
+	// "perl/bin"+"c/bin") set StripArchiveTopDir()=false so the top dir is
+	// preserved and their bin paths resolve correctly.
+	if f.StripArchiveTopDir() {
+		if err := extractor.StripTopDir(versionDir); err != nil {
+			return fmt.Errorf("extraction failed: %w", err)
+		}
 	}
 
 	logger.Info("Extraction completed, configuring environment...")

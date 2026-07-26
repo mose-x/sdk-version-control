@@ -43,13 +43,26 @@ func (f *JdkFetcher) Type() SdkType {
 }
 
 func (f *JdkFetcher) GetBinDirs() []string {
+	// Adoptium Temurin archives extract to `jdk-VERSION+BUILD/` whose contents
+	// differ by OS:
+	//   - Linux/Windows: jdk-VERSION+BUILD/bin/  (flat layout)
+	//   - macOS:         jdk-VERSION+BUILD/Contents/Home/bin/  (macOS bundle
+	//                    layout, identical to /Library/Java/JavaVirtualMachines)
+	// StripArchiveTopDir()=true strips the top-level version dir in both cases,
+	// so the bin path returned here is relative to the stripped root.
+	if runtime.GOOS == "darwin" {
+		return []string{"Contents/Home/bin"}
+	}
 	return []string{"bin"}
 }
 
 func (f *JdkFetcher) GetExtraEnvVars() map[string]string {
-	return map[string]string{
-		"JAVA_HOME": "", // Root directory
+	// JAVA_HOME points to the JDK root, which on macOS is the Contents/Home
+	// dir (not the top-level bundle dir).
+	if runtime.GOOS == "darwin" {
+		return map[string]string{"JAVA_HOME": "Contents/Home"}
 	}
+	return map[string]string{"JAVA_HOME": ""} // Root directory
 }
 
 func (f *JdkFetcher) VerifyCommand() (string, []string) {

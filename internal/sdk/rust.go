@@ -50,13 +50,6 @@ func (f *RustFetcher) GetExtraEnvVars() map[string]string {
 }
 func (f *RustFetcher) VerifyCommand() (string, []string) { return "rustc", []string{"--version"} }
 
-type ghRelease struct {
-	TagName     string `json:"tag_name"`
-	Draft       bool   `json:"draft"`
-	Prerelease  bool   `json:"prerelease"`
-	PublishedAt string `json:"published_at"`
-}
-
 func (f *RustFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo
 	page := 1

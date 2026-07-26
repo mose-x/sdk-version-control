@@ -1,20 +1,23 @@
 package sdk
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"sdk_version_control/internal/config"
 )
 
-// PythonFetcher Python version fetcher
+// PythonFetcher Python version fetcher using astral-sh/python-build-standalone
+// prebuilt binaries. python.org only ships source tarballs for Linux/macOS
+// (no prebuilt bin/ dir), so we use python-build-standalone which provides
+// prebuilt CPython for all three platforms with pip included.
 type PythonFetcher struct {
 	cfg        *config.Config
 	sm         *config.SettingsManager
@@ -26,7 +29,12 @@ func NewPythonFetcher(cfg *config.Config, sm *config.SettingsManager) *PythonFet
 }
 
 func (f *PythonFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *PythonFetcher) StripArchiveTopDir() bool          { return true }
+
+// StripArchiveTopDir returns false because the python-build-standalone
+// install_only archive extracts to a top-level `python/` directory whose
+// name is part of GetBinDirs() (e.g. "python/bin"). Stripping would break
+// the bin path resolution.
+func (f *PythonFetcher) StripArchiveTopDir() bool { return false }
 
 func (f *PythonFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -36,18 +44,23 @@ func (f *PythonFetcher) useEndpoint(defaultURL string) string {
 	if custom == "" {
 		return defaultURL
 	}
-	return strings.Replace(defaultURL, "https://www.python.org", custom, -1)
+	return strings.Replace(defaultURL, "https://github.com", custom, -1)
 }
 
 func (f *PythonFetcher) Type() SdkType {
 	return Python
 }
 
+// GetBinDirs returns the relative bin directories inside the extracted SDK.
+// python-build-standalone extracts to `python/` containing:
+//   - Unix: python/bin/  (python, python3, pip, pip3, etc.)
+//   - Windows: python/   (python.exe, pythonw.exe directly in root; Scripts/
+//     is empty in install_only archive — pip is usable via `python -m pip`)
 func (f *PythonFetcher) GetBinDirs() []string {
 	if config.IsWindows() {
-		return []string{""} // python.exe is in the root directory
+		return []string{"python"}
 	}
-	return []string{"bin"}
+	return []string{"python/bin"}
 }
 
 func (f *PythonFetcher) GetExtraEnvVars() map[string]string {
@@ -58,120 +71,136 @@ func (f *PythonFetcher) VerifyCommand() (string, []string) {
 	return "python", []string{"--version"}
 }
 
-func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
-	resp, err := f.httpClient.Get(f.useEndpoint("https://www.python.org/ftp/python/"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch Python version list: %w", err)
+// platformTarget returns the python-build-standalone target triple used in
+// asset filenames for the current OS/arch.
+func (f *PythonFetcher) platformTarget() string {
+	switch {
+	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":
+		return "x86_64-unknown-linux-gnu"
+	case runtime.GOOS == "linux" && runtime.GOARCH == "arm64":
+		return "aarch64-unknown-linux-gnu"
+	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
+		return "x86_64-apple-darwin"
+	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
+		return "aarch64-apple-darwin"
+	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
+		return "x86_64-pc-windows-msvc-shared"
+	default:
+		return ""
 	}
-	defer resp.Body.Close()
+}
 
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse Python version page: %w", err)
+// assetNameSuffix is the suffix appended after the target triple to select
+// the standard install_only build (excludes debug/freethreaded/stripped).
+func (f *PythonFetcher) assetNameSuffix() string {
+	if runtime.GOOS == "windows" {
+		return "-install_only.tar.gz"
+	}
+	return "-install_only.tar.gz"
+}
+
+// pythonRelease matches the GitHub releases API response for
+// astral-sh/python-build-standalone.
+type pythonRelease struct {
+	TagName     string        `json:"tag_name"`
+	PublishedAt string        `json:"published_at"`
+	Assets      []pythonAsset `json:"assets"`
+}
+
+type pythonAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+// FetchRemoteVersions fetches Python versions from python-build-standalone
+// GitHub releases. Each release (tagged by date) contains builds for multiple
+// Python versions; we aggregate them and deduplicate by Python version,
+// keeping the latest release's build for each version.
+func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
+	target := f.platformTarget()
+	if target == "" {
+		return nil, fmt.Errorf("current platform is not supported by python-build-standalone")
+	}
+	suffix := target + f.assetNameSuffix()
+
+	// Regex to extract the Python version from asset names like:
+	//   cpython-3.12.3+20240415-x86_64-unknown-linux-gnu-install_only.tar.gz
+	verRe := regexp.MustCompile(`^cpython-(\d+\.\d+\.\d+)\+\d+-` + regexp.QuoteMeta(suffix) + `$`)
+
+	seen := make(map[string]VersionInfo) // pythonVersion -> latest VersionInfo
+	page := 1
+	for page <= 5 { // fetch up to 5 pages (150 releases) to cover all Python versions
+		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=30&page=%d", page))
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			break
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		resp, err := f.httpClient.Do(req)
+		if err != nil {
+			break
+		}
+		var releases []pythonRelease
+		err = json.NewDecoder(resp.Body).Decode(&releases)
+		resp.Body.Close()
+		if err != nil || len(releases) == 0 {
+			break
+		}
+
+		for _, rel := range releases {
+			for _, asset := range rel.Assets {
+				m := verRe.FindStringSubmatch(asset.Name)
+				if m == nil {
+					continue
+				}
+				pyVer := m[1]
+				parts := strings.Split(pyVer, ".")
+				major, _ := strconv.Atoi(parts[0])
+				date := ""
+				if t, err := time.Parse(time.RFC3339, rel.PublishedAt); err == nil {
+					date = t.Format("2006-01-02")
+				}
+				// Releases are returned newest-first; keep the first (latest)
+				// build we encounter for each Python version.
+				if _, exists := seen[pyVer]; !exists {
+					seen[pyVer] = VersionInfo{
+						Version:     pyVer,
+						Major:       major,
+						DownloadURL: f.useEndpoint(asset.BrowserDownloadURL),
+						FileName:    asset.Name,
+						ReleaseDate: date,
+					}
+				}
+			}
+		}
+		page++
+	}
+
+	if len(seen) == 0 {
+		return nil, fmt.Errorf("no python-build-standalone releases found")
 	}
 
 	var versions []VersionInfo
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 10)
-
-	doc.Find("pre a").Each(func(i int, s *goquery.Selection) {
-		href := strings.TrimSuffix(s.Text(), "/")
-		if href == "" || href == ".." {
-			return
-		}
-		// Filter out alpha/beta/rc versions
-		if strings.Contains(href, "a") || strings.Contains(href, "b") || strings.Contains(href, "rc") {
-			return
-		}
-		parts := strings.Split(href, ".")
-		if len(parts) < 2 {
-			return
-		}
-		major, _ := strconv.Atoi(parts[0])
-		minor, _ := strconv.Atoi(parts[1])
-		// Only Python 3.8+
-		if major < 3 || (major == 3 && minor < 8) {
-			return
-		}
-
-		url, fileName := f.buildDownloadURL(href)
-		if url == "" {
-			return
-		}
-
-		// Concurrently verify the download package exists (HEAD request)
-		wg.Add(1)
-		go func(version, dlURL, fn string, maj, min int) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			req, err := http.NewRequest("HEAD", dlURL, nil)
-			if err != nil {
-				return
-			}
-			resp, err := f.httpClient.Do(req)
-			if err != nil {
-				return
-			}
-			resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				return // No Windows binary package for this version, skip
-			}
-			mu.Lock()
-			versions = append(versions, VersionInfo{
-				Version:     version,
-				Major:       maj,
-				DownloadURL: dlURL,
-				FileName:    fn,
-				IsLTS:       false,
-			})
-			mu.Unlock()
-		}(href, url, fileName, major, minor)
-	})
-
-	wg.Wait()
-
+	for _, v := range seen {
+		versions = append(versions, v)
+	}
 	sort.Slice(versions, func(i, j int) bool {
 		return CompareVersions(versions[i].Version, versions[j].Version) > 0
 	})
-
 	return versions, nil
 }
 
-func (f *PythonFetcher) buildDownloadURL(version string) (string, string) {
-	os := runtime.GOOS
-	arch := runtime.GOARCH
-
-	switch {
-	case os == "windows" && arch == "amd64":
-		// Windows uses the embed package (portable version)
-		fileName := fmt.Sprintf("python-%s-embed-amd64.zip", version)
-		url := f.useEndpoint(fmt.Sprintf("https://www.python.org/ftp/python/%s/%s", version, fileName))
-		return url, fileName
-	case os == "linux" && arch == "amd64":
-		fileName := fmt.Sprintf("Python-%s.tar.xz", version)
-		url := f.useEndpoint(fmt.Sprintf("https://www.python.org/ftp/python/%s/%s", version, fileName))
-		return url, fileName
-	case os == "darwin" && arch == "arm64":
-		fileName := fmt.Sprintf("Python-%s.tar.xz", version)
-		url := f.useEndpoint(fmt.Sprintf("https://www.python.org/ftp/python/%s/%s", version, fileName))
-		return url, fileName
-	case os == "darwin" && arch == "amd64":
-		fileName := fmt.Sprintf("Python-%s.tar.xz", version)
-		url := f.useEndpoint(fmt.Sprintf("https://www.python.org/ftp/python/%s/%s", version, fileName))
-		return url, fileName
-	default:
-		return "", ""
-	}
-}
-
 func (f *PythonFetcher) GetDownloadURL(version string) (string, string, error) {
-	url, fileName := f.buildDownloadURL(version)
-	if url == "" {
-		return "", "", fmt.Errorf("current platform is not supported")
+	versions, err := f.FetchRemoteVersions()
+	if err != nil {
+		return "", "", err
 	}
-	return url, fileName, nil
+	for _, v := range versions {
+		if v.Version == version {
+			return v.DownloadURL, v.FileName, nil
+		}
+	}
+	return "", "", fmt.Errorf("Python version not found: %s", version)
 }
 
 func (f *PythonFetcher) GetLocalStatus() (*SdkStatus, error) {

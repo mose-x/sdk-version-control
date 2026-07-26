@@ -36,8 +36,13 @@ func (f *AndroidFetcher) useEndpoint(defaultURL string) string {
 	}
 	return strings.Replace(defaultURL, "https://dl.google.com", custom, -1)
 }
-func (f *AndroidFetcher) Type() SdkType        { return Android }
-func (f *AndroidFetcher) GetBinDirs() []string { return []string{"cmdline-tools/latest/bin"} }
+func (f *AndroidFetcher) Type() SdkType { return Android }
+func (f *AndroidFetcher) GetBinDirs() []string {
+	// The cmdline-tools zip extracts to cmdline-tools/bin/ directly — there is
+	// no "latest/" layer inside the archive. StripArchiveTopDir()=false keeps
+	// the cmdline-tools/ top dir so this path resolves.
+	return []string{"cmdline-tools/bin"}
+}
 func (f *AndroidFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{"ANDROID_HOME": "", "ANDROID_SDK_ROOT": ""}
 }
