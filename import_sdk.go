@@ -118,8 +118,15 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 
 	a.pathMgr.CleanExternalPaths(sdkTypeStr, versionName, sourceDir)
 
+	if err := a.cfg.SetActiveVersion(sdkTypeStr, versionName); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+	if err := a.shimMgr.RefreshRcFile(); err != nil {
+		logger.Warn("Failed to refresh .svc.rc after import: %v", err)
+	}
+
 	logger.Info("Successfully imported local SDK: %s %s", sdkTypeStr, versionName)
-	return a.cfg.SetActiveVersion(sdkTypeStr, versionName)
+	return nil
 }
 
 func (a *App) ImportSdk(externalPath string, sdkType string) error {
@@ -158,8 +165,15 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 
 	a.pathMgr.CleanExternalPaths(sdkType, versionName, sdkRoot)
 
+	if err := a.cfg.SetActiveVersion(sdkType, versionName); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+	if err := a.shimMgr.RefreshRcFile(); err != nil {
+		logger.Warn("Failed to refresh .svc.rc after import: %v", err)
+	}
+
 	logger.Info("Successfully imported SDK: %s %s", sdkType, versionName)
-	return a.cfg.SetActiveVersion(sdkType, versionName)
+	return nil
 }
 
 func (a *App) ImportPathSdk(sdkTypeStr string) error {
@@ -211,6 +225,13 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 
 	a.pathMgr.CleanExternalPaths(sdkTypeStr, versionName, sdkRoot)
 
+	if err := a.cfg.SetActiveVersion(sdkTypeStr, versionName); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+	if err := a.shimMgr.RefreshRcFile(); err != nil {
+		logger.Warn("Failed to refresh .svc.rc after import: %v", err)
+	}
+
 	logger.Info("Successfully imported SDK from PATH: %s %s", sdkTypeStr, versionName)
-	return a.cfg.SetActiveVersion(sdkTypeStr, versionName)
+	return nil
 }

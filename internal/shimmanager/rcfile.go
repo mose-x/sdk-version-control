@@ -67,6 +67,16 @@ func (m *Manager) updateRcFile() error {
 	return os.WriteFile(rcPath, []byte(content), 0644)
 }
 
+// RefreshRcFile regenerates .svc.rc to reflect the latest active versions.
+// Call this after SetActiveVersion so .svc.rc env var lines (JAVA_HOME,
+// GOROOT, etc.) point at the newly-active version instead of the previous one.
+// ConfigureSdk calls updateRcFile internally, but it runs before
+// SetActiveVersion in the install/switch flow, so the env vars it writes are
+// stale until this method is called.
+func (m *Manager) RefreshRcFile() error {
+	return m.updateRcFile()
+}
+
 // GetRcFileContent returns the current .svc.rc content (for display in UI).
 func (m *Manager) GetRcFileContent() (string, error) {
 	data, err := os.ReadFile(m.cfg.RcFilePath())
