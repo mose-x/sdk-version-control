@@ -77,8 +77,14 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		if err := ext.Extract(localPath, tmpDir); err != nil {
 			return fmt.Errorf("extraction failed: %w", err)
 		}
-		if err := extractor.StripTopDir(tmpDir); err != nil {
-			return fmt.Errorf("extraction failed: %w", err)
+		// Honor the fetcher's StripArchiveTopDir() flag — same logic as
+		// InstallSdk.  SDKs whose GetBinDirs() includes the top-level dir
+		// name (Go, Dart, Android, Perl) must NOT strip, otherwise their
+		// bin paths break.
+		if f.StripArchiveTopDir() {
+			if err := extractor.StripTopDir(tmpDir); err != nil {
+				return fmt.Errorf("extraction failed: %w", err)
+			}
 		}
 		sourceDir = pathmgr.DetectSdkRoot(tmpDir, sdkTypeStr)
 	}
@@ -106,12 +112,7 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	binDirs := []string{""}
-	if _, err := os.Stat(filepath.Join(targetDir, "bin")); err == nil {
-		binDirs = []string{"bin"}
-	}
-
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, nil); err != nil {
+	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
@@ -122,8 +123,15 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 }
 
 func (a *App) ImportSdk(externalPath string, sdkType string) error {
+	if a.registry == nil {
+		return fmt.Errorf("application not fully initialized")
+	}
 	if err := validatePathSegment(sdkType); err != nil {
 		return err
+	}
+	f := a.registry.Get(sdk.SdkType(sdkType))
+	if f == nil {
+		return fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
 	logger.Info("Importing SDK: %s from %s", sdkType, externalPath)
 	sdkRoot := pathmgr.DetectSdkRoot(externalPath, sdkType)
@@ -144,12 +152,7 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	binDirs := []string{""}
-	if _, err := os.Stat(filepath.Join(targetDir, "bin")); err == nil {
-		binDirs = []string{"bin"}
-	}
-
-	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDirs, nil); err != nil {
+	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
@@ -202,12 +205,7 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	relBinDirs := []string{""}
-	if isDir(filepath.Join(targetDir, "bin")) {
-		relBinDirs = []string{"bin"}
-	}
-
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, relBinDirs, f.GetExtraEnvVars()); err != nil {
+	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 

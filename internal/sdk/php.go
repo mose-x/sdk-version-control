@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,16 @@ import (
 	"sdk_version_control/internal/config"
 )
 
+// PHPFetcher fetches PHP versions.
+//
+//   - Windows: uses windows.php.net (php-VERSION-nts-Win32-vs16-x64.zip extracts
+//     to php-VERSION-nts-Win32-vs16-x64/ containing php.exe at root).
+//   - Unix (Linux/macOS): uses rodrigodotdev/php GitHub releases — a clean mirror
+//     of static-php-cli builds (https://github.com/static-php/static-php-cli)
+//     covering linux/macos × x86_64/aarch64. Each archive extracts to a single
+//     `php` binary at the archive root (no bin/ folder, no phpize/php-config).
+//     The upstream php.net source tarball is NOT used because it requires
+//     compilation and ships no usable bin/ directory.
 type PHPFetcher struct {
 	cfg        *config.Config
 	sm         *config.SettingsManager
@@ -25,7 +36,14 @@ func NewPHPFetcher(cfg *config.Config, sm *config.SettingsManager) *PHPFetcher {
 }
 
 func (f *PHPFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
-func (f *PHPFetcher) StripArchiveTopDir() bool          { return true }
+
+// StripArchiveTopDir:
+//   - Windows: true — the php-Win32 zip extracts to php-VERSION-nts-Win32-vs16-x64/
+//     which must be stripped so php.exe lands at the version-dir root.
+//   - Unix: false — the static-php-cli archive extracts to a single `php` file
+//     (no enclosing directory); StripTopDir is a no-op for single-file extracts
+//     but we return false to reflect the actual layout.
+func (f *PHPFetcher) StripArchiveTopDir() bool { return runtime.GOOS == "windows" }
 
 func (f *PHPFetcher) useEndpoint(defaultURL string) string {
 	if f.sm == nil {
@@ -37,19 +55,48 @@ func (f *PHPFetcher) useEndpoint(defaultURL string) string {
 	}
 	defaultURL = strings.Replace(defaultURL, "https://windows.php.net", custom, -1)
 	defaultURL = strings.Replace(defaultURL, "https://www.php.net", custom, -1)
+	defaultURL = strings.Replace(defaultURL, "https://github.com", custom, -1)
+	defaultURL = strings.Replace(defaultURL, "https://dl.static-php.dev", custom, -1)
 	return defaultURL
 }
+
 func (f *PHPFetcher) Type() SdkType { return PHP }
-func (f *PHPFetcher) GetBinDirs() []string {
-	if runtime.GOOS != "windows" {
-		return []string{"bin"}
-	}
-	return []string{""}
-}
+
+// GetBinDirs returns the relative bin directories inside the extracted SDK.
+//   - Windows: [""]  — php.exe sits at the version-dir root after stripping.
+//   - Unix:    [""]  — static-php-cli archive extracts to a single `php` file
+//     at the version-dir root (no bin/ folder).
+func (f *PHPFetcher) GetBinDirs() []string { return []string{""} }
+
 func (f *PHPFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *PHPFetcher) VerifyCommand() (string, []string)  { return "php", []string{"--version"} }
 
-func (f *PHPFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
+// unixTarget returns the os-arch suffix used in rodrigodotdev/php asset names
+// for the current Unix platform. Returns "" on Windows or unsupported arches.
+// Asset naming (verified via the GitHub releases API):
+//
+//	php-VERSION-linux-x86_64.tar.gz
+//	php-VERSION-linux-aarch64.tar.gz
+//	php-VERSION-macos-x86_64.tar.gz
+//	php-VERSION-macos-aarch64.tar.gz
+func (f *PHPFetcher) unixTarget() string {
+	switch {
+	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":
+		return "linux-x86_64"
+	case runtime.GOOS == "linux" && runtime.GOARCH == "arm64":
+		return "linux-aarch64"
+	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
+		return "macos-x86_64"
+	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
+		return "macos-aarch64"
+	default:
+		return ""
+	}
+}
+
+// ----- Windows: windows.php.net -----
+
+func (f *PHPFetcher) fetchWindowsVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://windows.php.net/downloads/releases/"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch PHP version list: %w", err)
@@ -78,8 +125,8 @@ func (f *PHPFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		versions = append(versions, VersionInfo{
 			Version:     ver,
 			Major:       major,
-			DownloadURL: f.phpDownloadURL(ver),
-			FileName:    f.phpFileName(ver),
+			DownloadURL: f.windowsDownloadURL(ver),
+			FileName:    f.windowsFileName(ver),
 		})
 	}
 
@@ -87,22 +134,112 @@ func (f *PHPFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	return versions, nil
 }
 
+func (f *PHPFetcher) windowsDownloadURL(ver string) string {
+	return f.useEndpoint(fmt.Sprintf("https://windows.php.net/downloads/releases/php-%s-nts-Win32-vs16-x64.zip", ver))
+}
+
+func (f *PHPFetcher) windowsFileName(ver string) string {
+	return fmt.Sprintf("php-%s-nts-Win32-vs16-x64.zip", ver)
+}
+
+// ----- Unix: rodrigodotdev/php (static-php-cli mirror) -----
+
+// phpRelease matches the GitHub releases API response for rodrigodotdev/php.
+type phpRelease struct {
+	TagName     string    `json:"tag_name"`
+	Draft       bool      `json:"draft"`
+	Prerelease  bool      `json:"prerelease"`
+	PublishedAt string    `json:"published_at"`
+	Assets      []ghAsset `json:"assets"`
+}
+
+func (f *PHPFetcher) fetchUnixVersions() ([]VersionInfo, error) {
+	target := f.unixTarget()
+	if target == "" {
+		return nil, fmt.Errorf("PHP prebuilt binaries are not available for %s/%s (use Windows, or install PHP via your system package manager)", runtime.GOOS, runtime.GOARCH)
+	}
+	wantSuffix := fmt.Sprintf("-%s.tar.gz", target)
+
+	var versions []VersionInfo
+	page := 1
+	for page <= 3 {
+		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/rodrigodotdev/php/releases?per_page=30&page=%d", page))
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build PHP version request: %w", err)
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		resp, err := f.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch PHP version list: %w", err)
+		}
+		var releases []phpRelease
+		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to parse PHP version data: %w", err)
+		}
+		resp.Body.Close()
+		if len(releases) == 0 {
+			break
+		}
+
+		for _, r := range releases {
+			if r.Draft || r.Prerelease {
+				continue
+			}
+			ver := strings.TrimPrefix(r.TagName, "v")
+			parts := strings.Split(ver, ".")
+			if len(parts) < 2 {
+				continue
+			}
+			major, _ := strconv.Atoi(parts[0])
+			date := ""
+			if t, err := time.Parse(time.RFC3339, r.PublishedAt); err == nil {
+				date = t.Format("2006-01-02")
+			}
+			for _, a := range r.Assets {
+				if strings.HasSuffix(a.Name, wantSuffix) {
+					versions = append(versions, VersionInfo{
+						Version:     ver,
+						Major:       major,
+						ReleaseDate: date,
+						DownloadURL: f.useEndpoint(a.BrowserDownloadURL),
+						FileName:    a.Name,
+					})
+					break
+				}
+			}
+		}
+		page++
+	}
+
+	if len(versions) == 0 {
+		return nil, fmt.Errorf("no PHP prebuilt releases found for %s", target)
+	}
+	sort.Slice(versions, func(i, j int) bool { return CompareVersions(versions[i].Version, versions[j].Version) > 0 })
+	return versions, nil
+}
+
+// ----- Public API -----
+
+func (f *PHPFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
+	if runtime.GOOS == "windows" {
+		return f.fetchWindowsVersions()
+	}
+	return f.fetchUnixVersions()
+}
+
 func (f *PHPFetcher) GetDownloadURL(version string) (string, string, error) {
-	return f.phpDownloadURL(version), f.phpFileName(version), nil
-}
-
-func (f *PHPFetcher) phpDownloadURL(ver string) string {
-	if runtime.GOOS == "windows" {
-		return f.useEndpoint(fmt.Sprintf("https://windows.php.net/downloads/releases/php-%s-nts-Win32-vs16-x64.zip", ver))
+	versions, err := f.FetchRemoteVersions()
+	if err != nil {
+		return "", "", err
 	}
-	return f.useEndpoint(fmt.Sprintf("https://www.php.net/distributions/php-%s.tar.gz", ver))
-}
-
-func (f *PHPFetcher) phpFileName(ver string) string {
-	if runtime.GOOS == "windows" {
-		return fmt.Sprintf("php-%s-nts-Win32-vs16-x64.zip", ver)
+	for _, v := range versions {
+		if v.Version == version {
+			return v.DownloadURL, v.FileName, nil
+		}
 	}
-	return fmt.Sprintf("php-%s.tar.gz", ver)
+	return "", "", fmt.Errorf("PHP version not found: %s", version)
 }
 
 func (f *PHPFetcher) GetLocalStatus() (*SdkStatus, error) {
