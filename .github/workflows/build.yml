@@ -71,15 +71,18 @@ jobs:
             -o SDKVersionControl
 
       - name: Create DMG
+        # Wails uses wails.json's info.productName ("SDK Version Control") as
+        # the macOS .app bundle directory name, while the inner binary keeps
+        # the outputfilename ("SDKVersionControl"). Reference the spaced path.
         run: |
           hdiutil create -volname "SDKVersionControl" \
-            -srcfolder build/bin/SDKVersionControl.app \
+            -srcfolder "build/bin/SDK Version Control.app" \
             -ov -format UDZO \
             build/bin/SDKVersionControl_darwin_${{ matrix.arch }}.dmg
 
       - name: Extract binary for self-update
         run: |
-          cp build/bin/SDKVersionControl.app/Contents/MacOS/SDKVersionControl \
+          cp "build/bin/SDK Version Control.app/Contents/MacOS/SDKVersionControl" \
             build/bin/SDKVersionControl_darwin_${{ matrix.arch }}.bin
 
       - name: Upload DMG
@@ -111,10 +114,12 @@ jobs:
           node-version: '18'
 
       - name: Install System Dependencies
+        # Ubuntu 24.04 (noble) ships libwebkit2gtk-4.1-dev; the older 4.0
+        # variant was removed. Wails v2 supports both APIs.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.0-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
       - name: Install Wails
