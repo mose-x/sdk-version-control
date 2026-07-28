@@ -91,7 +91,14 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	hasUpdate := sdk.CompareVersions(remote.Version, a.appInfo.Version) > 0
 
 	platformKey := runtime.GOOS + "-" + runtime.GOARCH
-	dl := remote.Downloads[platformKey]
+	dl, ok := remote.Downloads[platformKey]
+	// If the server has no asset for the current platform, report no update
+	// rather than returning HasUpdate=true with an empty download URL, which
+	// would leave the user stuck on "new version available" with no way to
+	// fetch it.
+	if hasUpdate && !ok {
+		return UpdateInfo{HasUpdate: false, LatestVersion: remote.Version}, nil
+	}
 
 	return UpdateInfo{
 		HasUpdate:     hasUpdate,

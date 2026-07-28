@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -38,13 +37,19 @@ func (a *App) ApplyUpdate() error {
 	// wait for the app to close, rename old → .bak (overwriting prior bak),
 	// copy new → current, relaunch, self-delete. The rename-then-copy pattern
 	// leaves .bak pointing at the previous version for RollbackUpdate.
-	appName := strings.TrimSuffix(filepath.Base(currentExe), ".exe")
+	pid := os.Getpid()
 	scriptContent := fmt.Sprintf(`@echo off
 echo Waiting for application to close...
+set /a timeout=60
 :waitloop
-tasklist /FI "IMAGENAME eq %s.exe" 2>NUL | find "%s.exe" >NUL
+tasklist /FI "PID eq %d" 2>NUL | find "%d" >NUL
 if not errorlevel 1 (
     timeout /t 1 /nobreak >NUL
+    set /a timeout-=1
+    if %%timeout%% leq 0 (
+        echo Update timed out waiting for app to exit, aborting
+        exit /b 1
+    )
     goto waitloop
 )
 echo Backing up current binary...
@@ -62,7 +67,7 @@ if errorlevel 1 (
 echo Starting new version...
 start "" "%s"
 del "%%~f0"
-`, appName, appName, currentExe, bak, newExe, currentExe, currentExe)
+`, pid, pid, currentExe, bak, newExe, currentExe, currentExe)
 
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0644); err != nil {
 		return fmt.Errorf("failed to create update script: %w", err)
@@ -93,13 +98,19 @@ func (a *App) RollbackUpdate() error {
 	}
 
 	scriptPath := filepath.Join(os.TempDir(), "svc_rollback.bat")
-	appName := strings.TrimSuffix(filepath.Base(currentExe), ".exe")
+	pid := os.Getpid()
 	scriptContent := fmt.Sprintf(`@echo off
 echo Waiting for application to close...
+set /a timeout=60
 :waitloop
-tasklist /FI "IMAGENAME eq %s.exe" 2>NUL | find "%s.exe" >NUL
+tasklist /FI "PID eq %d" 2>NUL | find "%d" >NUL
 if not errorlevel 1 (
     timeout /t 1 /nobreak >NUL
+    set /a timeout-=1
+    if %%timeout%% leq 0 (
+        echo Rollback timed out waiting for app to exit, aborting
+        exit /b 1
+    )
     goto waitloop
 )
 echo Restoring previous version...
@@ -111,7 +122,7 @@ if errorlevel 1 (
 echo Starting restored version...
 start "" "%s"
 del "%%~f0"
-`, appName, appName, bak, currentExe, currentExe)
+`, pid, pid, bak, currentExe, currentExe)
 
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0644); err != nil {
 		return fmt.Errorf("failed to create rollback script: %w", err)
