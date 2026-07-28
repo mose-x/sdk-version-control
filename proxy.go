@@ -43,7 +43,10 @@ func (a *App) applyGithubMirror(url string) string {
 		return url
 	}
 	mirror = strings.TrimRight(mirror, "/")
-	if strings.Contains(url, "github.com") {
+	// Guard against a mirror that already points at github.com (e.g. a user
+	// misconfigured it as https://github.com/proxy): without the prefix check
+	// we'd prepend mirror to an already-mirrored URL, producing garbage.
+	if strings.Contains(url, "github.com") && !strings.HasPrefix(url, mirror) {
 		return mirror + "/" + url
 	}
 	return url

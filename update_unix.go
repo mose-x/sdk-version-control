@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -20,6 +21,24 @@ func backupPath(currentExe string) string {
 	return currentExe + ".bak"
 }
 
+// shellQuote wraps a string in single quotes for safe shell interpolation.
+// Single quotes inside the string are escaped via the standard '\” idiom.
+// Unlike double quotes, single-quoted strings have no interpolation, so
+// paths containing $, `, ", spaces, etc. are safe.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// ApplyUpdate launches a background /bin/sh script that: waits for the
+// current process to exit (by PID, not pgrep -f which matches too wide),
+// atomically renames the running binary to .bak, renames the downloaded
+// payload into place, chmod +x, relaunches, and self-deletes.
+//
+// Rename (mv) is used instead of cp so the replacement is atomic: a failed
+// second step leaves the .bak intact and the current binary untouched,
+// rather than overwriting it halfway and leaving a corrupt executable.
+// A 60s timeout guards against the wait loop hanging forever if the app
+// fails to exit.
 func (a *App) ApplyUpdate() error {
 	currentExe, err := os.Executable()
 	if err != nil {
@@ -33,32 +52,46 @@ func (a *App) ApplyUpdate() error {
 
 	bak := backupPath(currentExe)
 	scriptPath := filepath.Join(os.TempDir(), "svc_updater.sh")
-	// Flow: wait for the app to close, back up current → .bak, copy new → current,
-	// chmod +x, relaunch, self-delete. The backup step overwrites any prior
-	// .bak so it always holds the immediately previous version (one-shot
-	// rollback, matching nvm-rust's behaviour).
+	pid := os.Getpid()
+	// All paths are shell-quoted to avoid injection / syntax errors when
+	// the install path contains spaces, $, ", `, etc.
+	exeQ := shellQuote(currentExe)
+	bakQ := shellQuote(bak)
+	newQ := shellQuote(newExe)
 	scriptContent := fmt.Sprintf(`#!/bin/sh
 echo "Waiting for application to close..."
-while pgrep -f "%s" > /dev/null 2>&1; do
+timeout=60
+while kill -0 %d 2>/dev/null; do
     sleep 1
+    timeout=$((timeout - 1))
+    if [ "$timeout" -le 0 ]; then
+        echo "Update timed out waiting for app to exit, aborting"
+        exit 1
+    fi
 done
 echo "Backing up current binary..."
-cp -f "%s" "%s"
-if [ $? -ne 0 ]; then
-    echo "Backup failed, aborting update"
-    exit 1
+if ! mv -f %s %s 2>/dev/null; then
+    # Cross-device: fall back to cp+rm. mv is atomic on same FS only.
+    cp -f %s %s && rm -f %s
+    if [ $? -ne 0 ]; then
+        echo "Backup failed, aborting update"
+        exit 1
+    fi
 fi
 echo "Replacing application..."
-cp -f "%s" "%s"
-if [ $? -ne 0 ]; then
-    echo "Update failed!"
-    exit 1
+if ! mv -f %s %s 2>/dev/null; then
+    cp -f %s %s && rm -f %s
+    if [ $? -ne 0 ]; then
+        echo "Update failed! Restoring backup..."
+        mv -f %s %s 2>/dev/null || cp -f %s %s
+        exit 1
+    fi
 fi
-chmod +x "%s"
+chmod +x %s
 echo "Starting new version..."
-nohup "%s" > /dev/null 2>&1 &
+nohup %s > /dev/null 2>&1 &
 rm -f "$0"
-`, filepath.Base(currentExe), currentExe, bak, newExe, currentExe, currentExe, currentExe)
+`, pid, exeQ, bakQ, exeQ, bakQ, exeQ, newQ, exeQ, newQ, exeQ, newQ, bakQ, exeQ, bakQ, exeQ, exeQ, exeQ)
 
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		return fmt.Errorf("failed to create update script: %w", err)
@@ -90,22 +123,33 @@ func (a *App) RollbackUpdate() error {
 	}
 
 	scriptPath := filepath.Join(os.TempDir(), "svc_rollback.sh")
+	pid := os.Getpid()
+	exeQ := shellQuote(currentExe)
+	bakQ := shellQuote(bak)
 	scriptContent := fmt.Sprintf(`#!/bin/sh
 echo "Waiting for application to close..."
-while pgrep -f "%s" > /dev/null 2>&1; do
+timeout=60
+while kill -0 %d 2>/dev/null; do
     sleep 1
+    timeout=$((timeout - 1))
+    if [ "$timeout" -le 0 ]; then
+        echo "Rollback timed out waiting for app to exit, aborting"
+        exit 1
+    fi
 done
 echo "Restoring previous version..."
-cp -f "%s" "%s"
-if [ $? -ne 0 ]; then
-    echo "Rollback failed!"
-    exit 1
+if ! mv -f %s %s 2>/dev/null; then
+    cp -f %s %s && rm -f %s
+    if [ $? -ne 0 ]; then
+        echo "Rollback failed!"
+        exit 1
+    fi
 fi
-chmod +x "%s"
+chmod +x %s
 echo "Starting restored version..."
-nohup "%s" > /dev/null 2>&1 &
+nohup %s > /dev/null 2>&1 &
 rm -f "$0"
-`, filepath.Base(currentExe), bak, currentExe, currentExe, currentExe)
+`, pid, bakQ, exeQ, bakQ, exeQ, bakQ, exeQ, exeQ)
 
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		return fmt.Errorf("failed to create rollback script: %w", err)
