@@ -51,6 +51,17 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
 
+      - name: Bump about.json version
+        # Embed the release tag into about.json so the built binary reports
+        # the correct version to CheckUpdate. Without this, the //go:embed'd
+        # about.json keeps whatever version was last committed, and the app
+        # would keep "finding an update" even after installing the new build.
+        shell: bash
+        run: |
+          jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
+          echo "about.json version bumped to $VERSION:"
+          cat about.json
+
       - name: Generate Windows Resources
         run: |
           go-winres make --arch ${{ matrix.arch }} --out resource --no-suffix
@@ -113,6 +124,13 @@ jobs:
           esac
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
+
+      - name: Bump about.json version
+        shell: bash
+        run: |
+          jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
+          echo "about.json version bumped to $VERSION:"
+          cat about.json
 
       - name: Build .app
         run: |
@@ -206,6 +224,13 @@ jobs:
           esac
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
+
+      - name: Bump about.json version
+        shell: bash
+        run: |
+          jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
+          echo "about.json version bumped to $VERSION:"
+          cat about.json
 
       - name: Build
         run: |
