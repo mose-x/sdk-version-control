@@ -271,10 +271,10 @@ jobs:
           merge-multiple: true
 
       - name: Generate sha256sums.txt
-        # sha256sums.txt is shipped as a standalone release asset so users
-        # (and the in-app updater via version.json) can verify downloads.
-        # Only binary assets are hashed — sha256sums.txt and version.json
-        # are excluded by the SDKVersionControl-* prefix glob.
+        # sha256sums.txt is shipped as a standalone release asset so the
+        # in-app updater can verify each download against a recorded hash.
+        # Only binary assets are hashed — sha256sums.txt itself is excluded
+        # by the SDKVersionControl-* prefix glob.
         shell: bash
         run: |
           set -eu
@@ -283,85 +283,14 @@ jobs:
           echo "---sha256sums.txt---"
           cat sha256sums.txt
 
-      - name: Generate version.json
-        # version.json drives in-app self-update. about.json's updateUrl points
-        # at https://github.com/<repo>/releases/latest/download/version.json,
-        # which GitHub 302-redirects to this asset on the latest non-draft
-        # release. Each platform entry carries a `sha256` field so the client
-        # can verify the downloaded binary before swapping it in (defense
-        # against CDN tampering or partial downloads).
-        #
-        # The downloads map keys MUST stay `<runtime.GOOS>-<runtime.GOARCH>`
-        # (e.g. windows-amd64, darwin-arm64) because update.go looks them up
-        # with `runtime.GOOS + "-" + runtime.GOARCH` — Go's GOARCH is amd64,
-        # NOT x64. The asset filename uses x64 (nvm-rust convention), but the
-        # map key uses the Go identifier; url/filename point at the x64 file.
-        shell: bash
-        run: |
-          set -eu
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          REPO_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
-          cd staging
-
-          sha_field() {
-            local f="$1"
-            # sha256sum prints "<hash>  <file>"; grab just the hash.
-            sha256sum "$f" | awk '{print $1}'
-          }
-
-          WIN_X64_EXE="SDKVersionControl-${VERSION}-windows-x64.exe"
-          WIN_ARM64_EXE="SDKVersionControl-${VERSION}-windows-arm64.exe"
-          MAC_X64_BIN="SDKVersionControl-${VERSION}-macos-x64.bin"
-          MAC_ARM64_BIN="SDKVersionControl-${VERSION}-macos-arm64.bin"
-          LIN_X64="SDKVersionControl-${VERSION}-linux-x64"
-          LIN_ARM64="SDKVersionControl-${VERSION}-linux-arm64"
-
-          WIN_X64_SHA=$(sha_field "$WIN_X64_EXE")
-          WIN_ARM64_SHA=$(sha_field "$WIN_ARM64_EXE")
-          MAC_X64_SHA=$(sha_field "$MAC_X64_BIN")
-          MAC_ARM64_SHA=$(sha_field "$MAC_ARM64_BIN")
-          LIN_X64_SHA=$(sha_field "$LIN_X64")
-          LIN_ARM64_SHA=$(sha_field "$LIN_ARM64")
-
-          jq -n \
-            --arg version "$VERSION" \
-            --arg repo "$REPO_URL" \
-            --arg winX64Exe "$WIN_X64_EXE" \
-            --arg winArm64Exe "$WIN_ARM64_EXE" \
-            --arg macX64Bin "$MAC_X64_BIN" \
-            --arg macArm64Bin "$MAC_ARM64_BIN" \
-            --arg linX64 "$LIN_X64" \
-            --arg linArm64 "$LIN_ARM64" \
-            --arg winX64Sha "$WIN_X64_SHA" \
-            --arg winArm64Sha "$WIN_ARM64_SHA" \
-            --arg macX64Sha "$MAC_X64_SHA" \
-            --arg macArm64Sha "$MAC_ARM64_SHA" \
-            --arg linX64Sha "$LIN_X64_SHA" \
-            --arg linArm64Sha "$LIN_ARM64_SHA" \
-            '{
-              version: $version,
-              changelog: ("Release v" + $version + " — see " + $repo + " for details"),
-              downloads: {
-                "windows-amd64": {url: ($repo + "/" + $winX64Exe),    filename: $winX64Exe,    sha256: $winX64Sha},
-                "windows-arm64": {url: ($repo + "/" + $winArm64Exe),   filename: $winArm64Exe,  sha256: $winArm64Sha},
-                "darwin-amd64":  {url: ($repo + "/" + $macX64Bin),     filename: "SDKVersionControl", sha256: $macX64Sha},
-                "darwin-arm64":  {url: ($repo + "/" + $macArm64Bin),   filename: "SDKVersionControl", sha256: $macArm64Sha},
-                "linux-amd64":   {url: ($repo + "/" + $linX64),        filename: "SDKVersionControl", sha256: $linX64Sha},
-                "linux-arm64":   {url: ($repo + "/" + $linArm64),      filename: "SDKVersionControl", sha256: $linArm64Sha}
-              }
-            }' > version.json
-
-          echo "Generated version.json:"
-          cat version.json
-
       - name: Create Release
-        # Publish immediately (draft:false) so releases/latest/download/version.json
-        # resolves. Edit the body manually afterwards if you want custom notes.
+        # Publish immediately (draft:false) so the GitHub Releases API endpoint
+        # /releases/latest resolves for the in-app updater. Edit the body
+        # manually afterwards if you want custom notes.
         uses: softprops/action-gh-release@v2
         with:
           files: |
             staging/SDKVersionControl-*
             staging/sha256sums.txt
-            staging/version.json
           draft: false
           generate_release_notes: true

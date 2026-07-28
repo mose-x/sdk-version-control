@@ -4,5 +4,5 @@
   "goVersion": "1.25",
   "license": "MIT License",
   "repoUrl": "https://github.com/mose-x/sdk-version-control",
-  "updateUrl": "https://github.com/mose-x/sdk-version-control/releases/latest/download/version.json"
+  "updateUrl": "https://api.github.com/repos/mose-x/sdk-version-control/releases/latest"
 }
