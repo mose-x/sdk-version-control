@@ -100,78 +100,13 @@ jobs:
   # commit-lint: enforce commit message + identity rules on every PR commit.
   # Reuses the code-hooks repo's hooks as the single source of truth:
   #   - `commit-msg` hook: subject/conventional/ASCII/length/forbidden-token rules
-  #   - `pre-push` hook's `required_email`: author+committer email check
+  #   - identity check: author+committer email allowlist from hook-rules.conf [identities]
+  #   - annotated tag validation (tagger email + ASCII + forbidden tokens)
+  # code-hooks is public -> unauthenticated HTTPS clone, no secrets/deploy key.
   # Squash merges generated on GitHub bypass local hooks; this is the CI backstop.
+  # Set branch protection to require `commit-lint / commit-lint` on the
+  # protected branch -- the only layer `--no-verify` cannot bypass.
   commit-lint:
     name: commit-lint
-    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # full history needed to scan the PR commit range
-
-      - name: Configure SSH deploy key for code-hooks
-        env:
-          CODE_HOOKS_DEPLOY_KEY: ${{ secrets.CODE_HOOKS_DEPLOY_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$CODE_HOOKS_DEPLOY_KEY" > ~/.ssh/code_hooks_deploy_key
-          chmod 600 ~/.ssh/code_hooks_deploy_key
-          # Pin GitHub's well-known ed25519 host key (avoids ssh-keyscan MITM).
-          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" >> ~/.ssh/known_hosts
-          cat >> ~/.ssh/config <<'EOF'
-          Host github.com
-            HostName github.com
-            User git
-            IdentityFile ~/.ssh/code_hooks_deploy_key
-            IdentitiesOnly yes
-          EOF
-
-      - name: Clone code-hooks (private, via deploy key)
-        run: git clone --depth 1 git@github.com:mose-x/code-hooks.git /tmp/code-hooks
-
-      - name: Lint commit messages + identities in PR range
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          # Read allowed emails from code-hooks/allowed-identities (single source
-          # of truth, shared with pre-push and pre-commit). pre-push used to
-          # expose a single `required_email=` var; it now reads the allowlist
-          # file at runtime, so we mirror that here.
-          allowlist_file=""
-          for cand in /tmp/code-hooks/.allowed-identities.local /tmp/code-hooks/allowed-identities; do
-            if [ -f "$cand" ]; then allowlist_file="$cand"; break; fi
-          done
-          if [ -z "$allowlist_file" ] || ! grep -qE '<[^>]+>' "$allowlist_file" 2>/dev/null; then
-            echo "commit-lint: reject" >&2
-            echo "  no allowed-identities file with at least one 'Name <email>' entry." >&2
-            exit 1
-          fi
-          allowed_emails=$(sed -E 's/#.*$//; /^[[:space:]]*$/d' "$allowlist_file" \
-            | grep -oE '<[^>]+>' | tr -d '<>' \
-            | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-          echo "Allowed emails:"; echo "$allowed_emails" | sed 's/^/  /'
-          echo "Scanning commits ${BASE:0:7}..${HEAD:0:7}"
-          fail=0
-          for sha in $(git rev-list --reverse "$BASE..$HEAD"); do
-            subj=$(git log -1 --format='%s' "$sha")
-            echo "::group::$sha $subj"
-            # 1. commit-msg rules (subject len, conventional, ASCII, <=200, forbidden tokens)
-            git log -1 --format='%B' "$sha" > /tmp/commit-msg.txt
-            if ! /tmp/code-hooks/commit-msg /tmp/commit-msg.txt; then
-              fail=1
-            fi
-            # 2. author + committer email must be in the allowlist
-            ae=$(git log -1 --format='%ae' "$sha")
-            ce=$(git log -1 --format='%ce' "$sha")
-            if ! grep -qxF "$ae" <<<"$allowed_emails" || ! grep -qxF "$ce" <<<"$allowed_emails"; then
-              echo "commit-lint: reject" >&2
-              echo "  $sha: author=$ae committer=$ce (not in allowed-identities)" >&2
-              fail=1
-            fi
-            echo "::endgroup::"
-          done
-          exit $fail
+    uses: mose-x/code-hooks/.github/workflows/commit-lint.yml@main
