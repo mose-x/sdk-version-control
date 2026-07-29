@@ -141,7 +141,6 @@
     "version": "Version",
     "license": "License",
     "repo": "Repository",
-    "buildDate": "Build Date",
     "goVersion": "Go Version",
     "upToDate": "You are up to date",
     "settingsSaved": "Settings saved",
@@ -188,7 +187,6 @@
   "about": {
     "title": "About",
     "version": "Version",
-    "buildDate": "Build Date",
     "goVersion": "Go Version",
     "license": "License",
     "repo": "Repository",

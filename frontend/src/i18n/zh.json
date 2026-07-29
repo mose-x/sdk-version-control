@@ -141,7 +141,6 @@
     "version": "版本信息",
     "license": "开源协议",
     "repo": "项目地址",
-    "buildDate": "构建日期",
     "goVersion": "Go 版本",
     "upToDate": "当前已是最新版本",
     "settingsSaved": "设置已保存",
@@ -188,7 +187,6 @@
   "about": {
     "title": "关于",
     "version": "版本信息",
-    "buildDate": "构建日期",
     "goVersion": "Go 版本",
     "license": "开源协议",
     "repo": "项目地址",

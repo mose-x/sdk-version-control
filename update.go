@@ -19,7 +19,6 @@ import (
 
 type AppInfo struct {
 	Version   string `json:"version"`
-	BuildDate string `json:"buildDate"`
 	GoVersion string `json:"goVersion"`
 	License   string `json:"license"`
 	RepoURL   string `json:"repoUrl"`
@@ -30,7 +29,6 @@ func (a *App) loadAboutInfo() {
 	if err := json.Unmarshal(aboutJSON, &a.appInfo); err != nil {
 		a.appInfo = AppInfo{
 			Version:   "0.1.0",
-			BuildDate: "2026-06-20",
 			GoVersion: "1.25",
 			License:   "MIT License",
 			RepoURL:   "https://github.com/example/sdk-version-control",

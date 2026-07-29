@@ -1,6 +1,5 @@
 {
   "version": "1.0.0",
-  "buildDate": "2026-06-20",
   "goVersion": "1.25",
   "license": "MIT License",
   "repoUrl": "https://github.com/mose-x/sdk-version-control",
