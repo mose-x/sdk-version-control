@@ -159,6 +159,13 @@ func matchPlatformAsset(assets []GitHubAsset) (GitHubAsset, bool) {
 		if runtime.GOOS == "darwin" && strings.HasSuffix(name, ".dmg") {
 			continue
 		}
+		// Windows ships both a bare .exe (for self-update) and an NSIS
+		// -setup.exe installer (for first-time install). Self-update must
+		// pick the bare exe — the installer can't be swapped in place and
+		// running it would need admin/UAC.
+		if runtime.GOOS == "windows" && strings.Contains(name, "-setup.") {
+			continue
+		}
 		return a, true
 	}
 	return GitHubAsset{}, false
