@@ -310,6 +310,12 @@ jobs:
         run: |
           DEB_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}.deb"
           RPM_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}.rpm"
+          # -p pins the exact output path so the asset name stays in the
+          # project's convention regardless of fpm's own naming. Without it
+          # fpm downcases the deb package name (SDKVersionControl ->
+          # sdkversioncontrol) while keeping rpm mixed-case, so a single
+          # rename glob can't match both -- -p writes each file directly to
+          # build/bin/<final-name> and skips the mv dance entirely.
           fpm -s dir -t deb \
             -n SDKVersionControl -v "${VERSION}" -a "${DEB_ARCH}" \
             --depends libgtk-3-0 \
@@ -317,6 +323,7 @@ jobs:
             --depends libayatana-appindicator3-1 \
             --depends librsvg2-2 \
             --description "SDK Version Control" \
+            -p "build/bin/${DEB_NAME}" \
             "build/bin/${ASSET_NAME}=/usr/bin/SDKVersionControl"
           fpm -s dir -t rpm \
             -n SDKVersionControl -v "${VERSION}" -a "${RPM_ARCH}" \
@@ -325,13 +332,8 @@ jobs:
             --depends libayatana-appindicator3 \
             --depends librsvg2 \
             --description "SDK Version Control" \
+            -p "build/bin/${RPM_NAME}" \
             "build/bin/${ASSET_NAME}=/usr/bin/SDKVersionControl"
-          # fpm names packages by its own convention
-          # (SDKVersionControl_1.0.0_amd64.deb / SDKVersionControl-1.0.0-1.x86_64.rpm);
-          # rename to the project's asset convention so the release lists
-          # them alongside the other platform assets.
-          mv SDKVersionControl_*.deb "build/bin/${DEB_NAME}"
-          mv SDKVersionControl-*.rpm "build/bin/${RPM_NAME}"
           echo "DEB_NAME=$DEB_NAME" >> $GITHUB_ENV
           echo "RPM_NAME=$RPM_NAME" >> $GITHUB_ENV
 
