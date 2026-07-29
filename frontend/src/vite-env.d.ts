@@ -16,7 +16,6 @@ declare global {
           SaveSettings: (settings: { theme: string; language: string }) => Promise<void>;
           GetAppInfo: () => Promise<{
             version: string;
-            buildDate: string;
             goVersion: string;
             license: string;
             repoUrl: string;

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"sdk_version_control/internal/sdk"
@@ -18,7 +19,6 @@ import (
 
 type AppInfo struct {
 	Version   string `json:"version"`
-	BuildDate string `json:"buildDate"`
 	GoVersion string `json:"goVersion"`
 	License   string `json:"license"`
 	RepoURL   string `json:"repoUrl"`
@@ -29,7 +29,6 @@ func (a *App) loadAboutInfo() {
 	if err := json.Unmarshal(aboutJSON, &a.appInfo); err != nil {
 		a.appInfo = AppInfo{
 			Version:   "0.1.0",
-			BuildDate: "2026-06-20",
 			GoVersion: "1.25",
 			License:   "MIT License",
 			RepoURL:   "https://github.com/example/sdk-version-control",
@@ -42,19 +41,20 @@ func (a *App) GetAppInfo() AppInfo {
 	return a.appInfo
 }
 
-// VersionDownload describes a single platform's update asset. The Sha256 field
-// is optional (older releases may not include it); when present, DownloadUpdate
-// verifies the downloaded file against it before reporting success.
-type VersionDownload struct {
-	URL      string `json:"url"`
-	Filename string `json:"filename"`
-	Sha256   string `json:"sha256,omitempty"`
+// GitHubRelease models the relevant fields of the GitHub Releases API
+// response (GET /repos/{owner}/{repo}/releases/latest). The updater reads
+// tag_name for the version, body for the changelog, and assets[] for
+// per-platform download URLs — no version.json manifest needed.
+type GitHubRelease struct {
+	TagName string        `json:"tag_name"`
+	Body    string        `json:"body"`
+	Assets  []GitHubAsset `json:"assets"`
 }
 
-type VersionJSON struct {
-	Version   string                     `json:"version"`
-	Changelog string                     `json:"changelog"`
-	Downloads map[string]VersionDownload `json:"downloads"`
+type GitHubAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Size               int64  `json:"size"`
 }
 
 type UpdateInfo struct {
@@ -73,7 +73,17 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 
 	client := &http.Client{Transport: a.buildProxyTransport(), Timeout: 15 * time.Second}
 
-	resp, err := client.Get(a.appInfo.UpdateURL)
+	// updateUrl points at the GitHub Releases API
+	// (https://api.github.com/repos/<owner>/<repo>/releases/latest). GitHub
+	// requires a User-Agent and the JSON media type.
+	req, err := http.NewRequest(http.MethodGet, a.appInfo.UpdateURL, nil)
+	if err != nil {
+		return UpdateInfo{}, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "SDKVersionControl")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return UpdateInfo{}, fmt.Errorf("request failed: %w", err)
 	}
@@ -83,31 +93,112 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 		return UpdateInfo{}, fmt.Errorf("server returned error status: %d", resp.StatusCode)
 	}
 
-	var remote VersionJSON
-	if err := json.NewDecoder(resp.Body).Decode(&remote); err != nil {
-		return UpdateInfo{}, fmt.Errorf("failed to parse version info: %w", err)
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return UpdateInfo{}, fmt.Errorf("failed to parse release info: %w", err)
 	}
 
-	hasUpdate := sdk.CompareVersions(remote.Version, a.appInfo.Version) > 0
+	remoteVersion := strings.TrimPrefix(release.TagName, "v")
+	hasUpdate := sdk.CompareVersions(remoteVersion, a.appInfo.Version) > 0
 
-	platformKey := runtime.GOOS + "-" + runtime.GOARCH
-	dl, ok := remote.Downloads[platformKey]
-	// If the server has no asset for the current platform, report no update
-	// rather than returning HasUpdate=true with an empty download URL, which
-	// would leave the user stuck on "new version available" with no way to
-	// fetch it.
-	if hasUpdate && !ok {
-		return UpdateInfo{HasUpdate: false, LatestVersion: remote.Version}, nil
+	if !hasUpdate {
+		return UpdateInfo{HasUpdate: false, LatestVersion: remoteVersion}, nil
 	}
+
+	// Match the asset for the current platform from the release's asset list.
+	asset, ok := matchPlatformAsset(release.Assets)
+	// If the release has no asset for the current platform, report no update
+	// rather than HasUpdate=true with an empty download URL, which would leave
+	// the user stuck on "new version available" with no way to fetch it.
+	if !ok {
+		return UpdateInfo{HasUpdate: false, LatestVersion: remoteVersion}, nil
+	}
+
+	// Resolve the expected sha256 from sha256sums.txt (also a release asset).
+	// Verification is skipped if sha256sums.txt is absent (lenient fallback).
+	sha := a.fetchAssetSha256(client, release.Assets, asset.Name)
 
 	return UpdateInfo{
-		HasUpdate:     hasUpdate,
-		LatestVersion: remote.Version,
-		Changelog:     remote.Changelog,
-		DownloadURL:   dl.URL,
-		Filename:      dl.Filename,
-		Sha256:        dl.Sha256,
+		HasUpdate:     true,
+		LatestVersion: remoteVersion,
+		Changelog:     release.Body,
+		DownloadURL:   asset.BrowserDownloadURL,
+		Filename:      asset.Name,
+		Sha256:        sha,
 	}, nil
+}
+
+// matchPlatformAsset picks the release asset for the current OS/arch.
+// Asset names follow the build convention SDKVersionControl-<ver>-<os>-<arch><ext>:
+//
+//	windows-x64.exe / windows-arm64.exe
+//	macos-x64.bin   / macos-arm64.bin   (bare binary for in-place self-update, NOT .dmg)
+//	linux-x64       / linux-arm64
+//
+// runtime.GOOS is windows/darwin/linux, but asset names use "macos" for darwin;
+// runtime.GOARCH is amd64/arm64, but asset names use "x64" for amd64.
+func matchPlatformAsset(assets []GitHubAsset) (GitHubAsset, bool) {
+	osToken := map[string]string{
+		"windows": "windows",
+		"darwin":  "macos",
+		"linux":   "linux",
+	}[runtime.GOOS]
+	archToken := map[string]string{
+		"amd64": "x64",
+		"arm64": "arm64",
+	}[runtime.GOARCH]
+	if osToken == "" || archToken == "" {
+		return GitHubAsset{}, false
+	}
+	for _, a := range assets {
+		name := strings.ToLower(a.Name)
+		if !strings.Contains(name, osToken) || !strings.Contains(name, archToken) {
+			continue
+		}
+		// macOS self-update uses the bare .bin, not the .dmg installer.
+		if runtime.GOOS == "darwin" && strings.HasSuffix(name, ".dmg") {
+			continue
+		}
+		return a, true
+	}
+	return GitHubAsset{}, false
+}
+
+// fetchAssetSha256 downloads the sha256sums.txt release asset (if present) and
+// returns the hash recorded for filename. Empty string if the manifest is
+// missing or the file isn't listed — DownloadUpdate then skips verification
+// (lenient fallback for older releases without a checksum manifest).
+func (a *App) fetchAssetSha256(client *http.Client, assets []GitHubAsset, filename string) string {
+	var sumsURL string
+	for _, a := range assets {
+		if a.Name == "sha256sums.txt" {
+			sumsURL = a.BrowserDownloadURL
+			break
+		}
+	}
+	if sumsURL == "" {
+		return ""
+	}
+	resp, err := client.Get(sumsURL)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+	// Lines: "<64-hex-hash>  <filename>"
+	for _, line := range strings.Split(string(body), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == filename {
+			return fields[0]
+		}
+	}
+	return ""
 }
 
 type UpdateProgress struct {

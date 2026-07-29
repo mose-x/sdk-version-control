@@ -35,7 +35,6 @@ interface AppSettings {
 
 interface AppInfo {
   version: string
-  buildDate: string
   goVersion: string
   license: string
   repoUrl: string
@@ -97,10 +96,14 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
       if (progress.stage === 'done') {
         setDownloading(false)
         setDownloadDone(true)
+        // Reflect the downloaded version immediately so the About panel does
+        // not keep showing the old version until the user restarts. The
+        // authoritative value is reloaded from about.json on next restart.
+        setAppInfo(prev => prev ? { ...prev, version: updateInfo?.latestVersion || prev.version } : prev)
       }
     })
     return () => { off() }
-  }, [])
+  }, [updateInfo])
 
   useEffect(() => {
     GetSettings().then(s => setSettings(s))
@@ -301,7 +304,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
         msgApi.success(t('about.upToDate'))
       }
     } catch (e: any) {
-      msgApi.success(t('about.upToDate'))
+      msgApi.error(t('about.checkUpdateFail', { error: e?.message || e }))
     } finally {
       setChecking(false)
     }
@@ -309,16 +312,16 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
 
   const handleRollback = () => {
     Modal.confirm({
-      title: t('about.rollbackConfirm'),
-      content: t('about.rollbackConfirmDesc'),
-      okText: t('about.rollbackBtn'),
+      title: t('settings.rollbackConfirm'),
+      content: t('settings.rollbackConfirmDesc'),
+      okText: t('settings.rollbackBtn'),
       cancelText: t('app.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await RollbackUpdate()
         } catch (e: any) {
-          msgApi.error(t('about.rollbackFail', { error: e?.message || e }))
+          msgApi.error(t('settings.rollbackFail', { error: e?.message || e }))
         }
       },
     })
@@ -839,9 +842,6 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                   <Descriptions.Item label={t('about.version')}>
                     v{appInfo.version}
                   </Descriptions.Item>
-                  <Descriptions.Item label={t('about.buildDate')}>
-                    {appInfo.buildDate}
-                  </Descriptions.Item>
                   <Descriptions.Item label={t('about.goVersion')}>
                     {appInfo.goVersion}
                   </Descriptions.Item>
@@ -868,7 +868,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                     icon={<UndoOutlined />}
                     onClick={handleRollback}
                   >
-                    {t('about.rollbackBtn')}
+                    {t('settings.rollbackBtn')}
                   </Button>
                 </Space>
               </div>

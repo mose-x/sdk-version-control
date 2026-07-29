@@ -88,20 +88,18 @@ export namespace main {
 	
 	export class AppInfo {
 	    version: string;
-	    buildDate: string;
 	    goVersion: string;
 	    license: string;
 	    repoUrl: string;
 	    updateUrl: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.version = source["version"];
-	        this.buildDate = source["buildDate"];
 	        this.goVersion = source["goVersion"];
 	        this.license = source["license"];
 	        this.repoUrl = source["repoUrl"];
