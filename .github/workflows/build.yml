@@ -178,10 +178,11 @@ jobs:
           #      System Settings > Privacy & Security (notarization requires
           #      an Apple Developer account, which this open-source release
           #      does not have, so Gatekeeper will flag it).
-          python3 -m pip install --quiet Pillow
+          python3 -m venv /tmp/dmgvenv
+          /tmp/dmgvenv/bin/pip install --quiet Pillow
           BG_PATH="build/bin/dmg_bg.png"
           export BG_PATH
-          python3 << 'PYEOF'
+          /tmp/dmgvenv/bin/python << 'PYEOF'
           import os
           from PIL import Image, ImageDraw, ImageFont
           w, h = 960, 600
