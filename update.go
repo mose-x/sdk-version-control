@@ -133,7 +133,7 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 //
 //	windows-x64.exe / windows-arm64.exe
 //	macos-x64.bin   / macos-arm64.bin   (bare binary for in-place self-update, NOT .dmg)
-//	linux-x64       / linux-arm64
+//	linux-x64       / linux-arm64       (bare binary for in-place self-update, NOT .deb/.rpm)
 //
 // runtime.GOOS is windows/darwin/linux, but asset names use "macos" for darwin;
 // runtime.GOARCH is amd64/arm64, but asset names use "x64" for amd64.
@@ -164,6 +164,13 @@ func matchPlatformAsset(assets []GitHubAsset) (GitHubAsset, bool) {
 		// pick the bare exe — the installer can't be swapped in place and
 		// running it would need admin/UAC.
 		if runtime.GOOS == "windows" && strings.Contains(name, "-setup.") {
+			continue
+		}
+		// Linux ships both a bare binary (for self-update) and .deb/.rpm
+		// packages (for first-time install via dpkg/rpm). Self-update must
+		// pick the bare binary — package managers can't be swapped in place
+		// and would need root + package-manager state.
+		if runtime.GOOS == "linux" && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".rpm")) {
 			continue
 		}
 		return a, true
