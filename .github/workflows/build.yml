@@ -82,11 +82,35 @@ jobs:
           mv build/bin/SDKVersionControl.exe "build/bin/${ASSET_NAME}"
           echo "ASSET_NAME=$ASSET_NAME" >> $GITHUB_ENV
 
+      - name: Build NSIS installer
+        # NSIS installer for first-time install / manual download. The bare
+        # .exe above is what the in-app self-updater downloads and swaps in
+        # (it can't run an NSIS installer silently without admin/UAC issues),
+        # so both artifacts are shipped: bare exe for updates, setup exe for
+        # install. Wails' -nsis flag produces "SDKVersionControl-amd64.exe"
+        # in build/bin; rename to the -setup.exe asset convention.
+        shell: bash
+        run: |
+          wails build -nopackage -nsis -platform windows/${{ matrix.arch }} -o SDKVersionControl.exe
+          SETUP_SRC="build/bin/SDKVersionControl-${{ matrix.arch }}.exe"
+          if [ ! -f "$SETUP_SRC" ]; then
+            SETUP_SRC="build/bin/SDKVersionControl.exe"
+          fi
+          SETUP_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}-setup.exe"
+          mv "$SETUP_SRC" "build/bin/${SETUP_NAME}"
+          echo "SETUP_NAME=$SETUP_NAME" >> $GITHUB_ENV
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ASSET_NAME }}
           path: build/bin/${{ env.ASSET_NAME }}
+
+      - name: Upload NSIS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SETUP_NAME }}
+          path: build/bin/${{ env.SETUP_NAME }}
 
   # ====== macOS ======
   build-macos:
@@ -138,15 +162,38 @@ jobs:
             -o SDKVersionControl
 
       - name: Create DMG
-        # Wails uses wails.json's info.productName ("SDK Version Control") as
-        # the macOS .app bundle directory name, while the inner binary keeps
-        # the outputfilename ("SDKVersionControl"). Reference the spaced path.
+        # Build a drag-to-Applications DMG (standard macOS install UX) using
+        # create-dmg. --app-drop-link synthesizes the Applications folder
+        # shortcut on the right; a plain dark background is generated with
+        # sips from a solid color so no external asset is needed. Wails uses
+        # wails.json's info.productName ("SDK Version Control") as the .app
+        # bundle directory name; reference the spaced path.
         run: |
+          brew install create-dmg
+          # Generate a 960x600 dark background PNG via sips (no ImageMagick
+          # dep). Pure color fill matches the app's dark theme.
+          BG_PATH="build/bin/dmg_bg.png"
+          python3 -c "
+          import struct, zlib
+          w, h = 960, 600
+          raw = b''.join(b'\x1e\x1e\x2e\xff' * w for _ in range(h))
+          def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+          ihdr = struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)
+          png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
+          open('$BG_PATH', 'wb').write(png)
+          "
           DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
-          hdiutil create -volname "SDKVersionControl" \
-            -srcfolder "build/bin/SDK Version Control.app" \
-            -ov -format UDZO \
-            "build/bin/${DMG_NAME}"
+          create-dmg \
+            --volname "SDK Version Control" \
+            --background "$BG_PATH" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 100 \
+            --app-drop-link 480 200 \
+            --icon "SDK Version Control.app" 180 200 \
+            --no-internet-enable \
+            "build/bin/${DMG_NAME}" \
+            "build/bin/SDK Version Control.app"
           echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
 
       - name: Extract binary for self-update
