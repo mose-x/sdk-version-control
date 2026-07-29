@@ -170,18 +170,54 @@ jobs:
         # bundle directory name; reference the spaced path.
         run: |
           brew install create-dmg
-          # Generate a 960x600 dark background PNG via sips (no ImageMagick
-          # dep). Pure color fill matches the app's dark theme.
+          # Generate a 960x600 pure-white background PNG with install hints
+          # rendered via Pillow (pip-installed; macOS runner has python3 +
+          # pip). Two lines of text guide the user:
+          #   1. drag the app to Applications
+          #   2. if macOS blocks it as "unidentified developer", open it via
+          #      System Settings > Privacy & Security (notarization requires
+          #      an Apple Developer account, which this open-source release
+          #      does not have, so Gatekeeper will flag it).
+          python3 -m pip install --quiet Pillow
           BG_PATH="build/bin/dmg_bg.png"
-          python3 -c "
-          import struct, zlib
+          export BG_PATH
+          python3 << 'PYEOF'
+          import os
+          from PIL import Image, ImageDraw, ImageFont
           w, h = 960, 600
-          raw = b''.join(b'\x1e\x1e\x2e\xff' * w for _ in range(h))
-          def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
-          ihdr = struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)
-          png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
-          open('$BG_PATH', 'wb').write(png)
-          "
+          img = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+          draw = ImageDraw.Draw(img)
+          def load_font(size):
+              for path in [
+                  "/System/Library/Fonts/PingFang.ttc",
+                  "/System/Library/Fonts/Helvetica.ttc",
+                  "/System/Library/Fonts/Supplemental/Arial.ttf",
+              ]:
+                  try:
+                      return ImageFont.truetype(path, size)
+                  except Exception:
+                      pass
+              return ImageFont.load_default()
+          title_font = load_font(28)
+          hint_font = load_font(18)
+          cx = w / 2
+          # Title near the top.
+          draw.text((cx, 70), "SDK Version Control", fill=(30, 30, 46, 255),
+                    font=title_font, anchor="mm")
+          # Drag hint above the app icon / Applications link.
+          draw.text((cx, 330), "Drag the app icon to the Applications folder on the right",
+                    fill=(90, 90, 90, 255), font=hint_font, anchor="mm")
+          # Security note below the drag row: open-source releases are not
+          # notarized (no Apple Developer account), so Gatekeeper will flag
+          # the app on first launch.
+          draw.text((cx, 520),
+                    'If macOS says "unidentified developer": open System Settings > Privacy & Security,',
+                    fill=(150, 150, 150, 255), font=hint_font, anchor="mm")
+          draw.text((cx, 548),
+                    'click "Open Anyway". This app is open-source and not notarized.',
+                    fill=(150, 150, 150, 255), font=hint_font, anchor="mm")
+          img.save(os.environ["BG_PATH"])
+          PYEOF
           DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
           create-dmg \
             --volname "SDK Version Control" \

@@ -85,12 +85,15 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return UpdateInfo{}, fmt.Errorf("request failed: %w", err)
+		// Network errors (DNS, connection refused, TLS, timeout) are common
+		// when GitHub is unreachable. Surface them explicitly so the user
+		// can tell "network problem" from "server problem" from "up to date".
+		return UpdateInfo{}, fmt.Errorf("network error, unable to reach update server: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return UpdateInfo{}, fmt.Errorf("server returned error status: %d", resp.StatusCode)
+		return UpdateInfo{}, fmt.Errorf("update server returned status %d (may be rate-limited or the release is unavailable)", resp.StatusCode)
 	}
 
 	var release GitHubRelease
@@ -107,11 +110,12 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 
 	// Match the asset for the current platform from the release's asset list.
 	asset, ok := matchPlatformAsset(release.Assets)
-	// If the release has no asset for the current platform, report no update
-	// rather than HasUpdate=true with an empty download URL, which would leave
-	// the user stuck on "new version available" with no way to fetch it.
+	// A new version exists but no matching asset was found. This is a real
+	// error (release misconfigured, upload failed, or unsupported platform),
+	// NOT the same as "up to date". Reporting HasUpdate=false here would
+	// mislead the user into thinking they are current when they are not.
 	if !ok {
-		return UpdateInfo{HasUpdate: false, LatestVersion: remoteVersion}, nil
+		return UpdateInfo{}, fmt.Errorf("new version v%s is available but no download asset matches your platform (%s/%s); please download it manually from the release page", remoteVersion, runtime.GOOS, runtime.GOARCH)
 	}
 
 	// Resolve the expected sha256 from sha256sums.txt (also a release asset).
