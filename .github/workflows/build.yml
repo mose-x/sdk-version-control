@@ -156,6 +156,18 @@ jobs:
           iconutil -c icns "$ICONSET" -o "$ICNS"
           cp "$ICNS" "build/bin/SDK Version Control.app/Contents/Resources/iconfile.icns"
 
+      - name: Ad-hoc sign .app
+        # Open-source release without an Apple Developer ID cannot be
+        # notarized, so Gatekeeper flags the downloaded .app as "damaged"
+        # (quarantine attr). Ad-hoc signing (--sign -) gives the bundle a
+        # valid signature structure so `xattr -cr` clears the block cleanly
+        # and the app launches without a separate codesign step on the user's
+        # machine. Deep sign so nested frameworks/binaries are covered.
+        run: |
+          APP="build/bin/SDK Version Control.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --verbose=1 "$APP"
+
       - name: Create DMG
         # Wails uses wails.json's info.productName ("SDK Version Control") as
         # the macOS .app bundle directory name, while the inner binary keeps
