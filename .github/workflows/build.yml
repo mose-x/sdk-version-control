@@ -182,10 +182,15 @@ jobs:
           /tmp/dmgvenv/bin/pip install --quiet Pillow
           BG_PATH="build/bin/dmg_bg.png"
           export BG_PATH
+          # Background image dimensions MUST match create-dmg --window-size:
+          # Finder shows only the window-size region of the background. A larger
+          # image (e.g. 960x600 with a 660x400 window) leaves text outside the
+          # visible area, and centering on the larger canvas looks off-center
+          # in the smaller window.
           /tmp/dmgvenv/bin/python << 'PYEOF'
           import os
           from PIL import Image, ImageDraw, ImageFont
-          w, h = 960, 600
+          w, h = 660, 400
           img = Image.new("RGBA", (w, h), (255, 255, 255, 255))
           draw = ImageDraw.Draw(img)
           def load_font(size):
@@ -199,24 +204,23 @@ jobs:
                   except Exception:
                       pass
               return ImageFont.load_default()
-          title_font = load_font(28)
-          hint_font = load_font(18)
+          title_font = load_font(24)
+          hint_font = load_font(14)
+          small_font = load_font(12)
           cx = w / 2
           # Title near the top.
-          draw.text((cx, 70), "SDK Version Control", fill=(30, 30, 46, 255),
+          draw.text((cx, 40), "SDK Version Control", fill=(30, 30, 46, 255),
                     font=title_font, anchor="mm")
-          # Drag hint above the app icon / Applications link.
-          draw.text((cx, 330), "Drag the app icon to the Applications folder on the right",
+          # Drag hint above the app icon (icon at y=200).
+          draw.text((cx, 130), "Drag the app icon to the Applications folder on the right",
                     fill=(90, 90, 90, 255), font=hint_font, anchor="mm")
-          # Security note below the drag row: open-source releases are not
-          # notarized (no Apple Developer account), so Gatekeeper will flag
-          # the app on first launch.
-          draw.text((cx, 520),
+          # Security note at the bottom (window height is 400, keep within view).
+          draw.text((cx, 320),
                     'If macOS says "unidentified developer": open System Settings > Privacy & Security,',
-                    fill=(150, 150, 150, 255), font=hint_font, anchor="mm")
-          draw.text((cx, 548),
+                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
+          draw.text((cx, 340),
                     'click "Open Anyway". This app is open-source and not notarized.',
-                    fill=(150, 150, 150, 255), font=hint_font, anchor="mm")
+                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
           img.save(os.environ["BG_PATH"])
           PYEOF
           DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
