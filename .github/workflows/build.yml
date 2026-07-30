@@ -380,23 +380,20 @@ jobs:
           STAGING="$(mktemp -d)"
           mkdir -p "$STAGING/share/applications"
           cat > "$STAGING/share/applications/sdkversioncontrol.desktop" <<'DESKTOP'
-[Desktop Entry]
-Type=Application
-Name=SDK Version Control
-Comment=Manage SDK versions in one place
-Exec=/usr/bin/SDKVersionControl
-Icon=sdkversioncontrol
-Terminal=false
-Categories=Development;
-DESKTOP
+          [Desktop Entry]
+          Type=Application
+          Name=SDK Version Control
+          Comment=Manage SDK versions in one place
+          Exec=/usr/bin/SDKVersionControl
+          Icon=sdkversioncontrol
+          Terminal=false
+          Categories=Development;
+          DESKTOP
           SRC_ICON="build/desktop-icons/icon-white-bg.png"
           for sz in 16 32 48 64 128 256 512; do
             d="$STAGING/share/icons/hicolor/${sz}x${sz}/apps"
             mkdir -p "$d"
-            python3 -c "
-from PIL import Image
-Image.open('$SRC_ICON').resize(($sz,$sz), Image.LANCZOS).save('$d/sdkversioncontrol.png')
-"
+            python3 -c "from PIL import Image; Image.open('$SRC_ICON').resize(($sz,$sz), Image.LANCZOS).save('$d/sdkversioncontrol.png')"
           done
           # -p pins the exact output path so the asset name stays in the
           # project's convention regardless of fpm's own naming. Without it
