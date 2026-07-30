@@ -216,11 +216,18 @@ jobs:
                     font=title_font, anchor="mm")
           draw.text((cx, 130), "Drag the app icon to the Applications folder on the right",
                     fill=(90, 90, 90, 255), font=hint_font, anchor="mm")
-          draw.text((cx, 320),
-                    'If macOS says "damaged": open Terminal and run',
+          # Bottom security note: two ways to clear the Gatekeeper block.
+          # Both must be visible without resizing the 660x400 window.
+          #   1. System Settings -> Privacy & Security -> Open Anyway
+          #   2. Terminal fallback: xattr -cr (for the "damaged" prompt)
+          draw.text((cx, 290),
+                    'If macOS blocks the app:',
+                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
+          draw.text((cx, 312),
+                    'System Settings > Privacy & Security > Open Anyway',
                     fill=(150, 150, 150, 255), font=small_font, anchor="mm")
           draw.text((cx, 340),
-                    'xattr -cr "/Applications/SDK Version Control.app"',
+                    'or Terminal:  xattr -cr "/Applications/SDK Version Control.app"',
                     fill=(150, 150, 150, 255), font=small_font, anchor="mm")
           img.save(os.environ["BG_PATH"])
           PYEOF
