@@ -169,15 +169,80 @@ jobs:
           codesign --verify --verbose=1 "$APP"
 
       - name: Create DMG
-        # Wails uses wails.json's info.productName ("SDK Version Control") as
-        # the macOS .app bundle directory name, while the inner binary keeps
-        # the outputfilename ("SDKVersionControl"). Reference the spaced path.
+        # Build a drag-to-Applications DMG (standard macOS install UX) using
+        # create-dmg. --app-drop-link synthesizes the Applications folder
+        # shortcut on the right; a pure-white background PNG with install
+        # hints is rendered via Pillow. Wails uses wails.json's
+        # info.productName ("SDK Version Control") as the .app bundle
+        # directory name; reference the spaced path.
         run: |
+          brew install create-dmg
+          # Generate a 660x400 pure-white background PNG with install hints
+          # rendered via Pillow. No stripes/gradients -- solid white so the
+          # DMG window is clean. Three text blocks, all visible without
+          # resizing the window:
+          #   1. title "SDK Version Control" (top, centered)
+          #   2. drag hint (middle, above the app icon)
+          #   3. security note (bottom): how to clear the quarantine block
+          #      via xattr -cr, since this open-source release is unsigned.
+          python3 -m venv /tmp/dmgvenv
+          /tmp/dmgvenv/bin/pip install --quiet Pillow
+          BG_PATH="build/bin/dmg_bg.png"
+          export BG_PATH
+          # Background image dimensions MUST match create-dmg --window-size:
+          # Finder shows only the window-size region of the background.
+          /tmp/dmgvenv/bin/python << 'PYEOF'
+          import os
+          from PIL import Image, ImageDraw, ImageFont
+          w, h = 660, 400
+          img = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+          draw = ImageDraw.Draw(img)
+          def load_font(size):
+              for path in [
+                  "/System/Library/Fonts/PingFang.ttc",
+                  "/System/Library/Fonts/Helvetica.ttc",
+                  "/System/Library/Fonts/Supplemental/Arial.ttf",
+              ]:
+                  try:
+                      return ImageFont.truetype(path, size)
+                  except Exception:
+                      pass
+              return ImageFont.load_default()
+          title_font = load_font(24)
+          hint_font = load_font(14)
+          small_font = load_font(12)
+          cx = w / 2
+          draw.text((cx, 40), "SDK Version Control", fill=(30, 30, 46, 255),
+                    font=title_font, anchor="mm")
+          draw.text((cx, 130), "Drag the app icon to the Applications folder on the right",
+                    fill=(90, 90, 90, 255), font=hint_font, anchor="mm")
+          # Bottom security note: two ways to clear the Gatekeeper block.
+          # Both must be visible without resizing the 660x400 window.
+          #   1. System Settings -> Privacy & Security -> Open Anyway
+          #   2. Terminal fallback: xattr -cr (for the "damaged" prompt)
+          draw.text((cx, 290),
+                    'If macOS blocks the app:',
+                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
+          draw.text((cx, 312),
+                    'System Settings > Privacy & Security > Open Anyway',
+                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
+          draw.text((cx, 340),
+                    'or Terminal:  xattr -cr "/Applications/SDK Version Control.app"',
+                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
+          img.save(os.environ["BG_PATH"])
+          PYEOF
           DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
-          hdiutil create -volname "SDKVersionControl" \
-            -srcfolder "build/bin/SDK Version Control.app" \
-            -ov -format UDZO \
-            "build/bin/${DMG_NAME}"
+          create-dmg \
+            --volname "SDK Version Control" \
+            --background "$BG_PATH" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 100 \
+            --app-drop-link 480 200 \
+            --icon "SDK Version Control.app" 180 200 \
+            --no-internet-enable \
+            "build/bin/${DMG_NAME}" \
+            "build/bin/SDK Version Control.app"
           echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
 
       - name: Extract binary for self-update
