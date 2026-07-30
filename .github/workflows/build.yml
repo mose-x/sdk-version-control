@@ -82,35 +82,11 @@ jobs:
           mv build/bin/SDKVersionControl.exe "build/bin/${ASSET_NAME}"
           echo "ASSET_NAME=$ASSET_NAME" >> $GITHUB_ENV
 
-      - name: Build NSIS installer
-        # NSIS installer for first-time install / manual download. The bare
-        # .exe above is what the in-app self-updater downloads and swaps in
-        # (it can't run an NSIS installer silently without admin/UAC issues),
-        # so both artifacts are shipped: bare exe for updates, setup exe for
-        # install. Wails' -nsis flag produces "SDKVersionControl-amd64.exe"
-        # in build/bin; rename to the -setup.exe asset convention.
-        shell: bash
-        run: |
-          wails build -nopackage -nsis -platform windows/${{ matrix.arch }} -o SDKVersionControl.exe
-          SETUP_SRC="build/bin/SDKVersionControl-${{ matrix.arch }}.exe"
-          if [ ! -f "$SETUP_SRC" ]; then
-            SETUP_SRC="build/bin/SDKVersionControl.exe"
-          fi
-          SETUP_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}-setup.exe"
-          mv "$SETUP_SRC" "build/bin/${SETUP_NAME}"
-          echo "SETUP_NAME=$SETUP_NAME" >> $GITHUB_ENV
-
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ASSET_NAME }}
           path: build/bin/${{ env.ASSET_NAME }}
-
-      - name: Upload NSIS Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.SETUP_NAME }}
-          path: build/bin/${{ env.SETUP_NAME }}
 
   # ====== macOS ======
   build-macos:
@@ -161,13 +137,12 @@ jobs:
           wails build -platform darwin/${{ matrix.arch }} \
             -o SDKVersionControl
 
-      - name: Apply white-background desktop icon
+      - name: Apply rounded desktop icon
         # Wails generates the .icns from build/appicon.png (transparent).
-        # For Dock/Launchpad readability on light backgrounds, replace the
-        # bundle's iconfile.icns with a white-background variant built from
-        # build/desktop-icons/icon-white-bg.png. The in-app UI logo
-        # (frontend/src/assets/logo.png) stays transparent and is unaffected
-        # since it is embedded separately from the frontend dist.
+        # For Dock/Launchpad readability, replace the bundle's iconfile.icns
+        # with a rounded white-plate variant built from
+        # build/desktop-icons/icon-white-bg.png (squircle + enlarged content).
+        # The in-app UI logo (frontend/src/assets/logo.png) stays transparent.
         run: |
           ICONSET="$(mktemp -d)/icon.iconset"
           mkdir -p "$ICONSET"
@@ -180,82 +155,17 @@ jobs:
           ICNS="$(dirname "$ICONSET")/iconfile.icns"
           iconutil -c icns "$ICONSET" -o "$ICNS"
           cp "$ICNS" "build/bin/SDK Version Control.app/Contents/Resources/iconfile.icns"
-          echo "Replaced iconfile.icns with white-background variant"
 
       - name: Create DMG
-        # Build a drag-to-Applications DMG (standard macOS install UX) using
-        # create-dmg. --app-drop-link synthesizes the Applications folder
-        # shortcut on the right; a plain dark background is generated with
-        # sips from a solid color so no external asset is needed. Wails uses
-        # wails.json's info.productName ("SDK Version Control") as the .app
-        # bundle directory name; reference the spaced path.
+        # Wails uses wails.json's info.productName ("SDK Version Control") as
+        # the macOS .app bundle directory name, while the inner binary keeps
+        # the outputfilename ("SDKVersionControl"). Reference the spaced path.
         run: |
-          brew install create-dmg
-          # Generate a 960x600 pure-white background PNG with install hints
-          # rendered via Pillow (pip-installed; macOS runner has python3 +
-          # pip). Two lines of text guide the user:
-          #   1. drag the app to Applications
-          #   2. if macOS blocks it as "unidentified developer", open it via
-          #      System Settings > Privacy & Security (notarization requires
-          #      an Apple Developer account, which this open-source release
-          #      does not have, so Gatekeeper will flag it).
-          python3 -m venv /tmp/dmgvenv
-          /tmp/dmgvenv/bin/pip install --quiet Pillow
-          BG_PATH="build/bin/dmg_bg.png"
-          export BG_PATH
-          # Background image dimensions MUST match create-dmg --window-size:
-          # Finder shows only the window-size region of the background. A larger
-          # image (e.g. 960x600 with a 660x400 window) leaves text outside the
-          # visible area, and centering on the larger canvas looks off-center
-          # in the smaller window.
-          /tmp/dmgvenv/bin/python << 'PYEOF'
-          import os
-          from PIL import Image, ImageDraw, ImageFont
-          w, h = 660, 400
-          img = Image.new("RGBA", (w, h), (255, 255, 255, 255))
-          draw = ImageDraw.Draw(img)
-          def load_font(size):
-              for path in [
-                  "/System/Library/Fonts/PingFang.ttc",
-                  "/System/Library/Fonts/Helvetica.ttc",
-                  "/System/Library/Fonts/Supplemental/Arial.ttf",
-              ]:
-                  try:
-                      return ImageFont.truetype(path, size)
-                  except Exception:
-                      pass
-              return ImageFont.load_default()
-          title_font = load_font(24)
-          hint_font = load_font(14)
-          small_font = load_font(12)
-          cx = w / 2
-          # Title near the top.
-          draw.text((cx, 40), "SDK Version Control", fill=(30, 30, 46, 255),
-                    font=title_font, anchor="mm")
-          # Drag hint above the app icon (icon at y=200).
-          draw.text((cx, 130), "Drag the app icon to the Applications folder on the right",
-                    fill=(90, 90, 90, 255), font=hint_font, anchor="mm")
-          # Security note at the bottom (window height is 400, keep within view).
-          draw.text((cx, 320),
-                    'If macOS says "unidentified developer": open System Settings > Privacy & Security,',
-                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
-          draw.text((cx, 340),
-                    'click "Open Anyway". This app is open-source and not notarized.',
-                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
-          img.save(os.environ["BG_PATH"])
-          PYEOF
           DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
-          create-dmg \
-            --volname "SDK Version Control" \
-            --background "$BG_PATH" \
-            --window-pos 200 120 \
-            --window-size 660 400 \
-            --icon-size 100 \
-            --app-drop-link 480 200 \
-            --icon "SDK Version Control.app" 180 200 \
-            --no-internet-enable \
-            "build/bin/${DMG_NAME}" \
-            "build/bin/SDK Version Control.app"
+          hdiutil create -volname "SDKVersionControl" \
+            -srcfolder "build/bin/SDK Version Control.app" \
+            -ov -format UDZO \
+            "build/bin/${DMG_NAME}"
           echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
 
       - name: Extract binary for self-update
@@ -317,8 +227,6 @@ jobs:
             libgtk-3-dev libwebkit2gtk-4.0-dev \
             libayatana-appindicator3-dev librsvg2-dev \
             ruby ruby-dev python3-pil
-          # fpm (Effing Package Management) builds both .deb and .rpm from a
-          # single input spec, avoiding two separate packaging toolchains.
           sudo gem install fpm
 
       - name: Install Wails
@@ -359,24 +267,16 @@ jobs:
           echo "ASSET_NAME=$ASSET_NAME" >> $GITHUB_ENV
 
       - name: Build .deb and .rpm packages
-        # fpm wraps the bare binary in both .deb (Debian/Ubuntu) and .rpm
-        # (RHEL/Fedora/SUSE) packages so users get a standard install/remove
-        # entry (dpkg/rpm) instead of manually placing the binary. The bare
-        # binary above remains the self-update asset — dpkg/rpm can't be
-        # swapped in place and would need root + package-manager state.
-        # deb uses Go's arch names (amd64/arm64); rpm uses its own
-        # (x86_64/aarch64).
+        # Wrap the bare binary in .deb/.rpm with a .desktop entry + hicolor
+        # PNG icons (rounded white-plate variant) so the app shows up in
+        # application launchers with a proper icon. Bare binary above stays
+        # the self-update asset.
         env:
           DEB_ARCH: ${{ matrix.arch }}
           RPM_ARCH: ${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}
         run: |
           DEB_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}.deb"
           RPM_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}.rpm"
-          # Prepare a .desktop entry + hicolor PNG icons (white-background
-          # variant, same as macOS/Windows desktop icons) so the app shows up
-          # in application launchers with a proper icon. The icons are
-          # installed into the standard /usr/share/icons/hicolor layout so
-          # freedesktop-compliant desktops (GNOME/KDE/etc.) pick them up.
           STAGING="$(mktemp -d)"
           mkdir -p "$STAGING/share/applications"
           cat > "$STAGING/share/applications/sdkversioncontrol.desktop" <<'DESKTOP'
@@ -395,12 +295,6 @@ jobs:
             mkdir -p "$d"
             python3 -c "from PIL import Image; Image.open('$SRC_ICON').resize(($sz,$sz), Image.LANCZOS).save('$d/sdkversioncontrol.png')"
           done
-          # -p pins the exact output path so the asset name stays in the
-          # project's convention regardless of fpm's own naming. Without it
-          # fpm downcases the deb package name (SDKVersionControl ->
-          # sdkversioncontrol) while keeping rpm mixed-case, so a single
-          # rename glob can't match both -- -p writes each file directly to
-          # build/bin/<final-name> and skips the mv dance entirely.
           fpm -s dir -t deb \
             -n SDKVersionControl -v "${VERSION}" -a "${DEB_ARCH}" \
             --depends libgtk-3-0 \
