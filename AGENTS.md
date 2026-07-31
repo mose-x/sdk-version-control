@@ -1,6 +1,6 @@
 # Agents
 
-hook 仓库地址：
+Hook repository:
 `https://github.com/mose-x/code-hooks`
 
-提交流程：走 feature 分支 + PR，不要直推 main,推送成功后等CI全绿,然后merge到main
+Commit flow: use a feature branch + PR; do not push directly to main. After pushing, wait for CI to be fully green, then merge into main.
