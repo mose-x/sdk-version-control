@@ -270,7 +270,7 @@ jobs:
             --icon-size 100 \
             --app-drop-link 480 200 \
             --icon "SDK Version Control.app" 180 200 \
-            --icon "run xattr.command" 480 320 \
+            --icon "run xattr.command" 90 340 \
             --no-internet-enable \
             "build/bin/${DMG_NAME}" \
             "$STAGING"
