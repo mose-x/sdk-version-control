@@ -217,51 +217,20 @@ jobs:
           draw.text((cx, 130), "Drag the app icon to the Applications folder on the right",
                     fill=(90, 90, 90, 255), font=hint_font, anchor="mm")
           # Bottom security note: the xattr command drawn here is pixels in
-          # the background PNG, so it cannot be selected/copied. Point users
-          # at the copyable + double-clickable "run xattr.command" script
-          # shipped alongside the .app inside the DMG instead. Keep the raw
-          # command visible too, for users who prefer the Terminal.
-          draw.text((cx, 290),
-                    'If macOS says "damaged":',
-                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
-          draw.text((cx, 312),
-                    'Double-click "run xattr.command" on the right',
-                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
-          draw.text((cx, 340),
-                    'or Terminal:  xattr -cr "/Applications/SDK Version Control.app"',
-                    fill=(150, 150, 150, 255), font=small_font, anchor="mm")
+          # the background PNG (not copyable), but the earlier extra
+          # run xattr.command file shipped inside the DMG looked awkward in
+          # the window layout, so it was dropped. Keep just the visible hint
+          # with the command line rendered in a heavier color so users can
+          # read and retype it in Terminal.
+          draw.text((cx, 300),
+                    'If macOS says "damaged", open Terminal and run:',
+                    fill=(120, 120, 120, 255), font=small_font, anchor="mm")
+          draw.text((cx, 330),
+                    'xattr -cr "/Applications/SDK Version Control.app"',
+                    fill=(40, 40, 40, 255), font=hint_font, anchor="mm")
           img.save(os.environ["BG_PATH"])
           PYEOF
           DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
-          # Ship a double-clickable "run xattr.command" alongside the .app so
-          # users can clear the Gatekeeper quarantine block without typing --
-          # the xattr string on the background PNG is pixels (not copyable),
-          # but this script is a real file users can run or open to copy from.
-          # create-dmg takes a source dir: stage the .app + script together.
-          STAGING="build/bin/dmg_staging"
-          rm -rf "$STAGING"
-          mkdir -p "$STAGING"
-          cp -R "build/bin/SDK Version Control.app" "$STAGING/"
-          cat > "$STAGING/run xattr.command" <<'CMD'
-          #!/bin/bash
-          # Clears the macOS "damaged" / quarantine flag on SDK Version Control
-          # and launches it. Double-click this file in Finder after dragging
-          # the app to Applications. If Terminal says it cannot run an
-          # unidentified developer script: right-click -> Open -> Open.
-          APP="/Applications/SDK Version Control.app"
-          if [ -d "$APP" ]; then
-            xattr -cr "$APP"
-            echo "Quarantine attributes cleared. Launching..."
-            open "$APP"
-          else
-            echo "Not found: $APP"
-            echo "Drag SDK Version Control.app to the Applications folder first."
-          fi
-          echo ""
-          echo "Press Return to close this window..."
-          read -r _
-          CMD
-          chmod +x "$STAGING/run xattr.command"
           create-dmg \
             --volname "SDK Version Control" \
             --background "$BG_PATH" \
@@ -270,10 +239,9 @@ jobs:
             --icon-size 100 \
             --app-drop-link 480 200 \
             --icon "SDK Version Control.app" 180 200 \
-            --icon "run xattr.command" 90 340 \
             --no-internet-enable \
             "build/bin/${DMG_NAME}" \
-            "$STAGING"
+            "build/bin/SDK Version Control.app"
           echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
 
       - name: Extract binary for self-update
