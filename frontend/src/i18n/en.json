@@ -149,7 +149,7 @@
     "githubMirror": "GitHub Mirror",
     "githubMirrorDesc": "Speed up GitHub downloads. Enter a mirror URL like https://ghfast.top, or leave empty to use the original link",
     "githubToken": "GitHub Token",
-    "githubTokenDesc": "GitHub personal access token (PAT) used to fetch version lists; raises the API rate limit from 60 to 5000 requests/hour. Stored locally only (base64), never uploaded. Generate one at GitHub Settings -> Developer settings -> Personal access tokens",
+    "githubTokenDesc": "GitHub personal access token (PAT) used to fetch version lists; raises the API rate limit from 60 to 5000 requests/hour. Stored locally only, never uploaded. Generate one at GitHub Settings -> Developer settings -> Personal access tokens",
     "githubTokenNotSet": "Not set",
     "githubTokenSet": "Set",
     "githubTokenEdit": "Edit",
