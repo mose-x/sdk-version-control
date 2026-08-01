@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,16 +48,17 @@ func (f *PerlFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client
 func (f *PerlFetcher) StripArchiveTopDir() bool { return runtime.GOOS != "windows" }
 
 func (f *PerlFetcher) useEndpoint(defaultURL string) string {
+	// applyGithubEndpoint mirrors both api.github.com and github.com; Perl
+	// also mirrors strawberryperl.com for the Windows portable builds.
+	out := applyGithubEndpoint(f.sm, Perl, defaultURL)
 	if f.sm == nil {
-		return defaultURL
+		return out
 	}
 	custom := f.sm.Get().Endpoints[string(Perl)]
 	if custom == "" {
-		return defaultURL
+		return out
 	}
-	defaultURL = strings.Replace(defaultURL, "https://strawberryperl.com", custom, -1)
-	defaultURL = strings.Replace(defaultURL, "https://github.com", custom, -1)
-	return defaultURL
+	return strings.Replace(out, "https://strawberryperl.com", custom, -1)
 }
 
 func (f *PerlFetcher) Type() SdkType { return Perl }
@@ -176,21 +176,10 @@ func (f *PerlFetcher) fetchUnixVersions() ([]VersionInfo, error) {
 	page := 1
 	for page <= 3 {
 		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/skaji/relocatable-perl/releases?per_page=30&page=%d", page))
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build Perl version request: %w", err)
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		resp, err := f.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch Perl version list: %w", err)
-		}
 		var releases []perlRelease
-		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to parse Perl version data: %w", err)
+		if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
+			return nil, fmt.Errorf("failed to fetch Perl version list (page %d): %w", page, err)
 		}
-		resp.Body.Close()
 		if len(releases) == 0 {
 			break
 		}

@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,18 +45,20 @@ func (f *PHPFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client 
 func (f *PHPFetcher) StripArchiveTopDir() bool { return runtime.GOOS == "windows" }
 
 func (f *PHPFetcher) useEndpoint(defaultURL string) string {
+	// applyGithubEndpoint mirrors both api.github.com and github.com; PHP
+	// also mirrors windows.php.net / www.php.net / dl.static-php.dev.
+	out := applyGithubEndpoint(f.sm, PHP, defaultURL)
 	if f.sm == nil {
-		return defaultURL
+		return out
 	}
 	custom := f.sm.Get().Endpoints[string(PHP)]
 	if custom == "" {
-		return defaultURL
+		return out
 	}
-	defaultURL = strings.Replace(defaultURL, "https://windows.php.net", custom, -1)
-	defaultURL = strings.Replace(defaultURL, "https://www.php.net", custom, -1)
-	defaultURL = strings.Replace(defaultURL, "https://github.com", custom, -1)
-	defaultURL = strings.Replace(defaultURL, "https://dl.static-php.dev", custom, -1)
-	return defaultURL
+	out = strings.Replace(out, "https://windows.php.net", custom, -1)
+	out = strings.Replace(out, "https://www.php.net", custom, -1)
+	out = strings.Replace(out, "https://dl.static-php.dev", custom, -1)
+	return out
 }
 
 func (f *PHPFetcher) Type() SdkType { return PHP }
@@ -164,21 +165,10 @@ func (f *PHPFetcher) fetchUnixVersions() ([]VersionInfo, error) {
 	page := 1
 	for page <= 3 {
 		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/rodrigodotdev/php/releases?per_page=30&page=%d", page))
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build PHP version request: %w", err)
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		resp, err := f.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch PHP version list: %w", err)
-		}
 		var releases []phpRelease
-		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to parse PHP version data: %w", err)
+		if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
+			return nil, fmt.Errorf("failed to fetch PHP version list (page %d): %w", page, err)
 		}
-		resp.Body.Close()
 		if len(releases) == 0 {
 			break
 		}

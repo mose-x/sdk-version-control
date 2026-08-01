@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -54,22 +53,15 @@ func (f *RustFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo
 	page := 1
 	for page <= 3 {
+		// Rust's per-SDK endpoint mirrors static.rust-lang.org (the download
+		// host), NOT github, so the releases API URL is passed unmirrored;
+		// fetchGithubReleasesPage still applies the GitHub token and the
+		// GithubMirror reverse-proxy fallback for rate-limit / reachability.
 		url := fmt.Sprintf("https://api.github.com/repos/rust-lang/rust/releases?per_page=30&page=%d", page)
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build Rust version request: %w", err)
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		resp, err := f.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch Rust version list: %w", err)
-		}
 		var releases []ghRelease
-		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to parse Rust version data: %w", err)
+		if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
+			return nil, fmt.Errorf("failed to fetch Rust version list (page %d): %w", page, err)
 		}
-		resp.Body.Close()
 		if len(releases) == 0 {
 			break
 		}

@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -47,22 +46,15 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo
 	page := 1
 	for page <= 3 {
+		// Flutter's per-SDK endpoint mirrors storage.googleapis.com (the
+		// download host), NOT github, so the releases API URL is passed
+		// unmirrored; fetchGithubReleasesPage still applies the GitHub token
+		// and the GithubMirror reverse-proxy fallback.
 		url := fmt.Sprintf("https://api.github.com/repos/flutter/flutter/releases?per_page=30&page=%d", page)
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build Flutter version request: %w", err)
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		resp, err := f.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch Flutter version list: %w", err)
-		}
 		var releases []ghRelease
-		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to parse Flutter version data: %w", err)
+		if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
+			return nil, fmt.Errorf("failed to fetch Flutter version list (page %d): %w", page, err)
 		}
-		resp.Body.Close()
 		if len(releases) == 0 {
 			break
 		}

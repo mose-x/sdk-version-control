@@ -28,6 +28,7 @@ type AppSettings struct {
 	Endpoints       map[string]string `json:"endpoints"`       // sdkType -> custom endpoint URL
 	InstallPath     string            `json:"installPath"`     // custom install directory, empty = default ~/.svc
 	GithubMirror    string            `json:"githubMirror"`    // GitHub mirror URL, empty = no replacement
+	GitHubToken     string            `json:"githubToken"`     // base64-encoded GitHub PAT, raises API rate limit 60->5000/h
 	DownloadThreads int               `json:"downloadThreads"` // download thread count, 0 = default 4
 }
 
