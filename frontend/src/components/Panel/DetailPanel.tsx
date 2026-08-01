@@ -123,7 +123,16 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
       try {
         const result = await GetRemoteVersions(status.sdkType)
         if (stale?.()) return
-        setVersions(result || [])
+        // Defensive dedup by version string: a duplicated payload (from a
+        // backend retry race or cache corruption) must never produce duplicate
+        // rows in the list. First occurrence wins.
+        const seen = new Set<string>()
+        const deduped = (result || []).filter((v) => {
+          if (seen.has(v.version)) return false
+          seen.add(v.version)
+          return true
+        })
+        setVersions(deduped)
       } catch (e: any) {
         if (stale?.()) return
         console.error('Failed to get remote versions:', e)
