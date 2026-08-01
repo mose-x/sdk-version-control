@@ -107,13 +107,23 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 
 	logger.Info("Starting installation: %s %s", sdkTypeStr, version)
 
+	// Inject the proxy-aware client BEFORE resolving the download URL: 8 SDKs
+	// (jdk/go/gradle/python/ruby/php/perl/android) issue HTTP API calls inside
+	// GetDownloadURL, and python/ruby/php/perl/android even re-run
+	// FetchRemoteVersions (multi-page GitHub API). Without this injection they
+	// used the bare constructor client and bypassed the user's proxy, so
+	// resolving the URL failed in proxy-only networks even though the actual
+	// file download (below) correctly used the proxy.
+	proxyCfg := a.getProxyConfig()
+	client := downloader.BuildClient(proxyCfg)
+	client.Timeout = 30 * time.Second
+	f.SetHTTPClient(client)
+
 	downloadURL, fileName, err := f.GetDownloadURL(version)
 	if err != nil {
 		return fmt.Errorf("failed to get download URL: %w", err)
 	}
 	downloadURL = a.applyGithubMirror(downloadURL)
-
-	proxyCfg := a.getProxyConfig()
 
 	tmpFile := filepath.Join(a.cfg.TmpDir(), fileName)
 	logger.Info("Download URL: %s", downloadURL)
@@ -277,6 +287,12 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 	if f == nil {
 		return "", fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
+	// Same proxy injection as InstallSdk: GetDownloadURL may issue HTTP API
+	// calls that must honor the user's proxy configuration.
+	proxyCfg := a.getProxyConfig()
+	client := downloader.BuildClient(proxyCfg)
+	client.Timeout = 30 * time.Second
+	f.SetHTTPClient(client)
 	url, _, err := f.GetDownloadURL(version)
 	if err != nil {
 		return "", err
