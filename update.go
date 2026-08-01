@@ -164,10 +164,13 @@ func matchPlatformAsset(assets []GitHubAsset) (GitHubAsset, bool) {
 			continue
 		}
 		// Windows ships both a bare .exe (for self-update) and an NSIS
-		// -setup.exe installer (for first-time install). Self-update must
-		// pick the bare exe — the installer can't be swapped in place and
-		// running it would need admin/UAC.
-		if runtime.GOOS == "windows" && strings.Contains(name, "-setup.") {
+		// installer named *-installer.exe (for first-time install).
+		// Self-update must pick the bare exe — the installer can't be
+		// swapped in place and running it would need admin/UAC. Use a
+		// precise suffix match; an earlier check used "-setup." which
+		// never matched the actual "-installer." asset name, so the
+		// installer was selected and overwrote the running exe.
+		if runtime.GOOS == "windows" && strings.HasSuffix(name, "-installer.exe") {
 			continue
 		}
 		// Linux ships both a bare binary (for self-update) and .deb/.rpm
