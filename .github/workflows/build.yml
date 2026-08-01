@@ -68,6 +68,14 @@ jobs:
           Rename-Item resource resource.syso
         shell: pwsh
 
+      - name: Setup NSIS
+        # `wails build -nsis` shells out to `makensis`. The windows-latest
+        # image ships NSIS but NOT on PATH for the bash shell, so without
+        # this Wails logs "makensis not found", silently skips the
+        # installer, and the installer-rename step below fails. setup-nsis
+        # installs makensis and prepends it to GITHUB_PATH for the job.
+        uses: goto-bus-stop/setup-nsis@v2
+
       - name: Build
         # -nsis produces a Windows installer (setup.exe) alongside the bare
         # binary. The bare exe stays the self-update asset (ApplyUpdate
