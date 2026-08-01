@@ -10,7 +10,11 @@ import PathModal from './components/PathModal/PathModal'
 import SettingsPage from './components/Settings/SettingsPage'
 import { SdkStatus, SdkType, InstallProgress } from './types/sdk'
 import { GetAllSdkStatus, GetSettings } from '../wailsjs/go/main/App'
-import { EventsOn, WindowSetLightTheme, WindowSetDarkTheme } from '../wailsjs/runtime/runtime'
+import {
+  EventsOn,
+  WindowSetLightTheme,
+  WindowSetDarkTheme,
+} from '../wailsjs/runtime/runtime'
 import './i18n'
 import './App.css'
 import logoImg from './assets/logo.png'
@@ -19,7 +23,9 @@ function App() {
   const { i18n, t } = useTranslation()
   const [sdkStatuses, setSdkStatuses] = useState<SdkStatus[]>([])
   const [selectedSdk, setSelectedSdk] = useState<SdkType | null>(null)
-  const [installProgressMap, setInstallProgressMap] = useState<Record<string, InstallProgress>>({})
+  const [installProgressMap, setInstallProgressMap] = useState<
+    Record<string, InstallProgress>
+  >({})
 
   const downloadingSdks = useMemo(() => {
     const set = new Set<string>()
@@ -36,14 +42,16 @@ function App() {
 
   // Load settings on mount
   useEffect(() => {
-    GetSettings().then(s => {
-      if (s) {
-        setThemeMode(s.theme || 'dark')
-        const lang = s.language || 'zh'
-        setLanguage(lang)
-        i18n.changeLanguage(lang)
-      }
-    }).catch(() => {})
+    GetSettings()
+      .then((s) => {
+        if (s) {
+          setThemeMode(s.theme || 'dark')
+          const lang = s.language || 'zh'
+          setLanguage(lang)
+          i18n.changeLanguage(lang)
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const refreshStatuses = useCallback(async () => {
@@ -61,11 +69,14 @@ function App() {
 
   useEffect(() => {
     const off = EventsOn('install:progress', (progress: InstallProgress) => {
-      setInstallProgressMap(prev => ({ ...prev, [progress.sdkType]: progress }))
+      setInstallProgressMap((prev) => ({
+        ...prev,
+        [progress.sdkType]: progress,
+      }))
       if (progress.stage === 'done' || progress.stage === 'error') {
         setTimeout(() => {
           refreshStatuses()
-          setInstallProgressMap(prev => {
+          setInstallProgressMap((prev) => {
             const next = { ...prev }
             delete next[progress.sdkType]
             return next
@@ -73,7 +84,9 @@ function App() {
         }, 2000)
       }
     })
-    return () => { off() }
+    return () => {
+      off()
+    }
   }, [refreshStatuses])
 
   // System theme detection
@@ -97,7 +110,9 @@ function App() {
 
   const antLocale = language === 'zh' ? zhCN : enUS
 
-  const currentStatus = selectedSdk ? sdkStatuses.find(s => s.sdkType === selectedSdk) : undefined
+  const currentStatus = selectedSdk
+    ? sdkStatuses.find((s) => s.sdkType === selectedSdk)
+    : undefined
 
   const handleSelectSdk = (sdk: SdkType) => {
     setSelectedSdk(sdk)
@@ -116,7 +131,17 @@ function App() {
     >
       <AntApp>
         {initialLoading ? (
-          <div className={`app-container ${isDark ? 'dark' : 'light'}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16 }}>
+          <div
+            className={`app-container ${isDark ? 'dark' : 'light'}`}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100vh',
+              gap: 16,
+            }}
+          >
             <img src={logoImg} alt="logo" style={{ width: 120, height: 120 }} />
             <Spin size="large" />
             <div style={{ fontSize: 15, color: isDark ? '#aaa' : '#666' }}>
@@ -124,41 +149,49 @@ function App() {
             </div>
           </div>
         ) : (
-        <div className={`app-container ${isDark ? 'dark' : 'light'}`}>
-          <Sidebar
-            statuses={sdkStatuses}
-            selectedSdk={showSettings ? null : selectedSdk}
-            downloadingSdks={downloadingSdks}
-            onSelect={handleSelectSdk}
-            onGoHome={() => { setSelectedSdk(null); setShowSettings(false) }}
-            onOpenSettings={() => setShowSettings(true)}
-            onRefresh={refreshStatuses}
-          />
-          {showSettings ? (
-            <SettingsPage
-              onBack={() => setShowSettings(false)}
-              onThemeChange={setThemeMode}
-              onLanguageChange={setLanguage}
-            />
-          ) : selectedSdk ? (
-            <DetailPanel
-              status={currentStatus}
-              installProgress={currentStatus ? installProgressMap[currentStatus.sdkType] || null : null}
+          <div className={`app-container ${isDark ? 'dark' : 'light'}`}>
+            <Sidebar
+              statuses={sdkStatuses}
+              selectedSdk={showSettings ? null : selectedSdk}
+              downloadingSdks={downloadingSdks}
+              onSelect={handleSelectSdk}
+              onGoHome={() => {
+                setSelectedSdk(null)
+                setShowSettings(false)
+              }}
+              onOpenSettings={() => setShowSettings(true)}
               onRefresh={refreshStatuses}
             />
-          ) : (
-            <HomePage
-              statuses={sdkStatuses}
-              onSelect={handleSelectSdk}
-              onOpenPathInfo={() => setShowPathModal(true)}
+            {showSettings ? (
+              <SettingsPage
+                onBack={() => setShowSettings(false)}
+                onThemeChange={setThemeMode}
+                onLanguageChange={setLanguage}
+              />
+            ) : selectedSdk ? (
+              <DetailPanel
+                key={selectedSdk}
+                status={currentStatus}
+                installProgress={
+                  currentStatus
+                    ? installProgressMap[currentStatus.sdkType] || null
+                    : null
+                }
+                onRefresh={refreshStatuses}
+              />
+            ) : (
+              <HomePage
+                statuses={sdkStatuses}
+                onSelect={handleSelectSdk}
+                onOpenPathInfo={() => setShowPathModal(true)}
+              />
+            )}
+            <PathModal
+              open={showPathModal}
+              onClose={() => setShowPathModal(false)}
+              onRefresh={refreshStatuses}
             />
-          )}
-          <PathModal
-            open={showPathModal}
-            onClose={() => setShowPathModal(false)}
-            onRefresh={refreshStatuses}
-          />
-        </div>
+          </div>
         )}
       </AntApp>
     </ConfigProvider>
