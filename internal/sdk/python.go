@@ -184,18 +184,33 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=30&page=%d", page))
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			break
+			return nil, fmt.Errorf("failed to build Python version list request (page %d): %w", page, err)
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		resp, err := f.httpClient.Do(req)
 		if err != nil {
-			break
+			return nil, fmt.Errorf("failed to fetch Python version list (page %d): %w; check proxy/network, or if GitHub API is reachable", page, err)
+		}
+		// GitHub API returns 403 with a rate-limit body (non-JSON) when the
+		// unauthenticated quota (60/hour per IP) is exhausted. Without a
+		// status check the JSON decode below fails and the old code silently
+		// broke out of the loop, reporting a misleading "no releases found".
+		if resp.StatusCode == 403 {
+			resp.Body.Close()
+			return nil, fmt.Errorf("GitHub API rate limit hit (403) on page %d; unauthenticated requests are capped at 60/hour per IP -- retry later or configure a proxy", page)
+		}
+		if resp.StatusCode != 200 {
+			resp.Body.Close()
+			return nil, fmt.Errorf("GitHub API returned HTTP %d for Python version list (page %d)", resp.StatusCode, page)
 		}
 		var releases []pythonRelease
 		err = json.NewDecoder(resp.Body).Decode(&releases)
 		resp.Body.Close()
-		if err != nil || len(releases) == 0 {
-			break
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode Python version list (page %d): %w", page, err)
+		}
+		if len(releases) == 0 {
+			break // reached the last page, stop paging
 		}
 
 		for _, rel := range releases {
