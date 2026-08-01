@@ -183,6 +183,16 @@ html, body, #root {
   color: #ffc53d;
 }
 
+.sdk-item-system {
+  color: #ff4d4f;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.sdk-item-system:hover {
+  color: #ff7875;
+}
+
 .sdk-item-status {
   width: 8px;
   height: 8px;

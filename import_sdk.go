@@ -196,6 +196,17 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 		return fmt.Errorf("%s not found in system PATH", cmdName)
 	}
 
+	// Python on macOS/Linux lives at /usr/bin/python3 (system-managed) and
+	// Windows Store ships a python.exe stub in WindowsApps. Importing either
+	// would CopyDir an OS directory (/usr, C:\Windows, ...) into the app's
+	// store. Refuse here as a backstop even though the UI already hides the
+	// import button for system-protected copies -- guards against direct API
+	// calls and races where the status was computed before this guard landed.
+	if sdk.IsSystemPythonPath(binPath) {
+		return fmt.Errorf("system %s is at %s (a protected OS path) and cannot be imported; please install %s via the app instead, the app-managed copy will take precedence via PATH priority",
+			cmdName, binPath, f.Type())
+	}
+
 	binDir := filepath.Dir(binPath)
 	sdkRoot := pathmgr.DetectSdkRoot(binDir, sdkTypeStr)
 

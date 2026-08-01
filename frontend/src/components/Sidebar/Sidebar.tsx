@@ -232,7 +232,12 @@ const Sidebar: React.FC<SidebarProps> = ({ statuses, selectedSdk, downloadingSdk
                   key={status.sdkType}
                   className={`sdk-item ${selectedSdk === status.sdkType ? 'active' : ''}`}
                   onClick={() => {
-                    if (!status.configured && status.pathConfigured) {
+                    if (!status.configured && status.systemProtected) {
+                      // System Python (e.g. /usr/bin/python3) cannot be
+                      // imported; jump to the detail page so the user can
+                      // install an app-managed version instead.
+                      onSelect(status.sdkType as SdkType)
+                    } else if (!status.configured && status.pathConfigured) {
                       handleImportPath(status)
                     } else {
                       onSelect(status.sdkType as SdkType)
@@ -247,7 +252,14 @@ const Sidebar: React.FC<SidebarProps> = ({ statuses, selectedSdk, downloadingSdk
                   </div>
                   <div className="sdk-item-info">
                     <div className="sdk-item-name">{status.displayName}</div>
-                    {!status.configured && status.pathConfigured ? (
+                    {!status.configured && status.systemProtected ? (
+                      <Tooltip title={t('sidebar.systemProtectedTooltip')}>
+                        <div className="sdk-item-version sdk-item-system">
+                          <WarningOutlined style={{ marginRight: 4 }} />
+                          {status.pathVersion ? `v${status.pathVersion} (${t('app.systemManaged')})` : t('app.systemManaged')}
+                        </div>
+                      </Tooltip>
+                    ) : !status.configured && status.pathConfigured ? (
                       <Tooltip title={t('sidebar.importTooltip')}>
                         <div className="sdk-item-version sdk-item-import">
                           <ImportOutlined style={{ marginRight: 4 }} />

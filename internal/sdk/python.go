@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -68,7 +70,56 @@ func (f *PythonFetcher) GetExtraEnvVars() map[string]string {
 }
 
 func (f *PythonFetcher) VerifyCommand() (string, []string) {
-	return "python", []string{"--version"}
+	// macOS 12.3+ and modern Linux distros ship only `python3` (Python 2's
+	// `python` was removed). python-build-standalone Unix archives include
+	// both `python` and `python3` in bin/, so `python3` verifies both the
+	// system copy and an app-installed copy. Windows keeps `python`:
+	// python-build-standalone Windows archives ship python.exe only, and
+	// Windows users expect `python` (not python3.exe).
+	if runtime.GOOS == "windows" {
+		return "python", []string{"--version"}
+	}
+	return "python3", []string{"--version"}
+}
+
+// IsSystemPythonPath reports whether binPath points at a system-managed Python
+// binary that cannot be safely imported. Importing such a copy would CopyDir
+// an OS directory (e.g. /usr or C:\Windows) into the app's managed store, so
+// the app should refuse and guide the user to install via the app instead.
+// Covered cases:
+//   - macOS /usr/bin/python3 (SSV-protected, also CLT framework path)
+//   - Linux /usr/bin/python3 (distro package, owned by package manager)
+//   - Windows Microsoft Store python.exe stub (WindowsApps alias)
+func IsSystemPythonPath(binPath string) bool {
+	if binPath == "" {
+		return false
+	}
+	p := filepath.ToSlash(binPath)
+	lower := strings.ToLower(p)
+	switch runtime.GOOS {
+	case "darwin":
+		for _, prefix := range []string{"/usr/bin/", "/bin/", "/sbin/", "/system/", "/library/"} {
+			if strings.HasPrefix(p, prefix) {
+				return true
+			}
+		}
+	case "linux":
+		for _, prefix := range []string{"/usr/bin/", "/bin/", "/sbin/", "/usr/lib/"} {
+			if strings.HasPrefix(p, prefix) {
+				return true
+			}
+		}
+	case "windows":
+		if strings.HasPrefix(lower, "c:/windows/system32/") ||
+			strings.HasPrefix(lower, "c:/windows/syswow64/") {
+			return true
+		}
+		// Microsoft Store alias stub (e.g. %LOCALAPPDATA%\Microsoft\WindowsApps\python.exe)
+		if strings.Contains(lower, "windowsapps") {
+			return true
+		}
+	}
+	return false
 }
 
 // platformTarget returns the python-build-standalone target triple used in
@@ -220,11 +271,29 @@ func (f *PythonFetcher) GetLocalStatus() (*SdkStatus, error) {
 		needsSwitch = !found
 	}
 
+	// Use the platform-specific verify command so macOS/Linux detect the
+	// system python3 (not the absent `python`). When a PATH copy is found,
+	// also resolve its real binary path and flag system-managed copies
+	// (e.g. /usr/bin/python3) that cannot be safely imported -- the UI then
+	// hides the import button and guides the user to install instead.
+	cmdName, _ := f.VerifyCommand()
+	pathConfigured := !configured && IsCommandAvailable(cmdName)
+	systemProtected := false
+	systemPath := ""
+	if pathConfigured {
+		if p, err := exec.LookPath(cmdName); err == nil && IsSystemPythonPath(p) {
+			systemProtected = true
+			systemPath = p
+		}
+	}
+
 	return &SdkStatus{
 		SdkType:           Python,
 		DisplayName:       SdkDisplayName(Python),
 		Configured:        configured,
-		PathConfigured:    !configured && IsCommandAvailable("python"),
+		PathConfigured:    pathConfigured,
+		SystemProtected:   systemProtected,
+		SystemPath:        systemPath,
 		CurrentVersion:    active,
 		InstalledVersions: installed,
 		InstallPath:       f.cfg.SdkDir(string(Python)),
