@@ -128,7 +128,7 @@ func (f *PythonFetcher) platformTarget() string {
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 		return "aarch64-apple-darwin"
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
-		return "x86_64-pc-windows-msvc-shared"
+		return "x86_64-pc-windows-msvc"
 	default:
 		return ""
 	}
