@@ -159,6 +159,7 @@
     "cleanSuccess": "清理完成",
     "proxyCheckSuccess": "{{target}} 连接成功",
     "proxyCheckFail": "{{target}} 连接失败: {{error}}",
+    "proxyUrlRequired": "请先填写代理地址，否则将直连目标站点",
     "proxyCheckBaidu": "百度",
     "proxyCheckGoogle": "Google"
   },
