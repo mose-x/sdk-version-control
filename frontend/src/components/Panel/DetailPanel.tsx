@@ -1,5 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Button, Input, Tag, Spin, Progress, App, Tooltip, Modal, Dropdown, Result } from 'antd'
+import {
+  Button,
+  Input,
+  Tag,
+  Spin,
+  Progress,
+  App,
+  Tooltip,
+  Modal,
+  Dropdown,
+  Result,
+} from 'antd'
 import {
   CheckCircleFilled,
   CloseCircleFilled,
@@ -16,8 +27,28 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
-import { SdkStatus, VersionInfo, InstallProgress, PackageManagerInfo } from '../../types/sdk'
-import { GetRemoteVersions, InstallSdk, GetPackageManagers, InstallPackageManager, UpdatePackageManager, SwitchVersion, SelectLocalFile, SelectLocalDir, ImportLocalSdk, GetSdkDownloadURL, CheckSystemConflicts, UninstallVersion, CancelInstall } from '../../../wailsjs/go/main/App'
+import {
+  SdkStatus,
+  VersionInfo,
+  InstallProgress,
+  PackageManagerInfo,
+} from '../../types/sdk'
+import {
+  GetRemoteVersions,
+  InstallSdk,
+  GetPackageManagers,
+  InstallPackageManager,
+  UpdatePackageManager,
+  SwitchVersion,
+  SelectLocalFile,
+  SelectLocalDir,
+  ImportLocalSdk,
+  GetSdkDownloadURL,
+  CheckSystemConflicts,
+  UninstallVersion,
+  CancelInstall,
+} from '../../../wailsjs/go/main/App'
+import { EventsOn } from '../../../wailsjs/runtime/runtime'
 
 interface DetailPanelProps {
   status: SdkStatus | undefined
@@ -25,14 +56,20 @@ interface DetailPanelProps {
   onRefresh: () => void
 }
 
-const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRefresh }) => {
+const DetailPanel: React.FC<DetailPanelProps> = ({
+  status,
+  installProgress,
+  onRefresh,
+}) => {
   const [versions, setVersions] = useState<VersionInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [loadErrorMessage, setLoadErrorMessage] = useState<string>('')
   const [searchText, setSearchText] = useState('')
   const [installing, setInstalling] = useState(false)
-  const [packageManagers, setPackageManagers] = useState<PackageManagerInfo[]>([])
+  const [packageManagers, setPackageManagers] = useState<PackageManagerInfo[]>(
+    [],
+  )
   const [pmLoading, setPmLoading] = useState<string>('')
   const [switching, setSwitching] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -47,14 +84,20 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
     const units = ['B', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(1024))
     const idx = Math.min(i, units.length - 1)
-    return (bytes / Math.pow(1024, idx)).toFixed(idx === 0 ? 0 : 1) + ' ' + units[idx]
+    return (
+      (bytes / Math.pow(1024, idx)).toFixed(idx === 0 ? 0 : 1) +
+      ' ' +
+      units[idx]
+    )
   }
 
   const translateProgress = (progress: InstallProgress): string => {
     switch (progress.stage) {
       case 'downloading':
         if (progress.totalBytes > 0) {
-          const percent = Math.floor(progress.downloadedBytes * 100 / progress.totalBytes)
+          const percent = Math.floor(
+            (progress.downloadedBytes * 100) / progress.totalBytes,
+          )
           return t('progress.downloadingPercent', { percent })
         }
         return t('progress.downloading')
@@ -71,37 +114,45 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
     }
   }
 
-  const fetchVersions = useCallback(async (stale?: () => boolean) => {
-    if (!status) return
-    setLoading(true)
-    setLoadError(false)
-    setLoadErrorMessage('')
-    try {
-      const result = await GetRemoteVersions(status.sdkType)
-      if (stale?.()) return
-      setVersions(result || [])
-    } catch (e: any) {
-      if (stale?.()) return
-      console.error('Failed to get remote versions:', e)
-      // Preserve the backend error reason so the UI can show what actually
-      // failed (GitHub API 403 rate limit, proxy/network error, decode
-      // error, etc.) instead of a generic "failed to load" message.
-      const reason = typeof e === 'string' ? e : (e?.message || e?.error || '')
-      setLoadErrorMessage(reason ? String(reason) : '')
-      setLoadError(true)
-    } finally {
-      if (!stale?.()) setLoading(false)
-    }
-  }, [status, t])
+  const fetchVersions = useCallback(
+    async (stale?: () => boolean) => {
+      if (!status) return
+      setLoading(true)
+      setLoadError(false)
+      setLoadErrorMessage('')
+      try {
+        const result = await GetRemoteVersions(status.sdkType)
+        if (stale?.()) return
+        setVersions(result || [])
+      } catch (e: any) {
+        if (stale?.()) return
+        console.error('Failed to get remote versions:', e)
+        // Preserve the backend error reason so the UI can show what actually
+        // failed (GitHub API 403 rate limit, proxy/network error, decode
+        // error, etc.) instead of a generic "failed to load" message.
+        const reason = typeof e === 'string' ? e : e?.message || e?.error || ''
+        setLoadErrorMessage(reason ? String(reason) : '')
+        setLoadError(true)
+      } finally {
+        if (!stale?.()) setLoading(false)
+      }
+    },
+    [status, t],
+  )
 
-  const fetchPackageManagers = useCallback(async (stale?: () => boolean) => {
-    if (!status) return
-    try {
-      const pms = await GetPackageManagers(status.sdkType)
-      if (stale?.()) return
-      setPackageManagers(pms || [])
-    } catch { if (!stale?.()) setPackageManagers([]) }
-  }, [status])
+  const fetchPackageManagers = useCallback(
+    async (stale?: () => boolean) => {
+      if (!status) return
+      try {
+        const pms = await GetPackageManagers(status.sdkType)
+        if (stale?.()) return
+        setPackageManagers(pms || [])
+      } catch {
+        if (!stale?.()) setPackageManagers([])
+      }
+    },
+    [status],
+  )
 
   useEffect(() => {
     let stale = false
@@ -112,35 +163,80 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
       fetchVersions(() => stale)
       fetchPackageManagers(() => stale)
     }
-    return () => { stale = true }
+    return () => {
+      stale = true
+    }
   }, [status, fetchVersions, fetchPackageManagers])
+
+  // Silent background refresh: GetRemoteVersions returns the cached list
+  // immediately and the backend refreshes in the background, emitting
+  // "install:versions-refreshed" with { sdkType, versions } when the fresh list
+  // lands. We swap in the fresh list silently (no loading spinner, no error
+  // state) so the user sees an up-to-date list without any UI flicker. The
+  // event is filtered to the currently-selected SDK only.
+  useEffect(() => {
+    if (!status) return
+    const off = EventsOn(
+      'install:versions-refreshed',
+      (payload: { sdkType: string; versions: VersionInfo[] }) => {
+        if (!payload || payload.sdkType !== status.sdkType) return
+        // Only silently replace when we already have something to show; if the
+        // initial fetch is still in flight (versions empty + loading), let the
+        // normal fetch path resolve instead so loading state stays consistent.
+        setVersions((prev) => (prev.length > 0 ? payload.versions || [] : prev))
+      },
+    )
+    return () => {
+      off()
+    }
+  }, [status])
 
   useEffect(() => {
     if (!status) return
     let stale = false
     setConflicts([])
-    CheckSystemConflicts(status.sdkType).then((entries) => {
-      if (stale) return
-      if (entries && entries.length > 0) {
-        setConflicts(entries)
-        modal.warning({
-          title: t('detail.systemConflictTitle'),
-          content: (
-            <div>
-              <p>{t('detail.systemConflictMsg')}</p>
-              <ul style={{ maxHeight: 200, overflow: 'auto', paddingLeft: 20, margin: '8px 0' }}>
-                {entries.map((e: string, i: number) => (
-                  <li key={i} style={{ fontSize: 12, color: '#666', wordBreak: 'break-all' }}>{e}</li>
-                ))}
-              </ul>
-            </div>
-          ),
-          okText: t('app.confirm'),
-          width: 520,
-        })
-      }
-    }).catch(() => {})
-    return () => { stale = true }
+    CheckSystemConflicts(status.sdkType)
+      .then((entries) => {
+        if (stale) return
+        if (entries && entries.length > 0) {
+          setConflicts(entries)
+          modal.warning({
+            title: t('detail.systemConflictTitle'),
+            content: (
+              <div>
+                <p>{t('detail.systemConflictMsg')}</p>
+                <ul
+                  style={{
+                    maxHeight: 200,
+                    overflow: 'auto',
+                    paddingLeft: 20,
+                    margin: '8px 0',
+                  }}
+                >
+                  {entries.map((e: string, i: number) => (
+                    <li
+                      key={i}
+                      style={{
+                        fontSize: 12,
+                        color: '#666',
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      {e}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ),
+            okText: t('app.confirm'),
+            width: 520,
+          })
+        }
+      })
+      .catch(() => {})
+    return () => {
+      stale = true
+    }
   }, [status])
 
   useEffect(() => {
@@ -150,15 +246,25 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
           <div style={{ textAlign: 'center', padding: '10px 0' }}>
             <Progress
               percent={installProgress.percent}
-              status={installProgress.stage === 'error' ? 'exception' : installProgress.stage === 'done' ? 'success' : 'active'}
+              status={
+                installProgress.stage === 'error'
+                  ? 'exception'
+                  : installProgress.stage === 'done'
+                    ? 'success'
+                    : 'active'
+              }
             />
-            <p style={{ margin: '8px 0 0', color: '#888' }}>{translateProgress(installProgress)}</p>
-            {installProgress.stage === 'downloading' && installProgress.speedBytesPerSec > 0 && (
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#aaa' }}>
-                {formatBytes(installProgress.speedBytesPerSec)}/s
-                {installProgress.totalBytes > 0 && ` · ${formatBytes(installProgress.downloadedBytes)} / ${formatBytes(installProgress.totalBytes)}`}
-              </p>
-            )}
+            <p style={{ margin: '8px 0 0', color: '#888' }}>
+              {translateProgress(installProgress)}
+            </p>
+            {installProgress.stage === 'downloading' &&
+              installProgress.speedBytesPerSec > 0 && (
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#aaa' }}>
+                  {formatBytes(installProgress.speedBytesPerSec)}/s
+                  {installProgress.totalBytes > 0 &&
+                    ` · ${formatBytes(installProgress.downloadedBytes)} / ${formatBytes(installProgress.totalBytes)}`}
+                </p>
+              )}
           </div>
         ),
       })
@@ -168,7 +274,10 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
   const handleInstall = async (version: string) => {
     if (!status) return
     const ref = modal.confirm({
-      title: t('detail.confirmInstallSdk', { sdk: status.displayName, version }),
+      title: t('detail.confirmInstallSdk', {
+        sdk: status.displayName,
+        version,
+      }),
       content: t('detail.confirmInstallDesc', { version }),
       okText: t('app.confirm'),
       cancelText: t('app.cancel'),
@@ -178,7 +287,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
         setInstalling(true)
         InstallSdk(sdkType, version)
           .then(() => {
-            msgApi.success(t('detail.installSuccess', { sdk: status.displayName, version }))
+            msgApi.success(
+              t('detail.installSuccess', { sdk: status.displayName, version }),
+            )
             onRefresh()
             fetchPackageManagers()
           })
@@ -238,8 +349,15 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
     if (!status) return
     const isActive = version === status.currentVersion
     Modal.confirm({
-      title: isActive ? t('detail.uninstallActiveConfirm', { sdk: status.displayName, version }) : t('detail.uninstallConfirm', { sdk: status.displayName, version }),
-      content: isActive ? t('detail.uninstallActiveConfirmDesc') : t('detail.uninstallConfirmDesc'),
+      title: isActive
+        ? t('detail.uninstallActiveConfirm', {
+            sdk: status.displayName,
+            version,
+          })
+        : t('detail.uninstallConfirm', { sdk: status.displayName, version }),
+      content: isActive
+        ? t('detail.uninstallActiveConfirmDesc')
+        : t('detail.uninstallConfirmDesc'),
       okText: t('app.confirm'),
       okButtonProps: { danger: true },
       cancelText: t('app.cancel'),
@@ -251,7 +369,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
         } catch (e: any) {
           const msg = e?.message || String(e)
           if (msg.startsWith('ACTIVE_VERSION_DELETED:')) {
-            msgApi.warning(t('detail.activeVersionDeleted', { sdk: status.displayName }))
+            msgApi.warning(
+              t('detail.activeVersionDeleted', { sdk: status.displayName }),
+            )
             onRefresh()
           } else {
             msgApi.error(t('detail.uninstallFail', { error: msg }))
@@ -266,7 +386,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
     let url = installProgress?.downloadUrl || ''
     if (!url || installProgress?.version !== version) {
       try {
-        url = await GetSdkDownloadURL(status.sdkType, version) as string
+        url = (await GetSdkDownloadURL(status.sdkType, version)) as string
       } catch (e: any) {
         msgApi.error(t('detail.copyUrlFail'))
         return
@@ -286,11 +406,21 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
     if (!status) return
     setImporting(true)
     try {
-      const filePath = await SelectLocalFile() as string
-      if (!filePath) { setImporting(false); return }
+      const filePath = (await SelectLocalFile()) as string
+      if (!filePath) {
+        setImporting(false)
+        return
+      }
       const ref = modal.confirm({
         title: t('detail.importingSdk', { sdk: status.displayName }),
-        content: <div style={{ textAlign: 'center', padding: '10px 0' }}><Spin /><p style={{ marginTop: 8, color: '#888' }}>{t('detail.importingDesc')}</p></div>,
+        content: (
+          <div style={{ textAlign: 'center', padding: '10px 0' }}>
+            <Spin />
+            <p style={{ marginTop: 8, color: '#888' }}>
+              {t('detail.importingDesc')}
+            </p>
+          </div>
+        ),
         okText: t('app.confirm'),
         cancelText: t('app.cancel'),
         cancelButtonProps: { disabled: true },
@@ -304,7 +434,10 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
             fetchPackageManagers()
           } catch (e: any) {
             msgApi.error(t('detail.importFail', { error: e?.message || e }))
-            ref.update({ cancelButtonProps: { disabled: false }, okButtonProps: { loading: false } })
+            ref.update({
+              cancelButtonProps: { disabled: false },
+              okButtonProps: { loading: false },
+            })
             throw e
           }
         },
@@ -324,11 +457,21 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
     if (!status) return
     setImporting(true)
     try {
-      const dirPath = await SelectLocalDir() as string
-      if (!dirPath) { setImporting(false); return }
+      const dirPath = (await SelectLocalDir()) as string
+      if (!dirPath) {
+        setImporting(false)
+        return
+      }
       const ref = modal.confirm({
         title: t('detail.importingSdk', { sdk: status.displayName }),
-        content: <div style={{ textAlign: 'center', padding: '10px 0' }}><Spin /><p style={{ marginTop: 8, color: '#888' }}>{t('detail.importingDesc')}</p></div>,
+        content: (
+          <div style={{ textAlign: 'center', padding: '10px 0' }}>
+            <Spin />
+            <p style={{ marginTop: 8, color: '#888' }}>
+              {t('detail.importingDesc')}
+            </p>
+          </div>
+        ),
         okText: t('app.confirm'),
         cancelText: t('app.cancel'),
         cancelButtonProps: { disabled: true },
@@ -342,7 +485,10 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
             fetchPackageManagers()
           } catch (e: any) {
             msgApi.error(t('detail.importFail', { error: e?.message || e }))
-            ref.update({ cancelButtonProps: { disabled: false }, okButtonProps: { loading: false } })
+            ref.update({
+              cancelButtonProps: { disabled: false },
+              okButtonProps: { loading: false },
+            })
             throw e
           }
         },
@@ -366,7 +512,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
       fetchPackageManagers()
     } catch (e: any) {
       msgApi.error(t('detail.pmInstallFail', { name, error: e?.message || e }))
-    } finally { setPmLoading('') }
+    } finally {
+      setPmLoading('')
+    }
   }
 
   const handlePmUpdate = async (name: string) => {
@@ -377,7 +525,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
       fetchPackageManagers()
     } catch (e: any) {
       msgApi.error(t('detail.pmUpdateFail', { name, error: e?.message || e }))
-    } finally { setPmLoading('') }
+    } finally {
+      setPmLoading('')
+    }
   }
 
   if (!status) {
@@ -397,9 +547,21 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
       content: (
         <div>
           <p>{t('detail.systemConflictMsg')}</p>
-          <ul style={{ maxHeight: 200, overflow: 'auto', paddingLeft: 20, margin: '8px 0' }}>
+          <ul
+            style={{
+              maxHeight: 200,
+              overflow: 'auto',
+              paddingLeft: 20,
+              margin: '8px 0',
+            }}
+          >
             {conflicts.map((e: string, i: number) => (
-              <li key={i} style={{ fontSize: 12, color: '#666', wordBreak: 'break-all' }}>{e}</li>
+              <li
+                key={i}
+                style={{ fontSize: 12, color: '#666', wordBreak: 'break-all' }}
+              >
+                {e}
+              </li>
             ))}
           </ul>
         </div>
@@ -409,8 +571,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
     })
   }
 
-  const filteredVersions = versions.filter(v =>
-    v.version.includes(searchText) || String(v.major).includes(searchText)
+  const filteredVersions = versions.filter(
+    (v) =>
+      v.version.includes(searchText) || String(v.major).includes(searchText),
   )
 
   const installedSet = new Set(status.installedVersions || [])
@@ -452,14 +615,18 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
         )}
         <h2>
           {status.displayName}
-          <span className={`status-badge ${status.configured ? 'configured' : status.pathConfigured ? 'path-only' : 'not-configured'}`}>
+          <span
+            className={`status-badge ${status.configured ? 'configured' : status.pathConfigured ? 'path-only' : 'not-configured'}`}
+          >
             {status.configured ? (
               <>
                 <CheckCircleFilled /> v{status.currentVersion}
               </>
             ) : status.pathConfigured ? (
               <>
-                <CheckCircleFilled /> {status.pathVersion ? `v${status.pathVersion}` : ''} ({t('app.inPathOnly')})
+                <CheckCircleFilled />{' '}
+                {status.pathVersion ? `v${status.pathVersion}` : ''} (
+                {t('app.inPathOnly')})
               </>
             ) : (
               <>
@@ -471,21 +638,35 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
 
         {status.installedVersions && status.installedVersions.length > 0 && (
           <div className="installed-versions">
-            <span style={{ fontSize: 12, color: '#888', marginRight: 8 }}>{t('detail.installed')}:</span>
-            {status.installedVersions.map(v => {
+            <span style={{ fontSize: 12, color: '#888', marginRight: 8 }}>
+              {t('detail.installed')}:
+            </span>
+            {status.installedVersions.map((v) => {
               const isCurrent = v === currentVersion
               return (
                 <Tooltip
                   key={v}
-                  title={isCurrent ? t('detail.currentVersion') : t('detail.clickToSwitch')}
+                  title={
+                    isCurrent
+                      ? t('detail.currentVersion')
+                      : t('detail.clickToSwitch')
+                  }
                 >
                   <Tag
                     className={`installed-version-tag ${isCurrent ? 'current-version-tag' : ''}`}
-                    style={{ cursor: isCurrent || switching ? 'default' : 'pointer' }}
+                    style={{
+                      cursor: isCurrent || switching ? 'default' : 'pointer',
+                    }}
                     color={isCurrent ? 'green' : undefined}
-                    onClick={() => !isCurrent && !switching && handleSwitchVersion(v)}
+                    onClick={() =>
+                      !isCurrent && !switching && handleSwitchVersion(v)
+                    }
                   >
-                    {isCurrent && <CheckCircleFilled style={{ marginRight: 4, fontSize: 10 }} />}
+                    {isCurrent && (
+                      <CheckCircleFilled
+                        style={{ marginRight: 4, fontSize: 10 }}
+                      />
+                    )}
                     {v}
                     <DeleteOutlined
                       style={{ marginLeft: 6, fontSize: 10, color: '#999' }}
@@ -507,7 +688,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
         <div className="package-managers-section">
           <h3>{t('detail.packageManagers')}</h3>
           <div className="package-manager-list">
-            {packageManagers.map(pm => (
+            {packageManagers.map((pm) => (
               <div key={pm.name} className="package-manager-item">
                 <span className="pm-name">{pm.name}</span>
                 {pm.installed ? (
@@ -542,14 +723,31 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
 
       {/* Version Section */}
       <div className="version-section">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 12,
+          }}
+        >
           <h3>{t('detail.availableVersions')}</h3>
           <div style={{ display: 'flex', gap: 8 }}>
             <Dropdown
               menu={{
                 items: [
-                  { key: 'file', icon: <FileOutlined />, label: t('detail.importFile'), onClick: handleImportFile },
-                  { key: 'dir', icon: <FolderOpenOutlined />, label: t('detail.importDir'), onClick: handleImportDir },
+                  {
+                    key: 'file',
+                    icon: <FileOutlined />,
+                    label: t('detail.importFile'),
+                    onClick: handleImportFile,
+                  },
+                  {
+                    key: 'dir',
+                    icon: <FolderOpenOutlined />,
+                    label: t('detail.importDir'),
+                    onClick: handleImportDir,
+                  },
                 ],
               }}
               trigger={['click']}
@@ -577,7 +775,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
           prefix={<SearchOutlined />}
           placeholder={t('detail.searchVersion')}
           value={searchText}
-          onChange={e => setSearchText(e.target.value)}
+          onChange={(e) => setSearchText(e.target.value)}
           style={{ marginBottom: 12 }}
           allowClear
         />
@@ -588,14 +786,27 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
             title={t('detail.loadError')}
             subTitle={
               loadErrorMessage ? (
-                <div style={{ maxWidth: 560, margin: '0 auto', color: '#888', fontSize: 13, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                <div
+                  style={{
+                    maxWidth: 560,
+                    margin: '0 auto',
+                    color: '#888',
+                    fontSize: 13,
+                    wordBreak: 'break-word',
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
                   {loadErrorMessage}
                 </div>
               ) : undefined
             }
             style={{ padding: '40px 0' }}
             extra={
-              <Button type="primary" icon={<ReloadOutlined />} onClick={() => fetchVersions()}>
+              <Button
+                type="primary"
+                icon={<ReloadOutlined />}
+                onClick={() => fetchVersions()}
+              >
                 {t('detail.retry')}
               </Button>
             }
@@ -616,9 +827,21 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
                 >
                   <span className="version-number">
                     {v.version}
-                    {index === 0 && <Tag color="blue" style={{ marginLeft: 8 }}>{t('detail.latest')}</Tag>}
-                    {isInstalled && <Tag color="green" style={{ marginLeft: 4 }}>{t('detail.installed')}</Tag>}
-                    {isCurrentConfig && <Tag color="purple" style={{ marginLeft: 4 }}>{t('detail.currentConfig')}</Tag>}
+                    {index === 0 && (
+                      <Tag color="blue" style={{ marginLeft: 8 }}>
+                        {t('detail.latest')}
+                      </Tag>
+                    )}
+                    {isInstalled && (
+                      <Tag color="green" style={{ marginLeft: 4 }}>
+                        {t('detail.installed')}
+                      </Tag>
+                    )}
+                    {isCurrentConfig && (
+                      <Tag color="purple" style={{ marginLeft: 4 }}>
+                        {t('detail.currentConfig')}
+                      </Tag>
+                    )}
                   </span>
                   {v.isLts && <span className="version-lts-badge">LTS</span>}
                   {v.releaseDate && (
@@ -630,7 +853,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
                         className="install-btn reinstall-btn"
                         size="small"
                         icon={<DownloadOutlined />}
-                        loading={installing && installProgress?.version === v.version}
+                        loading={
+                          installing && installProgress?.version === v.version
+                        }
                         onClick={() => handleReinstall(v.version)}
                         disabled={installing}
                       >
@@ -648,7 +873,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
                       type={index === 0 ? 'primary' : 'default'}
                       size="small"
                       icon={<DownloadOutlined />}
-                      loading={installing && installProgress?.version === v.version}
+                      loading={
+                        installing && installProgress?.version === v.version
+                      }
                       onClick={() => handleInstall(v.version)}
                       disabled={installing}
                     >
@@ -675,26 +902,49 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
       {installProgress && (
         <div className="progress-section">
           <h4>
-            {t('detail.installing', { sdk: status.displayName, version: installProgress.version })}
+            {t('detail.installing', {
+              sdk: status.displayName,
+              version: installProgress.version,
+            })}
           </h4>
           <Progress
             percent={installProgress.percent}
-            status={installProgress.stage === 'error' ? 'exception' : installProgress.stage === 'done' ? 'success' : 'active'}
+            status={
+              installProgress.stage === 'error'
+                ? 'exception'
+                : installProgress.stage === 'done'
+                  ? 'success'
+                  : 'active'
+            }
             strokeColor={{
               '0%': '#1677ff',
               '100%': '#52c41a',
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: '#aaa', marginTop: 8 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: 13,
+              color: '#aaa',
+              marginTop: 8,
+            }}
+          >
             <span>{translateProgress(installProgress)}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              {installProgress.stage === 'downloading' && installProgress.downloadedBytes > 0 && (
-                <span>
-                  {formatBytes(installProgress.downloadedBytes)}
-                  {installProgress.totalBytes > 0 ? ` / ${formatBytes(installProgress.totalBytes)}` : ''}
-                  {installProgress.speedBytesPerSec > 0 ? `  ${formatBytes(installProgress.speedBytesPerSec)}/s` : ''}
-                </span>
-              )}
+              {installProgress.stage === 'downloading' &&
+                installProgress.downloadedBytes > 0 && (
+                  <span>
+                    {formatBytes(installProgress.downloadedBytes)}
+                    {installProgress.totalBytes > 0
+                      ? ` / ${formatBytes(installProgress.totalBytes)}`
+                      : ''}
+                    {installProgress.speedBytesPerSec > 0
+                      ? `  ${formatBytes(installProgress.speedBytesPerSec)}/s`
+                      : ''}
+                  </span>
+                )}
               {installProgress.downloadUrl && (
                 <Tooltip title={t('detail.copyDownloadUrl')}>
                   <Button
