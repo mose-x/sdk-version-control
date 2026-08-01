@@ -88,8 +88,17 @@ Section
 
     !insertmacro wails.files
 
-    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    # Ship the white-plate icon alongside the exe and point both shortcuts
+    # at it explicitly. Windows shell picks the exe's first embedded icon
+    # group when CreateShortcut omits the icon parameter, but that lookup is
+    # fragile (icon cache, multi-group resource ordering). An explicit
+    # icon file makes the desktop/Start Menu shortcut deterministically
+    # white-plate, matching the macOS Dock/Launchpad appearance, while the
+    # in-app window logo still loads the transparent #3 resource from the exe.
+    File "..\icon-white.ico"
+
+    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon-white.ico"
+    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon-white.ico"
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
