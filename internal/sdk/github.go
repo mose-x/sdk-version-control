@@ -71,17 +71,24 @@ func applyGithubEndpoint(sm *config.SettingsManager, sdkType SdkType, defaultURL
 // the caller has already resolved through its useEndpoint mirror if desired)
 // and decodes the JSON into target (a pointer to a slice of release structs
 // whose fields match the GitHub releases API shape: tag_name, draft,
-// prerelease, published_at, assets). It centralizes two cross-cutting concerns
-// that every GitHub-API fetcher (python/ruby/perl/php/rust/flutter) needs:
+// prerelease, published_at, assets). It centralizes the cross-cutting concerns
+// that every GitHub-API fetcher (python/ruby/perl/php/rust/flutter) needs.
 //
-//  1. GitHub token auth: when a PAT is configured it is sent as
-//     Authorization: Bearer, raising the rate limit from 60 to 5000/hour and
-//     avoiding the 403 that unauthenticated requests hit after a few refreshes.
-//  2. GithubMirror fallback: if the primary request fails (network error or
-//     403 even with a token), the request is retried through the configured
-//     GithubMirror reverse proxy (e.g. https://ghfast.top), but only when url
-//     still points at api.github.com -- a per-SDK custom endpoint already
-//     mirrored the URL, so prepending GithubMirror would double-proxy.
+// REQUEST PRIORITY CHAIN (each candidate tried in order, first success wins):
+//
+//  1. Direct to api.github.com WITH the user's GitHub token (when configured).
+//     A PAT raises the rate limit from 60 to 5000/hour and is the preferred
+//     path for authenticated users. The token is sent only to GitHub itself,
+//     never to a third-party mirror, so it cannot leak.
+//  2. Each mirror in mirrors.json (the "easter egg" file under the SVC data
+//     dir), WITHOUT the token. These public reverse-proxies forward to GitHub
+//     under their own identity, which sidesteps the 60/h anonymous cap for
+//     users who have not configured a token. Tried only when url still points
+//     at api.github.com (a per-SDK custom endpoint already mirrored the URL,
+//     so prepending a mirror would double-proxy).
+//  3. The GithubMirror set in the settings UI, WITHOUT the token. This is the
+//     user's explicitly-chosen mirror and is tried last so that a working
+//     direct/mirrors.json path is preferred over a possibly-slower user mirror.
 //
 // Endpoint mirroring is NOT done here: each fetcher's useEndpoint decides
 // whether its per-SDK endpoint applies to the GitHub API (python/ruby/perl/php
@@ -92,33 +99,57 @@ func applyGithubEndpoint(sm *config.SettingsManager, sdkType SdkType, defaultURL
 func fetchGithubReleasesPage(sm *config.SettingsManager, client *http.Client, url string, target any) error {
 	token := DecodeGithubToken(sm)
 
-	// Candidate URLs to try in order. The GithubMirror reverse-proxy fallback
-	// is only added when url still points at the real api.github.com -- a
-	// per-SDK custom endpoint already mirrored the URL, so prepending
-	// GithubMirror would double-proxy.
 	type candidate struct {
 		url   string
 		label string
+		// withToken controls whether the GitHub PAT is attached to this
+		// candidate. Only direct requests to api.github.com carry the token;
+		// third-party mirrors never receive it (the proxy uses its own
+		// identity, and forwarding a PAT to a third party is a leak risk).
+		withToken bool
 	}
 	var cands []candidate
-	cands = append(cands, candidate{url, "primary"})
-	if sm != nil {
-		mirror := sm.Get().GithubMirror
-		if mirror != "" && strings.Contains(url, "api.github.com") {
-			cands = append(cands, candidate{strings.TrimRight(mirror, "/") + "/" + url, "mirror"})
+
+	// 1. Direct request (with token when configured). Always tried first so a
+	//    working authenticated path is preferred over any mirror.
+	cands = append(cands, candidate{url, "primary", token != ""})
+
+	// Mirrors (steps 2 and 3) only apply when url still points at the real
+	// api.github.com. A per-SDK custom endpoint already rewrote the host, so
+	// prepending a mirror would double-proxy and almost certainly 404.
+	isRealGithubAPI := strings.Contains(url, "api.github.com")
+	if isRealGithubAPI {
+		// 2. mirrors.json easter-egg list (no token).
+		for _, m := range GetGithubMirrors() {
+			m = strings.TrimSpace(m)
+			if m == "" {
+				continue
+			}
+			cands = append(cands, candidate{strings.TrimRight(m, "/") + "/" + url, "mirrors.json", false})
+		}
+		// 3. User-configured GithubMirror from the settings UI (no token).
+		if sm != nil {
+			mirror := strings.TrimSpace(sm.Get().GithubMirror)
+			if mirror != "" {
+				cands = append(cands, candidate{strings.TrimRight(mirror, "/") + "/" + url, "ui-mirror", false})
+			}
 		}
 	}
 
 	var lastErr error
 	for _, c := range cands {
-		err := doGithubRequest(client, c.url, token, target)
+		tok := ""
+		if c.withToken {
+			tok = token
+		}
+		err := doGithubRequest(client, c.url, tok, target)
 		if err == nil {
 			return nil
 		}
 		lastErr = fmt.Errorf("%s: %w", c.label, err)
-		// A 403 with no token is not retried on the same host -- but the next
-		// candidate (mirror) may succeed. A network error likewise falls
-		// through to the mirror. Both are covered by simply continuing.
+		// Any failure (403 rate limit, network error, 504, ...) falls through
+		// to the next candidate. A mirror may succeed where the direct request
+		// was rate-limited or timed out.
 	}
 	return lastErr
 }

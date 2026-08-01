@@ -73,6 +73,12 @@ func (a *App) startup(ctx context.Context) {
 	a.registry = sdk.NewRegistry(a.cfg, a.settings)
 	logger.Info("SDK registry initialized with %d SDK types", len(a.registry.All()))
 
+	// Seed ~/.svc/mirrors.json (the editable "easter egg" GitHub mirror list)
+	// and point the version cache at ~/.svc/cache. Both must be (re)initialised
+	// after any SetSvcDir override above so the files land in the active SVC dir.
+	sdk.InitMirrorsFile(a.cfg.SvcDir())
+	sdk.InitVersionCacheDir(filepath.Join(a.cfg.SvcDir(), "cache"))
+
 	// One-time shims setup: creates ~/.svc/shims, installs the shim binary,
 	// and adds the single .svc.rc source line (Unix) / shims PATH entry (Windows).
 	// This is the only place SVC ever touches the shell rc or registry PATH.

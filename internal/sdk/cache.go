@@ -1,0 +1,144 @@
+package sdk
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+// versionCache is a two-tier (in-memory + on-disk) cache of remote version
+// lists keyed by SDK type. It makes the "refresh versions" UX feel instant:
+// the frontend always gets a list back immediately (from memory, or from the
+// on-disk cache after an app restart), while the backend refreshes in the
+// background and pushes an event when a fresher list lands.
+//
+// On-disk cache survives restarts, so even the first launch after a restart
+// can show a stale-but-useful list instead of a spinner. No TTL is enforced --
+// a stale cache is strictly better than nothing, and every explicit "refresh"
+// click triggers a background fetch that overwrites the cache.
+//
+// The on-disk root dir is set once via InitVersionCacheDir before first use;
+// until then the cache is memory-only (calls degrade gracefully).
+type versionCache struct {
+	mu      sync.RWMutex
+	entries map[SdkType]versionCacheEntry
+	dir     string
+}
+
+type versionCacheEntry struct {
+	Versions  []VersionInfo `json:"versions"`
+	FetchedAt time.Time     `json:"fetched_at"`
+}
+
+var globalVersionCache = &versionCache{entries: make(map[SdkType]versionCacheEntry)}
+
+// InitVersionCacheDir sets the on-disk root directory for the version cache.
+// Must be called once at startup (after the config/data dir is known). Safe to
+// call multiple times; the latest dir wins. If dir is empty, the cache stays
+// memory-only.
+func InitVersionCacheDir(dir string) {
+	globalVersionCache.mu.Lock()
+	defer globalVersionCache.mu.Unlock()
+	globalVersionCache.dir = dir
+}
+
+func (c *versionCache) cacheFile(t SdkType) string {
+	if c.dir == "" {
+		return ""
+	}
+	return filepath.Join(c.dir, "versions_"+string(t)+".json")
+}
+
+// GetCachedVersions returns the cached version list for sdkType and whether a
+// cache entry exists. It checks memory first; on a memory miss it falls back
+// to the on-disk JSON file (so a freshly restarted app still serves the last
+// known list). The returned slice is a defensive copy.
+func GetCachedVersions(t SdkType) ([]VersionInfo, bool) {
+	globalVersionCache.mu.RLock()
+	e, ok := globalVersionCache.entries[t]
+	globalVersionCache.mu.RUnlock()
+	if ok {
+		return copyVersions(e.Versions), true
+	}
+	// Memory miss: try the on-disk file (populates memory as a side effect).
+	return globalVersionCache.loadFromDisk(t)
+}
+
+// loadFromDisk reads the on-disk cache file for t. On success it also stores
+// the entry in memory (so subsequent reads skip the disk) and returns the list.
+func (c *versionCache) loadFromDisk(t SdkType) ([]VersionInfo, bool) {
+	path := c.cacheFile(t)
+	if path == "" {
+		return nil, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var e versionCacheEntry
+	if err := json.Unmarshal(data, &e); err != nil {
+		return nil, false
+	}
+	c.mu.Lock()
+	c.entries[t] = e
+	c.mu.Unlock()
+	return copyVersions(e.Versions), true
+}
+
+// SetCachedVersions stores versions for sdkType, replacing any existing entry.
+// It writes to both memory and disk (so the cache survives a restart). The
+// slice is copied so later mutation by the caller does not affect the cache.
+// A disk write failure is logged but does not affect the in-memory cache --
+// the next refresh will retry the write.
+func SetCachedVersions(t SdkType, versions []VersionInfo) {
+	e := versionCacheEntry{Versions: copyVersions(versions), FetchedAt: time.Now()}
+	globalVersionCache.mu.Lock()
+	globalVersionCache.entries[t] = e
+	dir := globalVersionCache.dir
+	globalVersionCache.mu.Unlock()
+	if dir == "" {
+		return
+	}
+	path := globalVersionCache.cacheFile(t)
+	if path == "" {
+		return
+	}
+	// Best-effort persist; a write failure only means the next restart starts
+	// from the previous on-disk cache, which is acceptable.
+	_ = os.MkdirAll(dir, 0755)
+	if data, err := json.Marshal(e); err == nil {
+		_ = os.WriteFile(path, data, 0644)
+	}
+}
+
+func copyVersions(in []VersionInfo) []VersionInfo {
+	if in == nil {
+		return nil
+	}
+	out := make([]VersionInfo, len(in))
+	copy(out, in)
+	return out
+}
+
+// LookupCachedDownloadURL returns the cached download URL and filename for the
+// given SDK type + version, or ("", "", false) when not cached. It lets
+// GetDownloadURL skip a fresh FetchRemoteVersions round-trip when the version
+// list was already fetched (e.g. the user just opened the version panel, which
+// populated the cache, then clicked Install on one of the listed versions).
+//
+// On a cache miss the caller MUST fall back to FetchRemoteVersions -- a cache
+// miss is the normal first-install path and is not an error.
+func LookupCachedDownloadURL(t SdkType, version string) (string, string, bool) {
+	versions, ok := GetCachedVersions(t)
+	if !ok {
+		return "", "", false
+	}
+	for _, v := range versions {
+		if v.Version == version {
+			return v.DownloadURL, v.FileName, true
+		}
+	}
+	return "", "", false
+}
