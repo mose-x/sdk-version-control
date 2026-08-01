@@ -172,8 +172,12 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 
 	seen := make(map[string]VersionInfo) // pythonVersion -> latest VersionInfo
 	page := 1
-	for page <= 5 { // fetch up to 5 pages (150 releases) to cover all Python versions
-		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=30&page=%d", page))
+	for page <= 5 { // fetch up to 5 pages (50 releases) to cover all Python versions
+		// per_page=10 (not the usual 30): python-build-standalone releases each
+		// carry 100+ assets, so per_page=30 produces a multi-MB JSON that GitHub's
+		// API gateway times out on (HTTP 504). 10 keeps each response small enough
+		// to stay under the gateway timeout.
+		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=10&page=%d", page))
 		var releases []pythonRelease
 		// fetchGithubReleasesPage applies GitHub token auth (60->5000/h) and
 		// GithubMirror fallback; useEndpoint above mirrors api.github.com via
