@@ -127,9 +127,16 @@ func (a *App) fetchAndCacheVersions(t sdk.SdkType, f sdk.VersionFetcher) ([]sdk.
 // list differs from the cached one. Errors are logged but not surfaced: this is
 // a silent refresh, and the UI already has the cached list to show.
 //
+// Throttled per-SDK via ShouldRefreshVersions (30s cooldown): rapidly switching
+// SDK panels triggers GetRemoteVersions on each switch, and without throttling
+// every cache hit would spawn a goroutine + emit an event, flooding the UI.
+//
 // The goroutine is fire-and-forget; it is not cancelled on app shutdown
 // (Wails tears down the runtime, so a late EventsEmit is a no-op).
 func (a *App) refreshVersionsInBackground(t sdk.SdkType, f sdk.VersionFetcher) {
+	if !sdk.ShouldRefreshVersions(t) {
+		return
+	}
 	go func() {
 		fresh, err := a.fetchAndCacheVersions(t, f)
 		if err != nil {
