@@ -220,6 +220,11 @@ func (f *PHPFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 }
 
 func (f *PHPFetcher) GetDownloadURL(version string) (string, string, error) {
+	// Cache short-circuit: skip a fresh FetchRemoteVersions round-trip when the
+	// version list was already fetched (see PythonFetcher.GetDownloadURL).
+	if url, name, ok := LookupCachedDownloadURL(PHP, version); ok {
+		return url, name, nil
+	}
 	versions, err := f.FetchRemoteVersions()
 	if err != nil {
 		return "", "", err

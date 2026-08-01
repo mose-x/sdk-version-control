@@ -233,6 +233,11 @@ func (f *PerlFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 }
 
 func (f *PerlFetcher) GetDownloadURL(version string) (string, string, error) {
+	// Cache short-circuit: skip a fresh FetchRemoteVersions round-trip when the
+	// version list was already fetched (see PythonFetcher.GetDownloadURL).
+	if url, name, ok := LookupCachedDownloadURL(Perl, version); ok {
+		return url, name, nil
+	}
 	versions, err := f.FetchRemoteVersions()
 	if err != nil {
 		return "", "", err

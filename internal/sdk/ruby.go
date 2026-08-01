@@ -256,6 +256,11 @@ func (f *RubyFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 }
 
 func (f *RubyFetcher) GetDownloadURL(version string) (string, string, error) {
+	// Cache short-circuit: skip a fresh FetchRemoteVersions round-trip when the
+	// version list was already fetched (see PythonFetcher.GetDownloadURL).
+	if url, name, ok := LookupCachedDownloadURL(Ruby, version); ok {
+		return url, name, nil
+	}
 	versions, err := f.FetchRemoteVersions()
 	if err != nil {
 		return "", "", err

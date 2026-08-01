@@ -163,6 +163,11 @@ func (f *AndroidFetcher) fallbackVersions() []VersionInfo {
 }
 
 func (f *AndroidFetcher) GetDownloadURL(version string) (string, string, error) {
+	// Cache short-circuit: skip a fresh FetchRemoteVersions round-trip when the
+	// version list was already fetched (see PythonFetcher.GetDownloadURL).
+	if url, name, ok := LookupCachedDownloadURL(Android, version); ok {
+		return url, name, nil
+	}
 	// First try to fetch from remote
 	versions, _ := f.FetchRemoteVersions()
 	for _, v := range versions {

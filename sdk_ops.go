@@ -11,6 +11,8 @@ import (
 	"sdk_version_control/internal/extractor"
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/sdk"
+
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
@@ -78,15 +80,70 @@ func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
 	if err := validatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
-	f := a.registry.Get(sdk.SdkType(sdkType))
+	t := sdk.SdkType(sdkType)
+	f := a.registry.Get(t)
 	if f == nil {
 		return nil, fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
+
+	// Cache-first: return the cached list immediately (memory → disk) so the UI
+	// gets a usable list without waiting for a network round-trip. A background
+	// goroutine then refreshes the cache from the remote and emits
+	// "install:versions-refreshed" so the UI can silently swap in the fresh list.
+	//
+	// On a cache MISS (first run, never fetched before) we fetch synchronously
+	// so the user sees a real list on the first open instead of an empty panel
+	// that only fills in seconds later via the event.
+	if cached, ok := sdk.GetCachedVersions(t); ok {
+		a.refreshVersionsInBackground(t, f)
+		return cached, nil
+	}
+
+	versions, err := a.fetchAndCacheVersions(t, f)
+	if err != nil {
+		return nil, err
+	}
+	return versions, nil
+}
+
+// fetchAndCacheVersions fetches the remote version list through f, stores it in
+// the version cache (memory + disk), and returns it. Used both by the
+// synchronous cache-miss path and by the background refresh goroutine.
+func (a *App) fetchAndCacheVersions(t sdk.SdkType, f sdk.VersionFetcher) ([]sdk.VersionInfo, error) {
 	proxyCfg := a.getProxyConfig()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
 	f.SetHTTPClient(client)
-	return f.FetchRemoteVersions()
+	versions, err := f.FetchRemoteVersions()
+	if err != nil {
+		return nil, err
+	}
+	sdk.SetCachedVersions(t, versions)
+	return versions, nil
+}
+
+// refreshVersionsInBackground fetches a fresh version list off the UI thread and
+// emits "install:versions-refreshed" with {sdkType, versions} when the fresh
+// list differs from the cached one. Errors are logged but not surfaced: this is
+// a silent refresh, and the UI already has the cached list to show.
+//
+// The goroutine is fire-and-forget; it is not cancelled on app shutdown
+// (Wails tears down the runtime, so a late EventsEmit is a no-op).
+func (a *App) refreshVersionsInBackground(t sdk.SdkType, f sdk.VersionFetcher) {
+	go func() {
+		fresh, err := a.fetchAndCacheVersions(t, f)
+		if err != nil {
+			logger.Warn("Background version refresh failed for %s: %v", t, err)
+			return
+		}
+		// Emit even when the list is identical to the cached one: the UI uses
+		// the event as a "refresh done" signal too (e.g. to clear a stale
+		// loading state from a manual refresh click). Cheap and idempotent.
+		wailsRuntime.EventsEmit(a.ctx, "install:versions-refreshed", map[string]any{
+			"sdkType":  string(t),
+			"versions": fresh,
+		})
+	}()
 }
 
 func (a *App) InstallSdk(sdkTypeStr string, version string) error {

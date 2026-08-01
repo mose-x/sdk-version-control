@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"sdk_version_control/internal/config"
@@ -159,6 +160,13 @@ type pythonAsset struct {
 // GitHub releases. Each release (tagged by date) contains builds for multiple
 // Python versions; we aggregate them and deduplicate by Python version,
 // keeping the latest release's build for each version.
+//
+// Pages are fetched CONCURRENTLY (5 pages in parallel) instead of serially:
+// python-build-standalone publishes ~50 dated releases covering all Python
+// versions, so we need 5 pages (per_page=10). Serial fetching takes 5 round
+// trips; parallel collapses that to 1. Each page is independent (the dedup
+// prefers the lowest page number, since releases are returned newest-first),
+// so concurrent fetch is safe.
 func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	target := f.platformTarget()
 	if target == "" {
@@ -170,28 +178,54 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	//   cpython-3.12.3+20240415-x86_64-unknown-linux-gnu-install_only.tar.gz
 	verRe := regexp.MustCompile(`^cpython-(\d+\.\d+\.\d+)\+\d+-` + regexp.QuoteMeta(suffix) + `$`)
 
-	seen := make(map[string]VersionInfo) // pythonVersion -> latest VersionInfo
-	page := 1
-	for page <= 5 { // fetch up to 5 pages (50 releases) to cover all Python versions
-		// per_page=10 (not the usual 30): python-build-standalone releases each
-		// carry 100+ assets, so per_page=30 produces a multi-MB JSON that GitHub's
-		// API gateway times out on (HTTP 504). 10 keeps each response small enough
-		// to stay under the gateway timeout.
-		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=10&page=%d", page))
-		var releases []pythonRelease
-		// fetchGithubReleasesPage applies GitHub token auth (60->5000/h) and
-		// GithubMirror fallback; useEndpoint above mirrors api.github.com via
-		// the per-SDK custom endpoint. The previous inline code only hit
-		// api.github.com directly, so mirrors/tokens were ignored and a 403
-		// rate-limit surfaced as "no releases found".
-		if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
-			return nil, fmt.Errorf("failed to fetch Python version list (page %d): %w", page, err)
-		}
-		if len(releases) == 0 {
-			break // reached the last page, stop paging
-		}
+	const pageCount = 5
+	const perPage = 10
+	// per_page=10 (not the usual 30): python-build-standalone releases each
+	// carry 100+ assets, so per_page=30 produces a multi-MB JSON that GitHub's
+	// API gateway times out on (HTTP 504). 10 keeps each response small enough
+	// to stay under the gateway timeout.
 
-		for _, rel := range releases {
+	type pageResult struct {
+		page     int
+		releases []pythonRelease
+		err      error
+	}
+	results := make([]pageResult, pageCount)
+
+	var wg sync.WaitGroup
+	for p := 1; p <= pageCount; p++ {
+		wg.Add(1)
+		go func(page int) {
+			defer wg.Done()
+			// fetchGithubReleasesPage applies GitHub token auth (60->5000/h)
+			// and the mirrors.json / UI mirror fallback chain; useEndpoint
+			// above mirrors api.github.com via the per-SDK custom endpoint.
+			url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=%d&page=%d", perPage, page))
+			var releases []pythonRelease
+			if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
+				results[page-1] = pageResult{page: page, err: err}
+				return
+			}
+			results[page-1] = pageResult{page: page, releases: releases}
+		}(p)
+	}
+	wg.Wait()
+
+	// Deduplicate by Python version. Releases are returned newest-first across
+	// pages, so a lower page number is "newer". Track the page each version came
+	// from and replace an existing entry only when the new page is lower (newer),
+	// so the same Python version built in multiple dated releases resolves to
+	// the build from the most recent release that contains it.
+	seen := make(map[string]VersionInfo) // pythonVersion -> chosen VersionInfo
+	seenPage := make(map[string]int)     // pythonVersion -> page it came from
+	for _, r := range results {
+		if r.err != nil {
+			// A single page failure (e.g. transient 504 on one page) does not
+			// fail the whole call: the other pages may carry the versions the
+			// user wants. We only fail below if NO page produced any version.
+			continue
+		}
+		for _, rel := range r.releases {
 			for _, asset := range rel.Assets {
 				m := verRe.FindStringSubmatch(asset.Name)
 				if m == nil {
@@ -204,23 +238,31 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 				if t, err := time.Parse(time.RFC3339, rel.PublishedAt); err == nil {
 					date = t.Format("2006-01-02")
 				}
-				// Releases are returned newest-first; keep the first (latest)
-				// build we encounter for each Python version.
-				if _, exists := seen[pyVer]; !exists {
-					seen[pyVer] = VersionInfo{
-						Version:     pyVer,
-						Major:       major,
-						DownloadURL: f.useEndpoint(asset.BrowserDownloadURL),
-						FileName:    asset.Name,
-						ReleaseDate: date,
-					}
+				cand := VersionInfo{
+					Version:     pyVer,
+					Major:       major,
+					DownloadURL: f.useEndpoint(asset.BrowserDownloadURL),
+					FileName:    asset.Name,
+					ReleaseDate: date,
+				}
+				if prevPage, exists := seenPage[pyVer]; !exists || r.page < prevPage {
+					seen[pyVer] = cand
+					seenPage[pyVer] = r.page
 				}
 			}
 		}
-		page++
 	}
 
+	// Fail only when every page errored AND we got nothing. A partial result
+	// (some pages ok, some failed) is returned so the user still sees versions.
 	if len(seen) == 0 {
+		// Surface the first non-nil error for diagnostics; if all pages returned
+		// empty (no error), report "no releases found".
+		for _, r := range results {
+			if r.err != nil {
+				return nil, fmt.Errorf("failed to fetch Python version list: %w", r.err)
+			}
+		}
 		return nil, fmt.Errorf("no python-build-standalone releases found")
 	}
 
@@ -235,6 +277,13 @@ func (f *PythonFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 }
 
 func (f *PythonFetcher) GetDownloadURL(version string) (string, string, error) {
+	// Cache short-circuit: if the version list was already fetched (e.g. the
+	// user opened the version panel, which populated the cache, then clicked
+	// Install), reuse the cached URL instead of re-fetching 5 GitHub pages.
+	// Falls through to FetchRemoteVersions on a miss (first install).
+	if url, name, ok := LookupCachedDownloadURL(Python, version); ok {
+		return url, name, nil
+	}
 	versions, err := f.FetchRemoteVersions()
 	if err != nil {
 		return "", "", err
