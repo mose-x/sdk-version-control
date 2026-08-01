@@ -1,5 +1,8 @@
 {
   "RT_GROUP_ICON": {
+    "#1": {
+      "0000": "../build/windows/icon-white.ico"
+    },
     "#3": {
       "0000": "../build/windows/icon.ico"
     }
