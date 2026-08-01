@@ -1,0 +1,8 @@
+{
+  "name": "sdk-version-control",
+  "private": true,
+  "description": "Root package.json for code-hooks toolchain (npm test stage). Frontend code lives under frontend/.",
+  "scripts": {
+    "test": "echo \"no root tests; see frontend/ for the web app\" && exit 0"
+  }
+}
