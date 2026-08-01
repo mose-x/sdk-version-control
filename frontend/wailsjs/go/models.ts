@@ -25,12 +25,13 @@ export namespace config {
 	    endpoints: Record<string, string>;
 	    installPath: string;
 	    githubMirror: string;
+	    githubToken: string;
 	    downloadThreads: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AppSettings(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.theme = source["theme"];
@@ -39,6 +40,7 @@ export namespace config {
 	        this.endpoints = source["endpoints"];
 	        this.installPath = source["installPath"];
 	        this.githubMirror = source["githubMirror"];
+	        this.githubToken = source["githubToken"];
 	        this.downloadThreads = source["downloadThreads"];
 	    }
 	

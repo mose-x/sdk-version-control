@@ -150,6 +150,10 @@ export function SaveEndpoints(arg1) {
   return window['go']['main']['App']['SaveEndpoints'](arg1);
 }
 
+export function SaveGithubToken(arg1) {
+  return window['go']['main']['App']['SaveGithubToken'](arg1);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }

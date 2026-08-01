@@ -1,5 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Radio, Divider, Button, App, Tabs, Descriptions, Switch, Input, Modal, Progress, Space } from 'antd'
+import {
+  Radio,
+  Divider,
+  Button,
+  App,
+  Tabs,
+  Descriptions,
+  Switch,
+  Input,
+  Modal,
+  Progress,
+  Space,
+} from 'antd'
 import {
   SettingOutlined,
   BgColorsOutlined,
@@ -15,9 +27,33 @@ import {
   FileTextOutlined,
   ReloadOutlined,
   UndoOutlined,
+  KeyOutlined,
 } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
-import { GetSettings, SaveSettings, GetAppInfo, GetDefaultEndpoints, GetEndpoints, SaveEndpoints, GetDefaultInstallPath, GetInstallPath, MigrateInstallPath, CheckUpdate, DownloadUpdate, ApplyUpdate, RollbackUpdate, GetTmpCacheSize, CleanTmpCache, CheckProxy, GetLogFiles, GetLogContent, CleanLogs, GetLogDir, DeleteLogFile } from '../../../wailsjs/go/main/App'
+import {
+  GetSettings,
+  SaveSettings,
+  GetAppInfo,
+  GetDefaultEndpoints,
+  GetEndpoints,
+  SaveEndpoints,
+  SaveGithubToken,
+  GetDefaultInstallPath,
+  GetInstallPath,
+  MigrateInstallPath,
+  CheckUpdate,
+  DownloadUpdate,
+  ApplyUpdate,
+  RollbackUpdate,
+  GetTmpCacheSize,
+  CleanTmpCache,
+  CheckProxy,
+  GetLogFiles,
+  GetLogContent,
+  CleanLogs,
+  GetLogDir,
+  DeleteLogFile,
+} from '../../../wailsjs/go/main/App'
 import { BrowserOpenURL, EventsOn } from '../../../wailsjs/runtime/runtime'
 
 interface AppSettings {
@@ -30,6 +66,7 @@ interface AppSettings {
     protocol: string
   }
   githubMirror: string
+  githubToken: string
   downloadThreads: number
 }
 
@@ -61,27 +98,47 @@ interface SettingsPageProps {
   onLanguageChange: (lang: string) => void
 }
 
-const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageChange }) => {
+const SettingsPage: React.FC<SettingsPageProps> = ({
+  onThemeChange,
+  onLanguageChange,
+}) => {
   const { t, i18n } = useTranslation()
   const { message: msgApi } = App.useApp()
-  const [settings, setSettings] = useState<AppSettings>({ theme: 'dark', language: 'zh', proxy: { enabled: false, mode: 'system', url: '', protocol: 'http' }, githubMirror: '', downloadThreads: 4 })
+  const [settings, setSettings] = useState<AppSettings>({
+    theme: 'dark',
+    language: 'zh',
+    proxy: { enabled: false, mode: 'system', url: '', protocol: 'http' },
+    githubMirror: '',
+    githubToken: '',
+    downloadThreads: 4,
+  })
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [checking, setChecking] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
-  const [downloadProgress, setDownloadProgress] = useState<{ percent: number; message: string; stage: string } | null>(null)
+  const [downloadProgress, setDownloadProgress] = useState<{
+    percent: number
+    message: string
+    stage: string
+  } | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [downloadDone, setDownloadDone] = useState(false)
   const [defaultEndpoints, setDefaultEndpoints] = useState<EndpointInfo[]>([])
-  const [customEndpoints, setCustomEndpoints] = useState<Record<string, string>>({})
-  const [draftEndpoints, setDraftEndpoints] = useState<Record<string, string>>({})
+  const [customEndpoints, setCustomEndpoints] = useState<
+    Record<string, string>
+  >({})
+  const [draftEndpoints, setDraftEndpoints] = useState<Record<string, string>>(
+    {},
+  )
   const [installPath, setInstallPath] = useState('')
   const [defaultInstallPath, setDefaultInstallPath] = useState('')
   const [installPathDraft, setInstallPathDraft] = useState('')
   const [migrating, setMigrating] = useState(false)
   const [tmpCacheSize, setTmpCacheSize] = useState(0)
   const [cleaning, setCleaning] = useState(false)
-  const [checkingProxy, setCheckingProxy] = useState<Record<string, boolean>>({})
+  const [checkingProxy, setCheckingProxy] = useState<Record<string, boolean>>(
+    {},
+  )
   const [logFiles, setLogFiles] = useState<any[]>([])
   const [logModalOpen, setLogModalOpen] = useState(false)
   const [currentLogFile, setCurrentLogFile] = useState('')
@@ -92,32 +149,42 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
 
   useEffect(() => {
     const off = EventsOn('update:progress', (progress: any) => {
-      setDownloadProgress({ percent: progress.percent, message: progress.message, stage: progress.stage })
+      setDownloadProgress({
+        percent: progress.percent,
+        message: progress.message,
+        stage: progress.stage,
+      })
       if (progress.stage === 'done') {
         setDownloading(false)
         setDownloadDone(true)
         // Reflect the downloaded version immediately so the About panel does
         // not keep showing the old version until the user restarts. The
         // authoritative value is reloaded from about.json on next restart.
-        setAppInfo(prev => prev ? { ...prev, version: updateInfo?.latestVersion || prev.version } : prev)
+        setAppInfo((prev) =>
+          prev
+            ? { ...prev, version: updateInfo?.latestVersion || prev.version }
+            : prev,
+        )
       }
     })
-    return () => { off() }
+    return () => {
+      off()
+    }
   }, [updateInfo])
 
   useEffect(() => {
-    GetSettings().then(s => setSettings(s))
-    GetAppInfo().then(info => setAppInfo(info))
-    GetDefaultEndpoints().then(de => setDefaultEndpoints(de || []))
-    GetDefaultInstallPath().then(p => {
+    GetSettings().then((s) => setSettings(s))
+    GetAppInfo().then((info) => setAppInfo(info))
+    GetDefaultEndpoints().then((de) => setDefaultEndpoints(de || []))
+    GetDefaultInstallPath().then((p) => {
       setDefaultInstallPath(p)
       setInstallPathDraft(p)
     })
-    GetInstallPath().then(p => {
+    GetInstallPath().then((p) => {
       setInstallPath(p)
       setInstallPathDraft(p)
     })
-    GetEndpoints().then(ce => {
+    GetEndpoints().then((ce) => {
       const endpoints = ce || {}
       setCustomEndpoints(endpoints)
       setDraftEndpoints({ ...endpoints })
@@ -128,16 +195,18 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
   }, [])
 
   const loadTmpCacheSize = () => {
-    GetTmpCacheSize().then(size => setTmpCacheSize(size || 0))
+    GetTmpCacheSize().then((size) => setTmpCacheSize(size || 0))
   }
 
   const loadLogFiles = () => {
     setLoadingLogs(true)
-    GetLogFiles().then((files: any[]) => {
-      setLogFiles(files || [])
-    }).finally(() => {
-      setLoadingLogs(false)
-    })
+    GetLogFiles()
+      .then((files: any[]) => {
+        setLogFiles(files || [])
+      })
+      .finally(() => {
+        setLoadingLogs(false)
+      })
   }
 
   const handleViewLog = async (filename: string) => {
@@ -170,7 +239,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
         } finally {
           setCleaningLogs(false)
         }
-      }
+      },
     })
   }
 
@@ -189,7 +258,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
         } catch (e: any) {
           msgApi.error(t('logs.deleteFail', { error: e?.message || e }))
         }
-      }
+      },
     })
   }
 
@@ -200,18 +269,24 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
     // target is only reachable via proxy (e.g. Google in CN), this hangs
     // for the full timeout and reports a misleading "connection failed".
     // Reject up front with a clear hint instead.
-    if (settings.proxy?.enabled && settings.proxy.mode === 'custom' && !settings.proxy.url?.trim()) {
+    if (
+      settings.proxy?.enabled &&
+      settings.proxy.mode === 'custom' &&
+      !settings.proxy.url?.trim()
+    ) {
       msgApi.warning(t('settings.proxyUrlRequired'))
       return
     }
-    setCheckingProxy(prev => ({ ...prev, [target]: true }))
+    setCheckingProxy((prev) => ({ ...prev, [target]: true }))
     try {
       await CheckProxy(target)
       msgApi.success(t('settings.proxyCheckSuccess', { target: label }))
     } catch (e: any) {
-      msgApi.error(t('settings.proxyCheckFail', { target: label, error: e?.message || e }))
+      msgApi.error(
+        t('settings.proxyCheckFail', { target: label, error: e?.message || e }),
+      )
     } finally {
-      setCheckingProxy(prev => ({ ...prev, [target]: false }))
+      setCheckingProxy((prev) => ({ ...prev, [target]: false }))
     }
   }
 
@@ -231,7 +306,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
   const formatBytes = (bytes: number): string => {
     if (bytes <= 0) return '0 B'
     const units = ['B', 'KB', 'MB', 'GB']
-    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+    const i = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(1024)),
+      units.length - 1,
+    )
     return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i]
   }
 
@@ -255,7 +333,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
   }
 
   const handleProxyToggle = (enabled: boolean) => {
-    const newSettings = { ...settings, proxy: { ...settings.proxy, enabled } } as any
+    const newSettings = {
+      ...settings,
+      proxy: { ...settings.proxy, enabled },
+    } as any
     setSettings(newSettings)
     SaveSettings(newSettings).then(() => {
       msgApi.success(t('settings.settingsSaved'))
@@ -263,7 +344,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
   }
 
   const handleProxyModeChange = (mode: string) => {
-    const newSettings = { ...settings, proxy: { ...settings.proxy, mode } } as any
+    const newSettings = {
+      ...settings,
+      proxy: { ...settings.proxy, mode },
+    } as any
     setSettings(newSettings)
     SaveSettings(newSettings).then(() => {
       msgApi.success(t('settings.settingsSaved'))
@@ -271,7 +355,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
   }
 
   const handleProxyUrlChange = (url: string) => {
-    const newSettings = { ...settings, proxy: { ...settings.proxy, url } } as any
+    const newSettings = {
+      ...settings,
+      proxy: { ...settings.proxy, url },
+    } as any
     setSettings(newSettings)
     SaveSettings(newSettings).then(() => {
       msgApi.success(t('settings.settingsSaved'))
@@ -279,7 +366,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
   }
 
   const handleProxyProtocolChange = (protocol: string) => {
-    const newSettings = { ...settings, proxy: { ...settings.proxy, protocol } } as any
+    const newSettings = {
+      ...settings,
+      proxy: { ...settings.proxy, protocol },
+    } as any
     setSettings(newSettings)
     SaveSettings(newSettings).then(() => {
       msgApi.success(t('settings.settingsSaved'))
@@ -291,6 +381,61 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
     setSettings(newSettings)
     SaveSettings(newSettings).then(() => {
       msgApi.success(t('settings.settingsSaved'))
+    })
+  }
+
+  // GitHub Token: stored base64 on the backend, returned masked (first6***last6)
+  // by GetSettings. The raw token is never held in frontend state -- the edit
+  // flow uses a separate draft field and persists via SaveGithubToken, then
+  // reloads settings so only the masked form is shown.
+  const [tokenEditing, setTokenEditing] = useState(false)
+  const [tokenDraft, setTokenDraft] = useState('')
+
+  const handleSaveToken = () => {
+    const val = tokenDraft.trim()
+    if (!val) {
+      msgApi.warning(t('settings.githubTokenEmpty'))
+      return
+    }
+    SaveGithubToken(val)
+      .then(() => {
+        setTokenEditing(false)
+        setTokenDraft('')
+        return GetSettings()
+      })
+      .then((s) => {
+        setSettings(s)
+        msgApi.success(t('settings.githubTokenSaved'))
+      })
+      .catch((e: any) => {
+        msgApi.error(
+          t('settings.githubTokenSaveFail', { error: e?.message || e }),
+        )
+      })
+  }
+
+  const handleClearToken = () => {
+    Modal.confirm({
+      title: t('settings.githubTokenClear'),
+      content: t('settings.githubTokenClearDesc'),
+      okText: t('app.confirm'),
+      cancelText: t('app.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => {
+        SaveGithubToken('')
+          .then(() => {
+            setTokenEditing(false)
+            setTokenDraft('')
+            return GetSettings()
+          })
+          .then((s) => {
+            setSettings(s)
+            msgApi.success(t('settings.githubTokenCleared'))
+          })
+          .catch((e: any) => {
+            msgApi.error(e?.message || e)
+          })
+      },
     })
   }
 
@@ -357,18 +502,22 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
           setInstallPath(newPath)
           msgApi.success(t('settings.installPathSuccess'))
         } catch (e: any) {
-          msgApi.error(t('settings.installPathFail', { error: e?.message || e }))
+          msgApi.error(
+            t('settings.installPathFail', { error: e?.message || e }),
+          )
         } finally {
           setMigrating(false)
         }
-      }
+      },
     })
   }
 
   const handleResetInstallPath = () => {
     Modal.confirm({
       title: t('settings.installPathResetConfirm'),
-      content: t('settings.installPathResetConfirmDesc', { path: defaultInstallPath }),
+      content: t('settings.installPathResetConfirmDesc', {
+        path: defaultInstallPath,
+      }),
       okText: t('app.confirm'),
       cancelText: t('app.cancel'),
       onOk: async () => {
@@ -379,16 +528,18 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
           setInstallPathDraft(defaultInstallPath)
           msgApi.success(t('settings.installPathSuccess'))
         } catch (e: any) {
-          msgApi.error(t('settings.installPathFail', { error: e?.message || e }))
+          msgApi.error(
+            t('settings.installPathFail', { error: e?.message || e }),
+          )
         } finally {
           setMigrating(false)
         }
-      }
+      },
     })
   }
 
   const handleEndpointChange = (sdkType: string, value: string) => {
-    setDraftEndpoints(prev => ({ ...prev, [sdkType]: value }))
+    setDraftEndpoints((prev) => ({ ...prev, [sdkType]: value }))
   }
 
   const hasEndpointChanges = () => {
@@ -412,7 +563,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
           setDraftEndpoints({ ...cleaned })
           msgApi.success(t('settings.settingsSaved'))
         })
-      }
+      },
     })
   }
 
@@ -436,7 +587,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
           setDraftEndpoints({ ...cleaned })
           msgApi.success(t('settings.settingsSaved'))
         })
-      }
+      },
     })
   }
 
@@ -459,13 +610,19 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
             </div>
             <Radio.Group
               value={settings.theme}
-              onChange={e => handleThemeChange(e.target.value)}
+              onChange={(e) => handleThemeChange(e.target.value)}
               optionType="button"
               buttonStyle="solid"
             >
-              <Radio.Button value="system">{t('settings.themeSystem')}</Radio.Button>
-              <Radio.Button value="dark">{t('settings.themeDark')}</Radio.Button>
-              <Radio.Button value="light">{t('settings.themeLight')}</Radio.Button>
+              <Radio.Button value="system">
+                {t('settings.themeSystem')}
+              </Radio.Button>
+              <Radio.Button value="dark">
+                {t('settings.themeDark')}
+              </Radio.Button>
+              <Radio.Button value="light">
+                {t('settings.themeLight')}
+              </Radio.Button>
             </Radio.Group>
           </div>
 
@@ -479,7 +636,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
             </div>
             <Radio.Group
               value={settings.language}
-              onChange={e => handleLanguageChange(e.target.value)}
+              onChange={(e) => handleLanguageChange(e.target.value)}
               optionType="button"
               buttonStyle="solid"
             >
@@ -492,7 +649,14 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
 
           {/* Proxy */}
           <div className="settings-section">
-            <div className="settings-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div
+              className="settings-label"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
               <span>
                 <WifiOutlined style={{ marginRight: 8 }} />
                 {t('settings.proxy')}
@@ -507,19 +671,27 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
               <div style={{ marginTop: 12 }}>
                 <Radio.Group
                   value={settings.proxy.mode}
-                  onChange={e => handleProxyModeChange(e.target.value)}
+                  onChange={(e) => handleProxyModeChange(e.target.value)}
                   optionType="button"
                   buttonStyle="solid"
                   style={{ marginBottom: 12 }}
                 >
-                  <Radio.Button value="system">{t('settings.proxySystem')}</Radio.Button>
-                  <Radio.Button value="custom">{t('settings.proxyCustom')}</Radio.Button>
+                  <Radio.Button value="system">
+                    {t('settings.proxySystem')}
+                  </Radio.Button>
+                  <Radio.Button value="custom">
+                    {t('settings.proxyCustom')}
+                  </Radio.Button>
                 </Radio.Group>
                 {settings.proxy.mode === 'custom' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div
+                    style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+                  >
                     <Radio.Group
                       value={settings.proxy.protocol || 'http'}
-                      onChange={e => handleProxyProtocolChange(e.target.value)}
+                      onChange={(e) =>
+                        handleProxyProtocolChange(e.target.value)
+                      }
                       optionType="button"
                       buttonStyle="solid"
                       size="small"
@@ -528,10 +700,16 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                       <Radio.Button value="socks5">SOCKS5</Radio.Button>
                     </Radio.Group>
                     <Input
-                      placeholder={settings.proxy.protocol === 'socks5' ? '127.0.0.1:1080' : '127.0.0.1:7890'}
+                      placeholder={
+                        settings.proxy.protocol === 'socks5'
+                          ? '127.0.0.1:1080'
+                          : '127.0.0.1:7890'
+                      }
                       value={settings.proxy.url}
-                      onChange={e => handleProxyUrlChange(e.target.value)}
-                      onBlur={e => handleProxyUrlChange(e.target.value.trim())}
+                      onChange={(e) => handleProxyUrlChange(e.target.value)}
+                      onBlur={(e) =>
+                        handleProxyUrlChange(e.target.value.trim())
+                      }
                       style={{ maxWidth: 400 }}
                     />
                   </div>
@@ -540,14 +718,21 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                   <Button
                     size="small"
                     loading={checkingProxy['https://www.baidu.com']}
-                    onClick={() => handleCheckProxy('https://www.baidu.com', t('settings.proxyCheckBaidu'))}
+                    onClick={() =>
+                      handleCheckProxy(
+                        'https://www.baidu.com',
+                        t('settings.proxyCheckBaidu'),
+                      )
+                    }
                   >
                     {t('settings.proxyCheckBaidu')}
                   </Button>
                   <Button
                     size="small"
                     loading={checkingProxy['https://www.google.com']}
-                    onClick={() => handleCheckProxy('https://www.google.com', 'Google')}
+                    onClick={() =>
+                      handleCheckProxy('https://www.google.com', 'Google')
+                    }
                   >
                     Google
                   </Button>
@@ -568,7 +753,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <Input
                   value={settings.githubMirror || ''}
-                  onChange={e => {
+                  onChange={(e) => {
                     const val = e.target.value
                     setSettings({ ...settings, githubMirror: val } as any)
                   }}
@@ -591,6 +776,83 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
             </div>
           </div>
 
+          {/* GitHub Token */}
+          <div className="settings-section">
+            <div className="settings-label">
+              <KeyOutlined style={{ marginRight: 8 }} />
+              {t('settings.githubToken')}
+            </div>
+            <div style={{ paddingLeft: 0 }}>
+              {tokenEditing ? (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <Input.Password
+                    value={tokenDraft}
+                    onChange={(e) => setTokenDraft(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                    style={{ flex: 1 }}
+                    autoFocus
+                    onPressEnter={handleSaveToken}
+                  />
+                  <Button type="primary" onClick={handleSaveToken}>
+                    {t('app.confirm')}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setTokenEditing(false)
+                      setTokenDraft('')
+                    }}
+                  >
+                    {t('app.cancel')}
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    marginBottom: 8,
+                    alignItems: 'center',
+                  }}
+                >
+                  <span
+                    style={{
+                      flex: 1,
+                      fontFamily: 'monospace',
+                      color: settings.githubToken ? '#333' : '#bbb',
+                    }}
+                  >
+                    {settings.githubToken || t('settings.githubTokenNotSet')}
+                  </span>
+                  <Button
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    onClick={() => {
+                      setTokenDraft('')
+                      setTokenEditing(true)
+                    }}
+                  >
+                    {settings.githubToken
+                      ? t('settings.githubTokenEdit')
+                      : t('settings.githubTokenSet')}
+                  </Button>
+                  {settings.githubToken && (
+                    <Button
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={handleClearToken}
+                    >
+                      {t('settings.githubTokenClear')}
+                    </Button>
+                  )}
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: '#888' }}>
+                {t('settings.githubTokenDesc')}
+              </div>
+            </div>
+          </div>
+
           <Divider />
 
           {/* Download Threads */}
@@ -601,7 +863,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
             </div>
             <Radio.Group
               value={settings.downloadThreads || 4}
-              onChange={e => handleDownloadThreadsChange(e.target.value)}
+              onChange={(e) => handleDownloadThreadsChange(e.target.value)}
               optionType="button"
               buttonStyle="solid"
             >
@@ -627,7 +889,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <Input
                   value={installPathDraft}
-                  onChange={e => setInstallPathDraft(e.target.value)}
+                  onChange={(e) => setInstallPathDraft(e.target.value)}
                   placeholder={defaultInstallPath}
                   style={{ flex: 1 }}
                 />
@@ -640,10 +902,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                   {t('app.confirm')}
                 </Button>
                 {installPath !== defaultInstallPath && (
-                  <Button
-                    onClick={handleResetInstallPath}
-                    loading={migrating}
-                  >
+                  <Button onClick={handleResetInstallPath} loading={migrating}>
                     {t('settings.installPathReset')}
                   </Button>
                 )}
@@ -664,7 +923,14 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
             </div>
             <div style={{ paddingLeft: 0 }}>
               {/* Tmp cache */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 12,
+                }}
+              >
                 <span style={{ fontSize: 13, color: '#aaa' }}>
                   {t('settings.tmpCache')}: {formatBytes(tmpCacheSize)}
                 </span>
@@ -692,8 +958,17 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
       ),
       children: (
         <div className="settings-content">
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13, color: '#888' }}>{t('endpoint.description')}</span>
+          <div
+            style={{
+              marginBottom: 16,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ fontSize: 13, color: '#888' }}>
+              {t('endpoint.description')}
+            </span>
             <Button
               type="primary"
               size="small"
@@ -704,31 +979,79 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
             </Button>
           </div>
           {[
-            { key: 'runtime', sdkTypes: ['nodejs', 'jdk', 'go', 'python', 'rust', 'ruby', 'dotnet', 'php', 'perl'] },
+            {
+              key: 'runtime',
+              sdkTypes: [
+                'nodejs',
+                'jdk',
+                'go',
+                'python',
+                'rust',
+                'ruby',
+                'dotnet',
+                'php',
+                'perl',
+              ],
+            },
             { key: 'build', sdkTypes: ['maven', 'gradle'] },
             { key: 'mobile', sdkTypes: ['flutter', 'android', 'dart'] },
-          ].map(cat => {
-            const catEndpoints = defaultEndpoints.filter(ep => cat.sdkTypes.includes(ep.sdkType))
+          ].map((cat) => {
+            const catEndpoints = defaultEndpoints.filter((ep) =>
+              cat.sdkTypes.includes(ep.sdkType),
+            )
             if (catEndpoints.length === 0) return null
             return (
               <div key={cat.key} style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, color: '#666', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: '#666',
+                    fontWeight: 600,
+                    marginBottom: 8,
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                  }}
+                >
                   {t(`categories.${cat.key}`)}
                 </div>
-                {catEndpoints.map(ep => {
-                  const hasCustom = !!(draftEndpoints[ep.sdkType] && draftEndpoints[ep.sdkType].trim())
+                {catEndpoints.map((ep) => {
+                  const hasCustom = !!(
+                    draftEndpoints[ep.sdkType] &&
+                    draftEndpoints[ep.sdkType].trim()
+                  )
                   return (
-                    <div key={ep.sdkType} style={{ marginBottom: 12, paddingLeft: 16 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 500, minWidth: 100 }}>{ep.displayName}</span>
-                        <span style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>{ep.defaultEndpoint}</span>
+                    <div
+                      key={ep.sdkType}
+                      style={{ marginBottom: 12, paddingLeft: 16 }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          marginBottom: 4,
+                        }}
+                      >
+                        <span style={{ fontWeight: 500, minWidth: 100 }}>
+                          {ep.displayName}
+                        </span>
+                        <span
+                          style={{ fontSize: 12, color: '#888', marginLeft: 8 }}
+                        >
+                          {ep.defaultEndpoint}
+                        </span>
                         {hasCustom && (
                           <Button
                             type="link"
                             size="small"
                             danger
-                            style={{ marginLeft: 8, padding: '0 4px', fontSize: 12 }}
-                            onClick={() => handleResetOneEndpoint(ep.sdkType, ep.displayName)}
+                            style={{
+                              marginLeft: 8,
+                              padding: '0 4px',
+                              fontSize: 12,
+                            }}
+                            onClick={() =>
+                              handleResetOneEndpoint(ep.sdkType, ep.displayName)
+                            }
                           >
                             {t('endpoint.resetDefault')}
                           </Button>
@@ -738,7 +1061,9 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                         size="small"
                         placeholder={ep.defaultEndpoint}
                         value={draftEndpoints[ep.sdkType] || ''}
-                        onChange={e => handleEndpointChange(ep.sdkType, e.target.value)}
+                        onChange={(e) =>
+                          handleEndpointChange(ep.sdkType, e.target.value)
+                        }
                         allowClear
                         style={{ maxWidth: 500 }}
                       />
@@ -762,7 +1087,14 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
       children: (
         <div className="settings-content">
           <div className="settings-section">
-            <div className="settings-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div
+              className="settings-label"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
               <span>
                 <FileTextOutlined style={{ marginRight: 8 }} />
                 {t('logs.logFiles')}
@@ -787,33 +1119,122 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                 </Button>
               </div>
             </div>
-            <div style={{ marginTop: 12, fontSize: 12, color: 'var(--ant-color-text-secondary)', marginBottom: 12 }}>
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 12,
+                color: 'var(--ant-color-text-secondary)',
+                marginBottom: 12,
+              }}
+            >
               {t('logs.logDir')}: {logDir}
             </div>
             {loadingLogs ? (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ant-color-text-secondary)' }}>Loading...</div>
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '40px 0',
+                  color: 'var(--ant-color-text-secondary)',
+                }}
+              >
+                Loading...
+              </div>
             ) : logFiles.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ant-color-text-secondary)' }}>
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '40px 0',
+                  color: 'var(--ant-color-text-secondary)',
+                }}
+              >
                 {t('logs.noLogs')}
               </div>
             ) : (
-              <div style={{ border: '1px solid var(--ant-color-border)', borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', padding: '8px 12px', background: 'var(--ant-color-bg-layout)', fontSize: 12, fontWeight: 600, color: 'var(--ant-color-text-secondary)' }}>
+              <div
+                style={{
+                  border: '1px solid var(--ant-color-border)',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    padding: '8px 12px',
+                    background: 'var(--ant-color-bg-layout)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--ant-color-text-secondary)',
+                  }}
+                >
                   <div style={{ flex: 2 }}>Filename</div>
-                  <div style={{ flex: 1, textAlign: 'right' }}>{t('logs.size')}</div>
-                  <div style={{ flex: 2, textAlign: 'right', paddingRight: 8 }}>{t('logs.modified')}</div>
-                  <div style={{ width: 120, textAlign: 'right' }}>{t('logs.actions')}</div>
+                  <div style={{ flex: 1, textAlign: 'right' }}>
+                    {t('logs.size')}
+                  </div>
+                  <div style={{ flex: 2, textAlign: 'right', paddingRight: 8 }}>
+                    {t('logs.modified')}
+                  </div>
+                  <div style={{ width: 120, textAlign: 'right' }}>
+                    {t('logs.actions')}
+                  </div>
                 </div>
                 {logFiles.map((file: any, idx: number) => (
-                  <div key={idx} style={{ display: 'flex', padding: '8px 12px', borderTop: idx > 0 ? '1px solid var(--ant-color-border)' : 'none', alignItems: 'center', fontSize: 13, color: 'var(--ant-color-text)' }}>
-                    <div style={{ flex: 2, fontFamily: 'monospace' }}>{file.name}</div>
-                    <div style={{ flex: 1, textAlign: 'right', color: 'var(--ant-color-text-secondary)' }}>{formatBytes(file.size)}</div>
-                    <div style={{ flex: 2, textAlign: 'right', paddingRight: 8, color: 'var(--ant-color-text-secondary)' }}>{file.modTime}</div>
-                    <div style={{ width: 120, textAlign: 'right', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <Button type="link" size="small" onClick={() => handleViewLog(file.name)}>
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      padding: '8px 12px',
+                      borderTop:
+                        idx > 0 ? '1px solid var(--ant-color-border)' : 'none',
+                      alignItems: 'center',
+                      fontSize: 13,
+                      color: 'var(--ant-color-text)',
+                    }}
+                  >
+                    <div style={{ flex: 2, fontFamily: 'monospace' }}>
+                      {file.name}
+                    </div>
+                    <div
+                      style={{
+                        flex: 1,
+                        textAlign: 'right',
+                        color: 'var(--ant-color-text-secondary)',
+                      }}
+                    >
+                      {formatBytes(file.size)}
+                    </div>
+                    <div
+                      style={{
+                        flex: 2,
+                        textAlign: 'right',
+                        paddingRight: 8,
+                        color: 'var(--ant-color-text-secondary)',
+                      }}
+                    >
+                      {file.modTime}
+                    </div>
+                    <div
+                      style={{
+                        width: 120,
+                        textAlign: 'right',
+                        display: 'flex',
+                        gap: 8,
+                        justifyContent: 'flex-end',
+                      }}
+                    >
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={() => handleViewLog(file.name)}
+                      >
                         {t('logs.view')}
                       </Button>
-                      <Button type="link" size="small" danger onClick={() => handleDeleteLog(file.name)}>
+                      <Button
+                        type="link"
+                        size="small"
+                        danger
+                        onClick={() => handleDeleteLog(file.name)}
+                      >
                         {t('logs.delete')}
                       </Button>
                     </div>
@@ -874,10 +1295,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                   >
                     {t('about.checkUpdateBtn')}
                   </Button>
-                  <Button
-                    icon={<UndoOutlined />}
-                    onClick={handleRollback}
-                  >
+                  <Button icon={<UndoOutlined />} onClick={handleRollback}>
                     {t('settings.rollbackBtn')}
                   </Button>
                 </Space>
@@ -904,7 +1322,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
                 </div>
                 <a
                   href="#"
-                  onClick={e => {
+                  onClick={(e) => {
                     e.preventDefault()
                   }}
                   style={{ color: '#1677ff' }}
@@ -926,62 +1344,87 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
       </div>
 
       <Modal
-        title={downloadDone ? t('about.updateReady') : t('about.newVersion', { version: updateInfo?.latestVersion || '' })}
+        title={
+          downloadDone
+            ? t('about.updateReady')
+            : t('about.newVersion', {
+                version: updateInfo?.latestVersion || '',
+              })
+        }
         open={updateModalOpen}
         onCancel={() => !downloading && setUpdateModalOpen(false)}
         closable={!downloading}
         maskClosable={!downloading}
         footer={
-          downloadDone ? [
-            <Button key="cancel" onClick={() => setUpdateModalOpen(false)}>
-              {t('about.updateLater')}
-            </Button>,
-            <Button
-              key="restart"
-              type="primary"
-              onClick={async () => {
-                try {
-                  await ApplyUpdate()
-                } catch (e: any) {
-                  msgApi.error(t('about.applyUpdateFail', { error: e?.message || e }))
-                }
-              }}
-            >
-              {t('about.restartNow')}
-            </Button>,
-          ] : downloading ? [
-            <Button key="cancel" disabled>{t('about.downloading')}</Button>,
-          ] : [
-            <Button key="cancel" onClick={() => setUpdateModalOpen(false)}>
-              {t('app.cancel')}
-            </Button>,
-            <Button
-              key="download"
-              type="primary"
-              onClick={async () => {
-                if (!updateInfo?.downloadUrl) {
-                  BrowserOpenURL(updateInfo?.downloadUrl || '')
-                  setUpdateModalOpen(false)
-                  return
-                }
-                setDownloading(true)
-                setDownloadProgress(null)
-                setDownloadDone(false)
-                try {
-                  await DownloadUpdate(updateInfo.downloadUrl, updateInfo.sha256 || '')
-                } catch (e: any) {
-                  setDownloading(false)
-                  msgApi.error(t('about.downloadFail', { error: e?.message || e }))
-                }
-              }}
-            >
-              {updateInfo?.downloadUrl ? t('about.downloadAndInstall') : t('about.goDownload')}
-            </Button>,
-          ]
+          downloadDone
+            ? [
+                <Button key="cancel" onClick={() => setUpdateModalOpen(false)}>
+                  {t('about.updateLater')}
+                </Button>,
+                <Button
+                  key="restart"
+                  type="primary"
+                  onClick={async () => {
+                    try {
+                      await ApplyUpdate()
+                    } catch (e: any) {
+                      msgApi.error(
+                        t('about.applyUpdateFail', { error: e?.message || e }),
+                      )
+                    }
+                  }}
+                >
+                  {t('about.restartNow')}
+                </Button>,
+              ]
+            : downloading
+              ? [
+                  <Button key="cancel" disabled>
+                    {t('about.downloading')}
+                  </Button>,
+                ]
+              : [
+                  <Button
+                    key="cancel"
+                    onClick={() => setUpdateModalOpen(false)}
+                  >
+                    {t('app.cancel')}
+                  </Button>,
+                  <Button
+                    key="download"
+                    type="primary"
+                    onClick={async () => {
+                      if (!updateInfo?.downloadUrl) {
+                        BrowserOpenURL(updateInfo?.downloadUrl || '')
+                        setUpdateModalOpen(false)
+                        return
+                      }
+                      setDownloading(true)
+                      setDownloadProgress(null)
+                      setDownloadDone(false)
+                      try {
+                        await DownloadUpdate(
+                          updateInfo.downloadUrl,
+                          updateInfo.sha256 || '',
+                        )
+                      } catch (e: any) {
+                        setDownloading(false)
+                        msgApi.error(
+                          t('about.downloadFail', { error: e?.message || e }),
+                        )
+                      }
+                    }}
+                  >
+                    {updateInfo?.downloadUrl
+                      ? t('about.downloadAndInstall')
+                      : t('about.goDownload')}
+                  </Button>,
+                ]
         }
       >
         <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>
-          {t('about.currentVersion', { version: appInfo?.version || '' })} → v{updateInfo?.latestVersion}
+          {t('about.currentVersion', { version: appInfo?.version || '' })} → v
+          {updateInfo?.latestVersion}
         </div>
 
         {downloading && downloadProgress && (
@@ -1000,7 +1443,16 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
         )}
 
         {downloadDone && (
-          <div style={{ padding: '12px 16px', background: '#52c41a22', borderRadius: 8, marginBottom: 12, color: '#52c41a', fontSize: 13 }}>
+          <div
+            style={{
+              padding: '12px 16px',
+              background: '#52c41a22',
+              borderRadius: 8,
+              marginBottom: 12,
+              color: '#52c41a',
+              fontSize: 13,
+            }}
+          >
             {t('about.updateReadyDesc')}
           </div>
         )}
