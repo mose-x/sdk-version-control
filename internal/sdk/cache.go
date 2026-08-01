@@ -122,6 +122,33 @@ func copyVersions(in []VersionInfo) []VersionInfo {
 	return out
 }
 
+// refreshState throttles background version refreshes per SDK. Every cache hit
+// in GetRemoteVersions triggers a background refresh; without throttling, rapidly
+// switching SDK panels (py -> rust -> py -> ...) would spawn a goroutine per
+// switch, each emitting an "install:versions-refreshed" event. That floods the
+// frontend with events and amplifies any stale-listener timing issue into
+// visible list corruption. A 30s cooldown per SDK keeps the list fresh enough
+// for normal use while capping the goroutine/event rate.
+var refreshState = struct {
+	sync.Mutex
+	last map[SdkType]time.Time
+}{last: make(map[SdkType]time.Time)}
+
+// ShouldRefreshVersions reports whether a background refresh should be started
+// for t now. It returns false when t was refreshed within the cooldown window
+// (so rapid re-entry is a no-op), and records the time when it returns true.
+func ShouldRefreshVersions(t SdkType) bool {
+	const cooldown = 30 * time.Second
+	refreshState.Lock()
+	defer refreshState.Unlock()
+	last, ok := refreshState.last[t]
+	if ok && time.Since(last) < cooldown {
+		return false
+	}
+	refreshState.last[t] = time.Now()
+	return true
+}
+
 // LookupCachedDownloadURL returns the cached download URL and filename for the
 // given SDK type + version, or ("", "", false) when not cached. It lets
 // GetDownloadURL skip a fresh FetchRemoteVersions round-trip when the version

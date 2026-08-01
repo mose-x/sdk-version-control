@@ -168,28 +168,50 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
     }
   }, [status, fetchVersions, fetchPackageManagers])
 
-  // Silent background refresh: GetRemoteVersions returns the cached list
-  // immediately and the backend refreshes in the background, emitting
-  // "install:versions-refreshed" with { sdkType, versions } when the fresh list
-  // lands. We swap in the fresh list silently (no loading spinner, no error
-  // state) so the user sees an up-to-date list without any UI flicker. The
-  // event is filtered to the currently-selected SDK only.
+  // Track the currently-selected SDK type in a ref so the event listener (which
+  // is registered ONCE, see below) always reads the latest value instead of a
+  // stale closure capture. Without this, rapidly switching SDKs leaves old
+  // listeners alive (Wails off() + React.StrictMode double-invoke), and their
+  // stale `status` closure makes them setVersions() a *different* SDK's version
+  // list into the current panel -- e.g. rust's 1.66.1 leaking into the python
+  // panel. Reading from a ref guarantees the filter always reflects the SDK the
+  // user is actually looking at right now.
+  const sdkTypeRef = useRef<string>('')
   useEffect(() => {
-    if (!status) return
+    sdkTypeRef.current = status?.sdkType || ''
+  }, [status])
+
+  // Silent background refresh listener. Registered ONCE on mount (empty deps)
+  // -- NOT re-registered on every status change -- so there is never more than
+  // one listener and no stale-closure window. The sdkType filter uses the ref
+  // above so it always reflects the current panel.
+  useEffect(() => {
     const off = EventsOn(
       'install:versions-refreshed',
       (payload: { sdkType: string; versions: VersionInfo[] }) => {
-        if (!payload || payload.sdkType !== status.sdkType) return
-        // Only silently replace when we already have something to show; if the
-        // initial fetch is still in flight (versions empty + loading), let the
-        // normal fetch path resolve instead so loading state stays consistent.
-        setVersions((prev) => (prev.length > 0 ? payload.versions || [] : prev))
+        if (!payload || !sdkTypeRef.current) return
+        if (payload.sdkType !== sdkTypeRef.current) return
+        setVersions((prev) => {
+          // Only silently replace when we already have something to show; if
+          // the initial fetch is still in flight (versions empty), let the
+          // normal fetch path resolve so loading state stays consistent.
+          if (prev.length === 0) return prev
+          const fresh = payload.versions || []
+          // Defensive dedup by version string: a stale or duplicated payload
+          // must never produce duplicate rows in the list.
+          const seen = new Set<string>()
+          return fresh.filter((v) => {
+            if (seen.has(v.version)) return false
+            seen.add(v.version)
+            return true
+          })
+        })
       },
     )
     return () => {
       off()
     }
-  }, [status])
+  }, [])
 
   useEffect(() => {
     if (!status) return
