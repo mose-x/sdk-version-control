@@ -80,6 +80,8 @@ export function RollbackUpdate():Promise<void>;
 
 export function SaveEndpoints(arg1:Record<string, string>):Promise<void>;
 
+export function SaveGithubToken(arg1:string):Promise<void>;
+
 export function SaveSettings(arg1:config.AppSettings):Promise<void>;
 
 export function SelectLocalDir():Promise<string>;

@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -39,16 +38,18 @@ func (f *RubyFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client
 func (f *RubyFetcher) StripArchiveTopDir() bool { return true }
 
 func (f *RubyFetcher) useEndpoint(defaultURL string) string {
+	// applyGithubEndpoint mirrors both api.github.com and github.com (the
+	// former matters for the releases API, which the old code missed). Ruby
+	// also mirrors cache.ruby-lang.org for source tarballs.
+	out := applyGithubEndpoint(f.sm, Ruby, defaultURL)
 	if f.sm == nil {
-		return defaultURL
+		return out
 	}
 	custom := f.sm.Get().Endpoints[string(Ruby)]
 	if custom == "" {
-		return defaultURL
+		return out
 	}
-	defaultURL = strings.Replace(defaultURL, "https://github.com", custom, -1)
-	defaultURL = strings.Replace(defaultURL, "https://cache.ruby-lang.org", custom, -1)
-	return defaultURL
+	return strings.Replace(out, "https://cache.ruby-lang.org", custom, -1)
 }
 
 func (f *RubyFetcher) Type() SdkType { return Ruby }
@@ -90,21 +91,10 @@ func (f *RubyFetcher) fetchRubyInstallerVersions() ([]VersionInfo, error) {
 	page := 1
 	for page <= 3 {
 		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/oneclick/rubyinstaller2/releases?per_page=30&page=%d", page))
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build Ruby version request: %w", err)
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		resp, err := f.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch Ruby version list: %w", err)
-		}
 		var releases []rubyInstallerRelease
-		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to parse Ruby version data: %w", err)
+		if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
+			return nil, fmt.Errorf("failed to fetch Ruby version list (page %d): %w", page, err)
 		}
-		resp.Body.Close()
 		if len(releases) == 0 {
 			break
 		}
@@ -200,21 +190,10 @@ func (f *RubyFetcher) fetchJdxRubyVersions() ([]VersionInfo, error) {
 	page := 1
 	for page <= 3 {
 		url := f.useEndpoint(fmt.Sprintf("https://api.github.com/repos/jdx/ruby/releases?per_page=30&page=%d", page))
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build Ruby version request: %w", err)
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		resp, err := f.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch Ruby version list: %w", err)
-		}
 		var releases []jdxRubyRelease
-		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to parse Ruby version data: %w", err)
+		if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
+			return nil, fmt.Errorf("failed to fetch Ruby version list (page %d): %w", page, err)
 		}
-		resp.Body.Close()
 		if len(releases) == 0 {
 			break
 		}
