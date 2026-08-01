@@ -26,13 +26,18 @@ func applySystemProxy(transport *http.Transport) {
 	}
 
 	// Windows system proxy may be in the format http=host:port;https=host:port;socks=host:port
-	// Prefer the https proxy, then http, and finally socks
+	// Prefer the https proxy, then http, and finally socks.
+	// The "https=" entry is the proxy used to reach https:// destinations --
+	// the proxy itself still speaks plain HTTP CONNECT, so the URL scheme
+	// must be "http://" (same as proxy_darwin.go). Using "https://" would
+	// make net/http TLS-wrap the connection to the proxy, which local
+	// proxies (Clash/V2Ray/...) do not expect.
 	var proxyStr string
 	for _, part := range splitProxyParts(proxyServer) {
 		scheme, addr := parseProxyPart(part)
 		switch scheme {
 		case "https":
-			proxyStr = "https://" + addr
+			proxyStr = "http://" + addr
 		case "http":
 			if proxyStr == "" {
 				proxyStr = "http://" + addr
