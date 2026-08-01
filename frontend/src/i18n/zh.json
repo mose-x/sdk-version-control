@@ -4,6 +4,7 @@
     "configured": "已配置",
     "notConfigured": "未配置",
     "inPathOnly": "仅在 PATH 中",
+    "systemManaged": "系统自带",
     "confirm": "确认",
     "cancel": "取消"
   },
@@ -15,6 +16,7 @@
     "configuredCount": "{{count}}/{{total}} 已配置",
     "loadingSdk": "正在加载SDK安装情况，请稍后...",
     "importTooltip": "点击一键导入 SVC 系统",
+    "systemProtectedTooltip": "系统 Python 位于受保护路径，无法导入。点击安装应用管理的版本（安装后通过 PATH 优先级自动覆盖系统版本）。",
     "importConfirm": "导入 {{sdk}} 到 SVC？",
     "importConfirmDesc": "将自动检测 PATH 中的 SDK 并复制到 SVC 管理目录，同时更新环境变量",
     "importSuccess": "{{sdk}} 导入成功！",

@@ -222,6 +222,8 @@ export namespace sdk {
 	    installedVersions: string[];
 	    installPath: string;
 	    needsSwitch: boolean;
+	    systemProtected: boolean;
+	    systemPath: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SdkStatus(source);
@@ -238,6 +240,8 @@ export namespace sdk {
 	        this.installedVersions = source["installedVersions"];
 	        this.installPath = source["installPath"];
 	        this.needsSwitch = source["needsSwitch"];
+	        this.systemProtected = source["systemProtected"];
+	        this.systemPath = source["systemPath"];
 	    }
 	}
 	export class VersionInfo {

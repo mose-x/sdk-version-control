@@ -20,6 +20,8 @@ export interface SdkStatus {
   installedVersions: string[];
   installPath: string;
   needsSwitch: boolean;     // true if currentVersion is not in installedVersions
+  systemProtected: boolean; // system-managed copy in a protected OS path (cannot import)
+  systemPath: string;       // resolved path of the system-protected copy
 }
 
 export interface VersionInfo {

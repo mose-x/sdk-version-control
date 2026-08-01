@@ -140,6 +140,11 @@ type SdkStatus struct {
 	InstalledVersions []string `json:"installedVersions"`
 	InstallPath       string   `json:"installPath"`
 	NeedsSwitch       bool     `json:"needsSwitch"` // true if currentVersion is not in installedVersions (dangling reference)
+	// SystemProtected marks a PATH copy that lives in a protected OS path
+	// (e.g. macOS /usr/bin/python3) and therefore cannot be safely imported.
+	// The UI hides the import action and guides the user to install instead.
+	SystemProtected bool   `json:"systemProtected"`
+	SystemPath      string `json:"systemPath"`
 }
 
 // InstallProgress is the install progress (pushed to the frontend via Wails Events)

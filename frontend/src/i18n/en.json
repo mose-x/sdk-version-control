@@ -4,6 +4,7 @@
     "configured": "Configured",
     "notConfigured": "Not Configured",
     "inPathOnly": "In PATH Only",
+    "systemManaged": "System-Managed",
     "confirm": "Confirm",
     "cancel": "Cancel"
   },
@@ -15,6 +16,7 @@
     "configuredCount": "{{count}}/{{total}} configured",
     "loadingSdk": "Loading SDK status, please wait...",
     "importTooltip": "Click to import into SVC",
+    "systemProtectedTooltip": "System Python is in a protected OS path and cannot be imported. Click to install an app-managed version instead (it takes precedence via PATH).",
     "importConfirm": "Import {{sdk}} into SVC?",
     "importConfirmDesc": "This will detect the SDK in PATH, copy it to the SVC managed directory, and update environment variables.",
     "importSuccess": "{{sdk}} imported successfully!",
