@@ -29,6 +29,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
   const [versions, setVersions] = useState<VersionInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState<string>('')
   const [searchText, setSearchText] = useState('')
   const [installing, setInstalling] = useState(false)
   const [packageManagers, setPackageManagers] = useState<PackageManagerInfo[]>([])
@@ -74,13 +75,19 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
     if (!status) return
     setLoading(true)
     setLoadError(false)
+    setLoadErrorMessage('')
     try {
       const result = await GetRemoteVersions(status.sdkType)
       if (stale?.()) return
       setVersions(result || [])
-    } catch (e) {
+    } catch (e: any) {
       if (stale?.()) return
       console.error('Failed to get remote versions:', e)
+      // Preserve the backend error reason so the UI can show what actually
+      // failed (GitHub API 403 rate limit, proxy/network error, decode
+      // error, etc.) instead of a generic "failed to load" message.
+      const reason = typeof e === 'string' ? e : (e?.message || e?.error || '')
+      setLoadErrorMessage(reason ? String(reason) : '')
       setLoadError(true)
     } finally {
       if (!stale?.()) setLoading(false)
@@ -579,6 +586,13 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ status, installProgress, onRe
           <Result
             status="error"
             title={t('detail.loadError')}
+            subTitle={
+              loadErrorMessage ? (
+                <div style={{ maxWidth: 560, margin: '0 auto', color: '#888', fontSize: 13, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                  {loadErrorMessage}
+                </div>
+              ) : undefined
+            }
             style={{ padding: '40px 0' }}
             extra={
               <Button type="primary" icon={<ReloadOutlined />} onClick={() => fetchVersions()}>
