@@ -149,7 +149,7 @@
     "githubMirror": "GitHub 镜像",
     "githubMirrorDesc": "加速 GitHub 下载，填入镜像地址如 https://ghfast.top，留空使用原始链接",
     "githubToken": "GitHub Token",
-    "githubTokenDesc": "用于获取版本列表的 GitHub 个人访问令牌（PAT），可将 API 限流从 60 次/小时提升至 5000 次/小时。仅本地存储（base64），不会上传。在 GitHub Settings → Developer settings → Personal access tokens 生成",
+    "githubTokenDesc": "用于获取版本列表的 GitHub 个人访问令牌（PAT），可将 API 限流从 60 次/小时提升至 5000 次/小时。仅本地存储，不会上传。在 GitHub Settings → Developer settings → Personal access tokens 生成",
     "githubTokenNotSet": "未设置",
     "githubTokenSet": "设置",
     "githubTokenEdit": "修改",

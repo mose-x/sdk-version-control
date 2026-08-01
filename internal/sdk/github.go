@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"sdk_version_control/internal/config"
 )
@@ -122,13 +123,49 @@ func fetchGithubReleasesPage(sm *config.SettingsManager, client *http.Client, ur
 	return lastErr
 }
 
-// doGithubRequest performs a single GET against url, applies the Authorization
-// header when token is non-empty, validates the status code, and decodes the
-// body into target. Returns nil on success.
+// transientGithubStatus lists HTTP status codes worth retrying: gateway
+// timeouts (502/503/504), server error (500), request timeout (408), and
+// secondary rate limit (429). GitHub's API gateway intermittently returns 504
+// on large release pages (notably python-build-standalone, whose every release
+// carries 100+ assets); a short retry with backoff usually succeeds.
+var transientGithubStatus = map[int]bool{408: true, 429: true, 500: true, 502: true, 503: true, 504: true}
+
+// doGithubRequest fetches url with token auth, retrying transient gateway
+// failures (502/503/504/500/408/429) up to 3 times with exponential backoff
+// (1s, 2s). Permanent failures (403 rate-limit, 404, decode errors, network
+// errors) return immediately without retry -- a retry would just waste time on
+// a condition that will not clear in seconds.
 func doGithubRequest(client *http.Client, url, token string, target any) error {
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		status, err := doGithubRequestOnce(client, url, token, target)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		// status == 0 means the request never got a response (build error,
+		// network error, or decode error on a 200) -- not a transient gateway
+		// status, so do not retry. Only retry on the transient status set.
+		if status == 0 || !transientGithubStatus[status] {
+			return err
+		}
+		if attempt < maxAttempts {
+			time.Sleep(time.Duration(1<<(attempt-1)) * time.Second) // 1s, 2s
+		}
+	}
+	return fmt.Errorf("%w (retried %d times)", lastErr, maxAttempts)
+}
+
+// doGithubRequestOnce performs a single GET against url, applies the
+// Authorization header when token is non-empty, validates the status code, and
+// decodes the body into target. Returns the HTTP status code (0 when the
+// request never reached a response: build error, network error, or decode
+// error) and a non-nil error on failure.
+func doGithubRequestOnce(client *http.Client, url, token string, target any) (int, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return 0, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", githubReleasesUserAgent)
@@ -138,7 +175,7 @@ func doGithubRequest(client *http.Client, url, token string, target any) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("fetch failed (check proxy/network, or if GitHub API is reachable): %w", err)
+		return 0, fmt.Errorf("fetch failed (check proxy/network, or if GitHub API is reachable): %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -147,13 +184,13 @@ func doGithubRequest(client *http.Client, url, token string, target any) error {
 		if token != "" {
 			hint = "GitHub API returned 403 even with token (token may be invalid, expired, or its 5000/h quota exhausted)"
 		}
-		return fmt.Errorf("%s -- retry later, configure a mirror, or set a valid GitHub token", hint)
+		return resp.StatusCode, fmt.Errorf("%s -- retry later, configure a mirror, or set a valid GitHub token", hint)
 	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("GitHub API returned HTTP %d", resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("GitHub API returned HTTP %d", resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
-		return fmt.Errorf("decode response: %w", err)
+		return resp.StatusCode, fmt.Errorf("decode response: %w", err)
 	}
-	return nil
+	return resp.StatusCode, nil
 }
