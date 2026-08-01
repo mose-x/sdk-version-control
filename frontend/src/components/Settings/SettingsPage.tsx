@@ -194,6 +194,16 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onThemeChange, onLanguageCh
   }
 
   const handleCheckProxy = async (target: string, label: string) => {
+    // Guard: when the user picked "custom" proxy mode but left the URL
+    // empty, a connectivity check would fall back to a direct connection
+    // (BuildClient skips proxy setup on empty URL). In networks where the
+    // target is only reachable via proxy (e.g. Google in CN), this hangs
+    // for the full timeout and reports a misleading "connection failed".
+    // Reject up front with a clear hint instead.
+    if (settings.proxy?.enabled && settings.proxy.mode === 'custom' && !settings.proxy.url?.trim()) {
+      msgApi.warning(t('settings.proxyUrlRequired'))
+      return
+    }
     setCheckingProxy(prev => ({ ...prev, [target]: true }))
     try {
       await CheckProxy(target)

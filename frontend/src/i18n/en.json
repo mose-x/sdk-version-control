@@ -159,6 +159,7 @@
     "cleanSuccess": "Cleaned successfully",
     "proxyCheckSuccess": "{{target}} connection successful",
     "proxyCheckFail": "{{target}} connection failed: {{error}}",
+    "proxyUrlRequired": "Please enter a proxy address first, otherwise the target will be reached directly",
     "proxyCheckBaidu": "Baidu",
     "proxyCheckGoogle": "Google"
   },
