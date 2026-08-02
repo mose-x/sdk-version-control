@@ -3,6 +3,7 @@
 package shim
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +31,11 @@ func execBinary(realBinary string, args []string) {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}
+		// Not an ExitError: the child could not be started at all (bad
+		// path, missing DLL, permission denied, ...). Without this line
+		// the shim would exit 1 silently, which on a GUI-subsystem binary
+		// looks exactly like the "flash and disappear" symptom.
+		fmt.Fprintf(os.Stderr, "shim: failed to run %q: %v\n", realBinary, err)
 		os.Exit(1)
 	}
 	os.Exit(0)

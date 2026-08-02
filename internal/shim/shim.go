@@ -34,6 +34,13 @@ type settings struct {
 // This is called when the app binary is invoked via a hardlink named after a
 // command, or via a .cmd/.bat wrapper that delegates to svc-shim.exe.
 func Run() {
+	// On Windows the binary is built with -H windowsgui (no console), so
+	// stdio handles are invalid until we attach to the parent's console.
+	// This must happen before any fmt.Fprintln(os.Stderr, ...) so shim
+	// diagnostics are visible, and before execBinary so the spawned target
+	// inherits valid handles.
+	attachParentConsole()
+
 	inv := parseInvocation()
 	if inv.Command == "" {
 		fmt.Fprintln(os.Stderr, "shim: cannot determine command name")
