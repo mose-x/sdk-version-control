@@ -176,6 +176,16 @@ func (a *App) CleanInactiveVersions(sdkType string) error {
 		}
 		cleaned++
 	}
+	// If no versions remain (e.g. active was empty and everything was
+	// inactive), tear down the shim layer for this SDK type — same rationale
+	// as in UninstallVersion: orphan shims keep PathConfigured=true and
+	// resolve to "no active version" at run time.
+	if cleaned > 0 && a.noVersionsLeft(sdkType) {
+		extraEnvVars := a.getExtraEnvVars(sdkType)
+		if err := a.pathMgr.RemoveSdk(sdkType, extraEnvVars); err != nil {
+			logger.Warn("Failed to remove shims for %s: %v", sdkType, err)
+		}
+	}
 	logger.Info("Cleaned %d inactive versions for %s", cleaned, sdkType)
 	return nil
 }
