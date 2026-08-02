@@ -46,12 +46,55 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 	if wasActive {
 		logger.Info("Deleted active version, clearing active version config")
 		a.cfg.ClearActiveVersion(sdkType)
+	}
+
+	// Tear down the shim layer for this SDK type when the last version is
+	// gone. RemoveSdk deletes shim files (go.exe/gofmt.exe/...), clears the
+	// SDK's entries from shims.json, and drops its env-var lines from
+	// .svc.rc / the registry. Without this, uninstalled SDKs leave orphan
+	// shims that resolve to "no active version" and keep PathConfigured=true
+	// (the shim files are still found by IsCommandAvailable).
+	//
+	// Only remove when NO versions remain: if other versions of the same
+	// SDK are still installed, their shims must stay (shims route by SDK
+	// type, not by version — the active version is resolved at run time).
+	if a.noVersionsLeft(sdkType) {
+		extraEnvVars := a.getExtraEnvVars(sdkType)
+		if err := a.pathMgr.RemoveSdk(sdkType, extraEnvVars); err != nil {
+			logger.Warn("Failed to remove shims for %s: %v", sdkType, err)
+		}
+	}
+
+	if wasActive {
 		// Return special error to signal frontend to refresh and show warning
 		return fmt.Errorf("ACTIVE_VERSION_DELETED:%s", sdkType)
 	}
 
 	logger.Info("Successfully uninstalled %s version %s", sdkType, version)
 	return nil
+}
+
+// noVersionsLeft reports whether no installed versions remain for sdkType.
+// Used after UninstallVersion to decide whether to tear down the shim layer
+// for the whole SDK type (shims route by type, so they are only obsolete
+// once the last version is gone).
+func (a *App) noVersionsLeft(sdkType string) bool {
+	remaining := a.cfg.GetInstalledVersions(sdkType)
+	return len(remaining) == 0
+}
+
+// getExtraEnvVars returns the extra env vars (JAVA_HOME, GOROOT, ...) declared
+// by the SDK fetcher, mirroring the InstallSdk/ImportPathSdk call sites so the
+// RemoveSdk path stays symmetric with the ConfigureSdk path.
+func (a *App) getExtraEnvVars(sdkType string) map[string]string {
+	if a.registry == nil {
+		return nil
+	}
+	f := a.registry.Get(sdk.SdkType(sdkType))
+	if f == nil {
+		return nil
+	}
+	return f.GetExtraEnvVars()
 }
 
 func (a *App) GetStorageInfo() []StorageInfo {
