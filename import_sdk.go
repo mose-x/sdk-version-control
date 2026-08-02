@@ -112,7 +112,16 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
+	// DetectSdkRoot returns the wrapper dir itself (e.g. GOROOT for Go) and
+	// CopyDir copies its contents, so the top-level wrapper is lost. For SDKs
+	// whose GetBinDirs() carries the wrapper (Go "go/bin", Python "python/bin",
+	// Dart "dart-sdk/bin", ...), re-wrap the content so binDirs resolve.
+	binDirs := f.GetBinDirs()
+	if err := pathmgr.AlignImportLayout(targetDir, binDirs); err != nil {
+		logger.Warn("Failed to align import layout for %s: %v", sdkTypeStr, err)
+	}
+
+	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
@@ -159,7 +168,12 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
+	binDirs := f.GetBinDirs()
+	if err := pathmgr.AlignImportLayout(targetDir, binDirs); err != nil {
+		logger.Warn("Failed to align import layout for %s: %v", sdkType, err)
+	}
+
+	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
@@ -230,7 +244,12 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
+	binDirs := f.GetBinDirs()
+	if err := pathmgr.AlignImportLayout(targetDir, binDirs); err != nil {
+		logger.Warn("Failed to align import layout for %s: %v", sdkTypeStr, err)
+	}
+
+	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 

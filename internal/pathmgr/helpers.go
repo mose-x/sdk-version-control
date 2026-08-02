@@ -247,6 +247,67 @@ func GetDesktopDir() (string, error) {
 	return home, nil
 }
 
+// AlignImportLayout fixes the directory layout of an imported SDK so its
+// GetBinDirs() resolve correctly.
+//
+// Download-install extracts the archive verbatim, so for SDKs whose
+// StripArchiveTopDir()=false the top-level wrapper dir is preserved and
+// GetBinDirs() carries it (e.g. Go: "go/bin", Python: "python/bin",
+// Dart: "dart-sdk/bin"). Import-install, however, calls DetectSdkRoot which
+// returns the wrapper dir itself (e.g. GOROOT for Go), and CopyDir copies its
+// *contents* — so the wrapper dir is lost and binDirs like "go/bin" no longer
+// resolve (the real files land flat under "bin/").
+//
+// This function detects that mismatch and re-wraps the content: if binDirs
+// expects "<top>/<...>" but targetDir already has "<...>" at the top level,
+// it creates "<top>/" and moves everything into it. No-op when the layout
+// already matches (download-install path, or SDKs with StripArchiveTopDir=true
+// whose binDirs are just "bin"/"").
+func AlignImportLayout(targetDir string, binDirs []string) error {
+	for _, bd := range binDirs {
+		if bd == "" {
+			continue
+		}
+		parts := strings.Split(filepath.ToSlash(bd), "/")
+		if len(parts) < 2 {
+			continue // single-segment binDir (e.g. "bin") — nothing to wrap
+		}
+		top := parts[0]
+		// Expected wrapper dir already present → layout is correct.
+		if _, err := os.Stat(filepath.Join(targetDir, top)); err == nil {
+			return nil
+		}
+		// Wrapper missing but the inner path exists flat → re-wrap.
+		// Verify the flat layout actually exists (e.g. targetDir/bin/go.exe).
+		flatCheck := filepath.Join(targetDir, parts[len(parts)-1])
+		if _, err := os.Stat(flatCheck); err != nil {
+			// Flat layout doesn't exist either; nothing we can safely do.
+			continue
+		}
+		// Move everything in targetDir into targetDir/<top>/.
+		wrapperDir := filepath.Join(targetDir, top)
+		if err := os.MkdirAll(wrapperDir, 0755); err != nil {
+			return fmt.Errorf("align layout: create wrapper dir: %w", err)
+		}
+		entries, err := os.ReadDir(targetDir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if e.Name() == top {
+				continue // don't move the wrapper into itself
+			}
+			src := filepath.Join(targetDir, e.Name())
+			dst := filepath.Join(wrapperDir, e.Name())
+			if err := os.Rename(src, dst); err != nil {
+				return fmt.Errorf("align layout: move %s: %w", e.Name(), err)
+			}
+		}
+		return nil
+	}
+	return nil
+}
+
 // BackupDir copies a directory to the desktop with a timestamped name
 func BackupDir(src string) (string, error) {
 	if _, err := os.Stat(src); os.IsNotExist(err) {
