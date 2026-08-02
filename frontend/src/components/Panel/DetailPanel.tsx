@@ -43,6 +43,7 @@ import {
   SelectLocalFile,
   SelectLocalDir,
   ImportLocalSdk,
+  ImportPathSdk,
   GetSdkDownloadURL,
   CheckSystemConflicts,
   UninstallVersion,
@@ -433,6 +434,36 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
     }
   }
 
+  // Import the SDK copy currently found in PATH into SVC's managed store.
+  // Only offered when the SDK is pathConfigured && !configured (a PATH-only
+  // copy exists but SVC isn't managing it yet). The confirm modal reuses
+  // sidebar.* i18n keys since the wording is identical; cancelling leaves
+  // the user on the detail page instead of stranding them like the old
+  // sidebar-only flow did.
+  const handleImportPath = () => {
+    if (!status) return
+    const ref = modal.confirm({
+      title: t('sidebar.importConfirm', { sdk: status.displayName }),
+      content: t('sidebar.importConfirmDesc'),
+      okText: t('app.confirm'),
+      cancelText: t('app.cancel'),
+      maskClosable: false,
+      onOk: async () => {
+        ref.update({ cancelButtonProps: { disabled: true }, okButtonProps: { loading: true } })
+        try {
+          await ImportPathSdk(status.sdkType)
+          msgApi.success(t('sidebar.importSuccess', { sdk: status.displayName }))
+          onRefresh()
+          fetchPackageManagers()
+        } catch (e: any) {
+          msgApi.error(t('sidebar.importFail', { error: e?.message || e }))
+          ref.update({ cancelButtonProps: { disabled: false }, okButtonProps: { loading: false } })
+          throw e
+        }
+      },
+    })
+  }
+
   const handleImportFile = async () => {
     if (!status) return
     setImporting(true)
@@ -767,6 +798,14 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
             <Dropdown
               menu={{
                 items: [
+                  ...(status && !status.configured && status.pathConfigured
+                    ? [{
+                        key: 'path',
+                        icon: <ImportOutlined />,
+                        label: t('detail.importPath'),
+                        onClick: handleImportPath,
+                      }]
+                    : []),
                   {
                     key: 'file',
                     icon: <FileOutlined />,

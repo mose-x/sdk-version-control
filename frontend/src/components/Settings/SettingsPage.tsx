@@ -113,6 +113,11 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
     downloadThreads: 4,
   })
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  // The version reported by the backend at startup (from about.json). Unlike
+  // appInfo.version, this is NOT mutated when a download completes, so the
+  // "update ready" hint keeps showing the real current version instead of
+  // collapsing to "v1.0.5 -> v1.0.5" after the new package is downloaded.
+  const [originalVersion, setOriginalVersion] = useState<string>('')
   const [checking, setChecking] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   const [updateModalOpen, setUpdateModalOpen] = useState(false)
@@ -174,7 +179,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
 
   useEffect(() => {
     GetSettings().then((s) => setSettings(s))
-    GetAppInfo().then((info) => setAppInfo(info))
+    GetAppInfo().then((info) => {
+      setAppInfo(info)
+      setOriginalVersion(info.version)
+    })
     GetDefaultEndpoints().then((de) => setDefaultEndpoints(de || []))
     GetDefaultInstallPath().then((p) => {
       setDefaultInstallPath(p)
@@ -1423,7 +1431,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
         }
       >
         <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>
-          {t('about.currentVersion', { version: appInfo?.version || '' })} → v
+          {t('about.currentVersion', { version: originalVersion || appInfo?.version || '' })} → v
           {updateInfo?.latestVersion}
         </div>
 

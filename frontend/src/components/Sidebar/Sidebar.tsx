@@ -6,9 +6,8 @@ import {
   SyncOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Tooltip, Modal, App } from 'antd'
+import { Tooltip } from 'antd'
 import { useTranslation } from 'react-i18next'
-import { ImportPathSdk } from '../../../wailsjs/go/main/App'
 import logoImg from '../../assets/logo.png'
 
 interface SidebarProps {
@@ -18,7 +17,6 @@ interface SidebarProps {
   onSelect: (sdkType: SdkType) => void
   onGoHome: () => void
   onOpenSettings: () => void
-  onRefresh: () => void
 }
 
 // Category definitions
@@ -168,37 +166,12 @@ const sdkColors: Record<string, string> = {
   flutter: '#02569B', android: '#3DDC84', dart: '#0175C2',
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ statuses, selectedSdk, downloadingSdks, onSelect, onGoHome, onOpenSettings, onRefresh }) => {
+const Sidebar: React.FC<SidebarProps> = ({ statuses, selectedSdk, downloadingSdks, onSelect, onGoHome, onOpenSettings }) => {
   const { t } = useTranslation()
-  const { message: msgApi } = App.useApp()
-  const [modal, modalContextHolder] = Modal.useModal()
   const configuredCount = statuses.filter(s => s.configured || s.pathConfigured).length
-
-  const handleImportPath = (status: SdkStatus) => {
-    const ref = modal.confirm({
-      title: t('sidebar.importConfirm', { sdk: status.displayName }),
-      content: t('sidebar.importConfirmDesc'),
-      okText: t('app.confirm'),
-      cancelText: t('app.cancel'),
-      maskClosable: false,
-      onOk: async () => {
-        ref.update({ cancelButtonProps: { disabled: true }, okButtonProps: { loading: true } })
-        try {
-          await ImportPathSdk(status.sdkType)
-          msgApi.success(t('sidebar.importSuccess', { sdk: status.displayName }))
-          onRefresh()
-        } catch (e: any) {
-          msgApi.error(t('sidebar.importFail', { error: e?.message || e }))
-          ref.update({ cancelButtonProps: { disabled: false }, okButtonProps: { loading: false } })
-          throw e
-        }
-      },
-    })
-  }
 
   return (
     <div className="sidebar">
-      {modalContextHolder}
       <div className="sidebar-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -237,9 +210,15 @@ const Sidebar: React.FC<SidebarProps> = ({ statuses, selectedSdk, downloadingSdk
                       // imported; jump to the detail page so the user can
                       // install an app-managed version instead.
                       onSelect(status.sdkType as SdkType)
-                    } else if (!status.configured && status.pathConfigured) {
-                      handleImportPath(status)
                     } else {
+                      // All other states (including pathConfigured) go to
+                      // the detail page. The PATH-import action used to fire
+                      // directly from here, but that stranded users who
+                      // cancelled the confirm modal — they were left on the
+                      // home list with no way to see version details. The
+                      // import action is now a button in the detail page's
+                      // import dropdown, so cancelling just returns to the
+                      // detail page.
                       onSelect(status.sdkType as SdkType)
                     }
                   }}

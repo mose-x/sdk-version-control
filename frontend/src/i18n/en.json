@@ -67,6 +67,7 @@
     "importConfig": "Import",
     "importFile": "Select Archive",
     "importDir": "Select Folder",
+    "importPath": "Import from PATH",
     "importSuccess": "Import successful!",
     "importFail": "Import failed: {{error}}",
     "installingSdk": "Installing {{sdk}} {{version}}",

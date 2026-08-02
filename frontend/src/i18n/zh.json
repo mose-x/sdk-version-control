@@ -67,6 +67,7 @@
     "importConfig": "导入配置",
     "importFile": "选择压缩包",
     "importDir": "选择文件夹",
+    "importPath": "从 PATH 导入",
     "importSuccess": "导入成功！",
     "importFail": "导入失败: {{error}}",
     "installingSdk": "正在安装 {{sdk}} {{version}}",

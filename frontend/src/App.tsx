@@ -160,7 +160,6 @@ function App() {
                 setShowSettings(false)
               }}
               onOpenSettings={() => setShowSettings(true)}
-              onRefresh={refreshStatuses}
             />
             {showSettings ? (
               <SettingsPage

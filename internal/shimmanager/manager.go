@@ -42,7 +42,13 @@ func (m *Manager) EnsureSetup() error {
 }
 
 // ensureShimBinary copies the current app binary to ~/.svc/shims/svc-shim
-// if it doesn't exist or is outdated (compared by file size).
+// if it doesn't exist or is outdated (compared by file size + modtime).
+// When the base shim is actually replaced, all existing command shims
+// (node.exe, go.exe, ...) are rebuilt so they point at the new binary
+// instead of lingering as hardlinks to the previous version's svc-shim.
+// On Windows, os.Remove on svc-shim.exe leaves existing hardlinks (node.exe)
+// pointing at the old inode, so the old binary keeps running until the
+// hardlink is explicitly recreated.
 func (m *Manager) ensureShimBinary() error {
 	appPath, err := os.Executable()
 	if err != nil {
@@ -55,20 +61,24 @@ func (m *Manager) ensureShimBinary() error {
 	}
 	shimPath := filepath.Join(m.cfg.ShimsDir(), shimName)
 
-	// Check if shim binary exists and matches app binary size
 	appInfo, err := os.Stat(appPath)
 	if err != nil {
 		return fmt.Errorf("cannot stat app binary: %w", err)
 	}
 
+	needUpdate := true
 	if shimInfo, err := os.Stat(shimPath); err == nil {
-		if shimInfo.Size() == appInfo.Size() {
-			// Already up-to-date
-			return nil
+		if shimInfo.Size() == appInfo.Size() && !shimInfo.ModTime().Before(appInfo.ModTime()) {
+			needUpdate = false
 		}
-		logger.Info("Shim binary is outdated, updating...")
-		os.Remove(shimPath)
 	}
+
+	if !needUpdate {
+		return nil
+	}
+
+	logger.Info("Shim binary is outdated, updating...")
+	os.Remove(shimPath)
 
 	// Copy the app binary to the shim path
 	if err := copyFile(appPath, shimPath, 0755); err != nil {
@@ -76,7 +86,53 @@ func (m *Manager) ensureShimBinary() error {
 	}
 
 	logger.Info("Shim binary installed at: %s", shimPath)
+
+	// Rebuild every existing command shim so its hardlink/copy targets the
+	// freshly written svc-shim. Without this, command shims created by a
+	// previous app version keep pointing at the old binary on Windows
+	// (Remove+rewrite of svc-shim.exe leaves prior hardlinks intact on the
+	// old inode), so users keep running the stale shim after an update.
+	m.rebuildCommandShims()
 	return nil
+}
+
+// rebuildCommandShims recreates the shim file for every command registered in
+// shims.json. The command→sdkType mapping and binDirs are preserved; only the
+// on-disk shim file (hardlink to svc-shim, or .cmd/.bat wrapper) is rebuilt.
+func (m *Manager) rebuildCommandShims() {
+	cfg := m.loadShimConfig()
+	if len(cfg.Commands) == 0 {
+		return
+	}
+	rebuilt := 0
+	for cmd := range cfg.Commands {
+		// classifyExecutable needs the on-disk filename; reconstruct the
+		// extension the original shim used. .exe hardlink on Windows, no
+		// extension on Unix. .cmd/.bat wrappers are Windows-only and are
+		// recreated below by re-deriving the extension from any existing
+		// variant.
+		ext := ""
+		if runtime.GOOS == "windows" {
+			// Prefer .exe; fall back to .cmd/.bat if that's what existed.
+			for _, candidate := range []string{".exe", ".cmd", ".bat"} {
+				if _, err := os.Stat(filepath.Join(m.cfg.ShimsDir(), cmd+candidate)); err == nil {
+					ext = candidate
+					break
+				}
+			}
+			if ext == "" {
+				ext = ".exe"
+			}
+		}
+		if err := m.createShimFor(cmd, ext); err != nil {
+			logger.Warn("Failed to rebuild shim for %s: %v", cmd, err)
+			continue
+		}
+		rebuilt++
+	}
+	if rebuilt > 0 {
+		logger.Info("Rebuilt %d command shims to match updated svc-shim", rebuilt)
+	}
 }
 
 // ConfigureSdk creates shims for all executables across the SDK's bin
