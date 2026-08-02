@@ -41,14 +41,23 @@ func (m *Manager) EnsureSetup() error {
 	return m.ensurePathEntry()
 }
 
-// ensureShimBinary copies the current app binary to ~/.svc/shims/svc-shim
-// if it doesn't exist or is outdated (compared by file size + modtime).
-// When the base shim is actually replaced, all existing command shims
-// (node.exe, go.exe, ...) are rebuilt so they point at the new binary
-// instead of lingering as hardlinks to the previous version's svc-shim.
-// On Windows, os.Remove on svc-shim.exe leaves existing hardlinks (node.exe)
-// pointing at the old inode, so the old binary keeps running until the
-// hardlink is explicitly recreated.
+// ensureShimBinary installs ~/.svc/shims/svc-shim[.exe] if it is missing or
+// outdated (compared by file size + modtime). When the base shim is actually
+// replaced, all existing command shims (node.exe, go.exe, ...) are rebuilt so
+// they point at the new binary instead of lingering as hardlinks to the
+// previous version's svc-shim. On Windows, os.Remove on svc-shim.exe leaves
+// existing hardlinks (node.exe) pointing at the old inode, so the old binary
+// keeps running until the hardlink is explicitly recreated.
+//
+// On Windows the shim is the embedded console-subsystem binary
+// (embeddedShimBinary), NOT a copy of the app binary: the app binary is built
+// with -H windowsgui (no console), so hardlinking node.exe to it makes
+// `node -v` print nothing and leaves cmd.exe's prompt stuck. A console
+// subsystem shim gets a real stdio handle from cmd.exe and the prompt redraws
+// on exit, exactly like the real node.exe. If the embed is empty (dev build
+// without the prebuild step), it falls back to copying the app binary; the
+// AttachConsole fallback in the shim package then keeps output working, with
+// the known prompt-hang trade-off.
 func (m *Manager) ensureShimBinary() error {
 	appPath, err := os.Executable()
 	if err != nil {
@@ -66,9 +75,19 @@ func (m *Manager) ensureShimBinary() error {
 		return fmt.Errorf("cannot stat app binary: %w", err)
 	}
 
+	// On Windows, prefer the embedded console-subsystem shim binary over a
+	// copy of the GUI-subsystem app binary. Falls back to the app binary when
+	// the embed is empty (dev build without the prebuild step).
+	useEmbedded := runtime.GOOS == "windows" && len(embeddedShimBinary) > 0
+
+	expectedSize := appInfo.Size()
+	if useEmbedded {
+		expectedSize = int64(len(embeddedShimBinary))
+	}
+
 	needUpdate := true
 	if shimInfo, err := os.Stat(shimPath); err == nil {
-		if shimInfo.Size() == appInfo.Size() && !shimInfo.ModTime().Before(appInfo.ModTime()) {
+		if shimInfo.Size() == expectedSize && !shimInfo.ModTime().Before(appInfo.ModTime()) {
 			needUpdate = false
 		}
 	}
@@ -80,9 +99,14 @@ func (m *Manager) ensureShimBinary() error {
 	logger.Info("Shim binary is outdated, updating...")
 	os.Remove(shimPath)
 
-	// Copy the app binary to the shim path
-	if err := copyFile(appPath, shimPath, 0755); err != nil {
-		return fmt.Errorf("failed to copy shim binary: %w", err)
+	if useEmbedded {
+		if err := os.WriteFile(shimPath, embeddedShimBinary, 0755); err != nil {
+			return fmt.Errorf("failed to write embedded shim binary: %w", err)
+		}
+	} else {
+		if err := copyFile(appPath, shimPath, 0755); err != nil {
+			return fmt.Errorf("failed to copy shim binary: %w", err)
+		}
 	}
 
 	logger.Info("Shim binary installed at: %s", shimPath)
