@@ -91,6 +91,25 @@ jobs:
           Write-Host "NSIS dir: $nsisDir"
           & "$nsisDir\makensis.exe" /VERSION
 
+      - name: Build console shim binary
+        # Build the dedicated console-subsystem svc-shim.exe and place it at
+        # the //go:embed path consumed by internal/shimmanager. This MUST run
+        # before `wails build` so the bytes are captured into the app binary
+        # at compile time. Built for the same windows/<arch> target as the
+        # app; cmd/svc-shim imports only stdlib (no CGO), so it cross-compiles
+        # cleanly on an amd64 runner for arm64. The committed file at this
+        # path is an empty placeholder (so dev `wails build` works without
+        # this step); this step overwrites it with the real binary, and the
+        # change is never committed back. Without this, the app would embed
+        # the empty placeholder and ensureShimBinary would fall back to
+        # copying the GUI-subsystem app binary — reintroducing the Windows
+        # `node -v` no-output / prompt-hang bug.
+        shell: bash
+        run: |
+          GOOS=windows GOARCH=${{ matrix.arch }} go build -o internal/shimmanager/svc-shim.windows.exe ./cmd/svc-shim
+          echo "Built console shim binary:"
+          ls -la internal/shimmanager/svc-shim.windows.exe
+
       - name: Build
         # -nsis produces a Windows installer (setup.exe) alongside the bare
         # binary. The bare exe stays the self-update asset (ApplyUpdate

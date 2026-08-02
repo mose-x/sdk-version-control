@@ -10,6 +10,11 @@ build/bin/
 *.dll
 *.so
 *.dylib
+# Exception: the embedded Windows shim binary placeholder is a source asset
+# (committed empty so `wails build` works on a fresh clone without the CI
+# prebuild step), not a build output. CI overwrites it with the real console
+# binary before `wails build` and never commits that change.
+!internal/shimmanager/svc-shim.windows.exe
 
 # Frontend
 frontend/dist/
