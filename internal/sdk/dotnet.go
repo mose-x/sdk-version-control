@@ -83,7 +83,7 @@ func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	return versions, nil
 }
 
-func (f *DotNetFetcher) buildURL(version string) string {
+func (f *DotNetFetcher) buildRID() string {
 	rid := "win-x64"
 	if runtime.GOOS == "linux" {
 		rid = "linux-x64"
@@ -94,21 +94,22 @@ func (f *DotNetFetcher) buildURL(version string) string {
 			rid = "osx-arm64"
 		}
 	}
-	return f.useEndpoint(fmt.Sprintf("https://dotnetcli.azureedge.net/dotnet/Sdk/%s/dotnet-sdk-%s-%s.zip", version, version, rid))
+	return rid
+}
+
+func (f *DotNetFetcher) buildExt() string {
+	if runtime.GOOS == "windows" {
+		return "zip"
+	}
+	return "tar.gz"
+}
+
+func (f *DotNetFetcher) buildURL(version string) string {
+	return f.useEndpoint(fmt.Sprintf("https://dotnetcli.azureedge.net/dotnet/Sdk/%s/dotnet-sdk-%s-%s.%s", version, version, f.buildRID(), f.buildExt()))
 }
 
 func (f *DotNetFetcher) buildFileName(version string) string {
-	rid := "win-x64"
-	if runtime.GOOS == "linux" {
-		rid = "linux-x64"
-	}
-	if runtime.GOOS == "darwin" {
-		rid = "osx-x64"
-		if runtime.GOARCH == "arm64" {
-			rid = "osx-arm64"
-		}
-	}
-	return fmt.Sprintf("dotnet-sdk-%s-%s.zip", version, rid)
+	return fmt.Sprintf("dotnet-sdk-%s-%s.%s", version, f.buildRID(), f.buildExt())
 }
 
 func (f *DotNetFetcher) GetDownloadURL(version string) (string, string, error) {
