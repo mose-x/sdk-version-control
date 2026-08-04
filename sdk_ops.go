@@ -254,6 +254,14 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		}
 	}
 
+	// Rust-specific: merge rust-std component's lib/rustlib into cargo/ and
+	// rustc/ so that sysroot resolution finds the std library.
+	if rustFetcher, ok := f.(*sdk.RustFetcher); ok {
+		if err := rustFetcher.MergeComponents(versionDir); err != nil {
+			return fmt.Errorf("failed to merge Rust components: %w", err)
+		}
+	}
+
 	logger.Info("Extraction completed, configuring environment...")
 	a.emitProgress(sdkType, version, "configuring_path", 0, "Configuring environment...", 0, 0, 0, downloadURL)
 	if err := a.pathMgr.ConfigureSdk(string(sdkType), versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {

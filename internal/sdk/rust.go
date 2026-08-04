@@ -2,7 +2,10 @@ package sdk
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -48,6 +51,78 @@ func (f *RustFetcher) GetExtraEnvVars() map[string]string {
 	return nil
 }
 func (f *RustFetcher) VerifyCommand() (string, []string) { return "rustc", []string{"--version"} }
+
+// MergeComponents copies rust-std-{target}/lib/rustlib/ into cargo/lib/ and
+// rustc/lib/ so that rustc and cargo find the std library at their sysroot
+// (dirname(dirname(exe)) = component dir root, which now contains lib/rustlib/).
+//
+// The Rust tarball ships per-component directories (cargo/, rustc/,
+// rustfmt-preview/, rust-std-{target}/) as siblings. Without this merge,
+// rustc at rustc/bin/rustc computes sysroot=rustc/ but std is at
+// rust-std-{target}/lib/rustlib/ — a sibling, not under rustc/.
+func (f *RustFetcher) MergeComponents(versionDir string) error {
+	entries, err := os.ReadDir(versionDir)
+	if err != nil {
+		return fmt.Errorf("failed to read version dir: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "rust-std-") {
+			continue
+		}
+		srcRustlib := filepath.Join(versionDir, entry.Name(), "lib", "rustlib")
+		if info, err := os.Stat(srcRustlib); err != nil || !info.IsDir() {
+			continue
+		}
+		for _, comp := range []string{"cargo", "rustc"} {
+			dstRustlib := filepath.Join(versionDir, comp, "lib", "rustlib")
+			if _, err := os.Stat(dstRustlib); err == nil {
+				continue
+			}
+			if err := os.MkdirAll(filepath.Dir(dstRustlib), 0755); err != nil {
+				return err
+			}
+			if err := copyDir(srcRustlib, dstRustlib); err != nil {
+				return fmt.Errorf("failed to copy rustlib to %s: %w", comp, err)
+			}
+		}
+	}
+	return nil
+}
+
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		return copyFile(path, target, info.Mode())
+	})
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
+}
 
 func (f *RustFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo

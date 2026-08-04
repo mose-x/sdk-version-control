@@ -65,7 +65,7 @@ type androidPackage struct {
 	} `xml:"revision"`
 	Archives struct {
 		Archive []struct {
-			OS   string `xml:"host-os,attr"`
+			OS   string `xml:"host-os"`
 			URL  string `xml:"complete>url"`
 			Size int64  `xml:"complete>size"`
 		} `xml:"archive"`

@@ -42,14 +42,32 @@ func (f *FlutterFetcher) GetExtraEnvVars() map[string]string {
 }
 func (f *FlutterFetcher) VerifyCommand() (string, []string) { return "flutter", []string{"--version"} }
 
+func (f *FlutterFetcher) buildOSName() string {
+	switch runtime.GOOS {
+	case "linux":
+		return "linux"
+	case "darwin":
+		return "macos"
+	default:
+		return "windows"
+	}
+}
+
+func (f *FlutterFetcher) buildExt() string {
+	if runtime.GOOS == "linux" {
+		return "tar.xz"
+	}
+	return "zip"
+}
+
+func isStableFlutterTag(tag string) bool {
+	return !strings.Contains(tag, "beta") && !strings.Contains(tag, "dev") && !strings.Contains(tag, "pre")
+}
+
 func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo
 	page := 1
 	for page <= 3 {
-		// Flutter's per-SDK endpoint mirrors storage.googleapis.com (the
-		// download host), NOT github, so the releases API URL is passed
-		// unmirrored; fetchGithubReleasesPage still applies the GitHub token
-		// and the GithubMirror reverse-proxy fallback.
 		url := fmt.Sprintf("https://api.github.com/repos/flutter/flutter/releases?per_page=30&page=%d", page)
 		var releases []ghRelease
 		if err := fetchGithubReleasesPage(f.sm, f.httpClient, url, &releases); err != nil {
@@ -64,7 +82,7 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 				continue
 			}
 			tag := r.TagName
-			if strings.Contains(tag, "beta") || strings.Contains(tag, "dev") {
+			if !isStableFlutterTag(tag) {
 				continue
 			}
 			ver := strings.TrimPrefix(tag, "v")
@@ -77,17 +95,12 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			if t, err := time.Parse(time.RFC3339, r.PublishedAt); err == nil {
 				date = t.Format("2006-01-02")
 			}
-			osName := "windows"
-			if runtime.GOOS == "linux" {
-				osName = "linux"
-			}
-			if runtime.GOOS == "darwin" {
-				osName = "macos"
-			}
+			osName := f.buildOSName()
+			ext := f.buildExt()
 			versions = append(versions, VersionInfo{
 				Version: ver, Major: major, ReleaseDate: date,
-				DownloadURL: f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s_%s-stable.zip", osName, osName, ver)),
-				FileName:    fmt.Sprintf("flutter_%s_%s-stable.zip", osName, ver),
+				DownloadURL: f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s_%s-stable.%s", osName, osName, ver, ext)),
+				FileName:    fmt.Sprintf("flutter_%s_%s-stable.%s", osName, ver, ext),
 			})
 		}
 		page++
@@ -97,15 +110,10 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 }
 
 func (f *FlutterFetcher) GetDownloadURL(version string) (string, string, error) {
-	osName := "windows"
-	if runtime.GOOS == "linux" {
-		osName = "linux"
-	}
-	if runtime.GOOS == "darwin" {
-		osName = "macos"
-	}
-	url := f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s_%s-stable.zip", osName, osName, version))
-	return url, fmt.Sprintf("flutter_%s_%s-stable.zip", osName, version), nil
+	osName := f.buildOSName()
+	ext := f.buildExt()
+	url := f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s_%s-stable.%s", osName, osName, version, ext))
+	return url, fmt.Sprintf("flutter_%s_%s-stable.%s", osName, version, ext), nil
 }
 
 func (f *FlutterFetcher) GetLocalStatus() (*SdkStatus, error) {
