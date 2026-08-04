@@ -16,8 +16,10 @@ import (
 
 // PHPFetcher fetches PHP versions.
 //
-//   - Windows: uses windows.php.net (php-VERSION-nts-Win32-vs16-x64.zip extracts
-//     to php-VERSION-nts-Win32-vs16-x64/ containing php.exe at root).
+//   - Windows: uses windows.php.net (php-VERSION-nts-Win32-vsNN-x64.zip extracts
+//     to php-VERSION-nts-Win32-vsNN-x64/ containing php.exe at root).
+//     The vsNN tag (vs16 for 8.3, vs17 for 8.4+) is captured at runtime from
+//     the version listing — never hardcoded.
 //   - Unix (Linux/macOS): uses rodrigodotdev/php GitHub releases — a clean mirror
 //     of static-php-cli builds (https://github.com/static-php/static-php-cli)
 //     covering linux/macos × x86_64/aarch64. Each archive extracts to a single
@@ -37,7 +39,7 @@ func NewPHPFetcher(cfg *config.Config, sm *config.SettingsManager) *PHPFetcher {
 func (f *PHPFetcher) SetHTTPClient(client *http.Client) { f.httpClient = client }
 
 // StripArchiveTopDir:
-//   - Windows: true — the php-Win32 zip extracts to php-VERSION-nts-Win32-vs16-x64/
+//   - Windows: true — the php-Win32 zip extracts to php-VERSION-nts-Win32-vsNN-x64/
 //     which must be stripped so php.exe lands at the version-dir root.
 //   - Unix: false — the static-php-cli archive extracts to a single `php` file
 //     (no enclosing directory); StripTopDir is a no-op for single-file extracts
@@ -109,38 +111,34 @@ func (f *PHPFetcher) fetchWindowsVersions() ([]VersionInfo, error) {
 		return nil, fmt.Errorf("failed to read PHP version data: %w", err)
 	}
 
-	// Match php-X.Y.Z-nts-Win32-vs16-x64.zip (or non-nts variants)
-	re := regexp.MustCompile(`php-(\d+\.\d+\.\d+)-nts-Win32-vs\d+-x64\.zip`)
+	// Match php-X.Y.Z-nts-Win32-vsNN-x64.zip and capture both version and vs tag.
+	// PHP 8.3 uses vs16, PHP 8.4+ uses vs17 — the tag must come from the actual
+	// listing, not hardcoded, or newer versions 404.
+	re := regexp.MustCompile(`php-(\d+\.\d+\.\d+)-nts-Win32-(vs\d+)-x64\.zip`)
 	seen := make(map[string]bool)
 	var versions []VersionInfo
 
 	matches := re.FindAllStringSubmatch(string(body), -1)
 	for _, m := range matches {
 		ver := m[1]
+		vsTag := m[2]
 		if seen[ver] {
 			continue
 		}
 		seen[ver] = true
 		parts := strings.Split(ver, ".")
 		major, _ := strconv.Atoi(parts[0])
+		fileName := fmt.Sprintf("php-%s-nts-Win32-%s-x64.zip", ver, vsTag)
 		versions = append(versions, VersionInfo{
 			Version:     ver,
 			Major:       major,
-			DownloadURL: f.windowsDownloadURL(ver),
-			FileName:    f.windowsFileName(ver),
+			DownloadURL: f.useEndpoint(fmt.Sprintf("https://windows.php.net/downloads/releases/%s", fileName)),
+			FileName:    fileName,
 		})
 	}
 
 	sort.Slice(versions, func(i, j int) bool { return CompareVersions(versions[i].Version, versions[j].Version) > 0 })
 	return versions, nil
-}
-
-func (f *PHPFetcher) windowsDownloadURL(ver string) string {
-	return f.useEndpoint(fmt.Sprintf("https://windows.php.net/downloads/releases/php-%s-nts-Win32-vs16-x64.zip", ver))
-}
-
-func (f *PHPFetcher) windowsFileName(ver string) string {
-	return fmt.Sprintf("php-%s-nts-Win32-vs16-x64.zip", ver)
 }
 
 // ----- Unix: rodrigodotdev/php (static-php-cli mirror) -----
