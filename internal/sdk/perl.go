@@ -1,10 +1,9 @@
 package sdk
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -83,50 +82,56 @@ func (f *PerlFetcher) VerifyCommand() (string, []string)  { return "perl", []str
 
 // ----- Windows: Strawberry Perl portable -----
 
+// strawberryRelease matches the JSON response from strawberryperl.com/releases.json.
+type strawberryRelease struct {
+	Version string `json:"version"`
+	Date    string `json:"date"`
+	Edition struct {
+		Portable struct {
+			URL    string `json:"url"`
+			Sha256 string `json:"sha256"`
+			Size   int64  `json:"size"`
+		} `json:"portable"`
+	} `json:"edition"`
+}
+
 func (f *PerlFetcher) fetchWindowsVersions() ([]VersionInfo, error) {
-	resp, err := f.httpClient.Get(f.useEndpoint("https://strawberryperl.com/releases.html"))
+	resp, err := f.httpClient.Get(f.useEndpoint("https://strawberryperl.com/releases.json"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch Perl version list: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read Perl version data: %w", err)
+	var releases []strawberryRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("failed to parse Perl version data: %w", err)
 	}
 
-	// Match strawberry-perl-X.Y.Z.W-64bit-portable.zip
-	re := regexp.MustCompile(`strawberry-perl-(\d+\.\d+\.\d+\.\d+)-64bit-portable\.zip`)
-	seen := make(map[string]bool)
 	var versions []VersionInfo
-
-	matches := re.FindAllStringSubmatch(string(body), -1)
-	for _, m := range matches {
-		ver := m[1]
-		if seen[ver] {
+	for _, r := range releases {
+		if r.Edition.Portable.URL == "" {
 			continue
 		}
-		seen[ver] = true
+		ver := r.Version
 		parts := strings.Split(ver, ".")
+		if len(parts) < 2 {
+			continue
+		}
 		major, _ := strconv.Atoi(parts[0])
+		// Extract filename from the GitHub URL (last path segment).
+		urlParts := strings.Split(r.Edition.Portable.URL, "/")
+		fileName := urlParts[len(urlParts)-1]
 		versions = append(versions, VersionInfo{
 			Version:     ver,
 			Major:       major,
-			DownloadURL: f.windowsDownloadURL(ver),
-			FileName:    f.windowsFileName(ver),
+			ReleaseDate: r.Date,
+			DownloadURL: f.useEndpoint(r.Edition.Portable.URL),
+			FileName:    fileName,
 		})
 	}
 
 	sort.Slice(versions, func(i, j int) bool { return CompareVersions(versions[i].Version, versions[j].Version) > 0 })
 	return versions, nil
-}
-
-func (f *PerlFetcher) windowsDownloadURL(ver string) string {
-	return f.useEndpoint(fmt.Sprintf("https://strawberryperl.com/download/%s/strawberry-perl-%s-64bit-portable.zip", ver, ver))
-}
-
-func (f *PerlFetcher) windowsFileName(ver string) string {
-	return fmt.Sprintf("strawberry-perl-%s-64bit-portable.zip", ver)
 }
 
 // ----- Unix: skaji/relocatable-perl -----
