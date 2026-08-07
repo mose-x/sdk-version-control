@@ -41,14 +41,17 @@ WAILS_FLAGS=""
 [ "${SVC_SKIP_BINDINGS:-0}" = "1" ] && WAILS_FLAGS="-skipbindings"
 wails build $WAILS_FLAGS -platform "darwin/$ARCH" -o SDKVersionControl
 
-# Strip the ad-hoc signature Wails/Go applies to the .app bundle. An
-# ad-hoc-signed bundle under Gatekeeper (browser quarantine) shows "damaged"
-# with no right-click -> Open bypass; stripping it makes Gatekeeper treat the
-# bundle as unsigned -> "cannot verify developer" -> right-click -> Open works.
-# The inner binary keeps Go's ad-hoc signature (arm64 kernel requires signed
-# executables). Do NOT use --deep (it would strip the inner binary too -> arm64
-# can't run). See note/t.md.
+# Strip the ad-hoc signature Wails/Go applies to the .app. An ad-hoc-signed
+# .app under Gatekeeper (browser quarantine) shows "damaged" with no
+# right-click -> Open bypass. Strip BOTH the bundle signature AND the inner
+# executable's ad-hoc: removing only the bundle seal while leaving the inner
+# binary ad-hoc-signed leaves a signature mismatch that Gatekeeper still
+# rejects (confirmed on an aliedr MDM Mac: bundle-only strip still blocked;
+# stripping both let the app launch). The arm64 kernel re-applies an ad-hoc
+# signature to the inner binary at exec time, so stripping it is safe (the
+# binary still runs). See note/t.md.
 codesign --remove-signature "$APP" 2>/dev/null || true
+codesign --remove-signature "$APP/Contents/MacOS/SDKVersionControl" 2>/dev/null || true
 
 # --- Apply rounded desktop icon (Dock/Launchpad readability).
 ICONSET="$(mktemp -d)/icon.iconset"
