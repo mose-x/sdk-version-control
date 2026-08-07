@@ -54,3 +54,6 @@ npm-debug.log*
 # Temporary files
 *.tmp
 *.bak
+
+# Notes (local planning docs, not for commits)
+note/
