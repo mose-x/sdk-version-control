@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -66,6 +67,13 @@ type UpdateInfo struct {
 	Sha256        string `json:"sha256"`
 }
 
+// stableVersionReg matches a pure X.Y.Z version (exactly three numeric
+// components, digits + dots only, no pre-release suffix like -rc1/-beta).
+// Only releases whose tag (minus the leading "v") matches are valid update
+// targets; suffixed/pre-release tags are skipped so the updater never offers a
+// non-stable build to users.
+var stableVersionReg = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
 func (a *App) CheckUpdate() (UpdateInfo, error) {
 	if a.appInfo.UpdateURL == "" {
 		return UpdateInfo{}, fmt.Errorf("update URL is not configured")
@@ -74,14 +82,24 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	client := &http.Client{Transport: a.buildProxyTransport(), Timeout: 15 * time.Second}
 
 	// updateUrl points at the GitHub Releases API
-	// (https://api.github.com/repos/<owner>/<repo>/releases/latest). GitHub
-	// requires a User-Agent and the JSON media type.
-	req, err := http.NewRequest(http.MethodGet, a.appInfo.UpdateURL, nil)
+	// (https://api.github.com/repos/<owner>/<repo>/releases/latest). To pick
+	// the latest *stable* release we fetch the releases LIST (newest first by
+	// created_at) and skip any tag carrying a pre-release suffix (-rc1, -beta,
+	// ...): only pure vX.Y.Z tags are valid update targets. This prevents the
+	// updater from ever offering an rc/build to users, independent of whether
+	// the release was published as a GitHub pre-release. Derive the list URL
+	// by stripping the trailing "/latest" so the existing about.json updateUrl
+	// (ending in /latest) keeps working without a config change.
+	listURL := strings.TrimSuffix(a.appInfo.UpdateURL, "/latest")
+	req, err := http.NewRequest(http.MethodGet, listURL, nil)
 	if err != nil {
 		return UpdateInfo{}, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "SDKVersionControl")
+	q := req.URL.Query()
+	q.Set("per_page", "30")
+	req.URL.RawQuery = q.Encode()
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -96,9 +114,27 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 		return UpdateInfo{}, fmt.Errorf("update server returned status %d (may be rate-limited or the release is unavailable)", resp.StatusCode)
 	}
 
-	var release GitHubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+	var releases []GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return UpdateInfo{}, fmt.Errorf("failed to parse release info: %w", err)
+	}
+
+	// Pick the newest release whose tag (minus the leading "v") is a pure
+	// X.Y.Z. Releases come back newest-first, so the first match is the
+	// latest stable.
+	var release *GitHubRelease
+	for i := range releases {
+		tag := strings.TrimPrefix(releases[i].TagName, "v")
+		if stableVersionReg.MatchString(tag) {
+			release = &releases[i]
+			break
+		}
+	}
+	if release == nil {
+		// No pure-numeric release among the recent ones (e.g. only rc builds
+		// are published). Treat as "no stable update available" rather than an
+		// error: the user is current with respect to stable releases.
+		return UpdateInfo{HasUpdate: false}, nil
 	}
 
 	remoteVersion := strings.TrimPrefix(release.TagName, "v")

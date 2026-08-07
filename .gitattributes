@@ -1,0 +1,5 @@
+# Shell scripts must use LF line endings. CRLF breaks heredoc delimiters and
+# case/if matches in bash on Linux/macOS, and adds stray \r to variable values
+# on Git Bash. Force LF in the working tree on all platforms (overrides
+# core.autocrlf) so CI and local runs execute identical bytes.
+*.sh text eol=lf

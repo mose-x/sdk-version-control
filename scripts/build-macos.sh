@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Build the macOS .app, DMG, and self-update .bin for SDK Version Control.
+#
+# Usage:   ./scripts/build-macos.sh <version> [arch]
+#   version:  release version, e.g. 1.1.0
+#   arch:     amd64 | arm64  (default: native GOARCH)
+#
+# Produces in build/bin/:
+#   SDKVersionControl-<ver>-macos-<x64|arm64>.dmg   (first-install)
+#   SDKVersionControl-<ver>-macos-<x64|arm64>.bin   (in-app self-update)
+#
+# Prereqs: Go 1.25+, Node 18+, Wails CLI, jq, create-dmg (brew), Pillow (pip3).
+# macOS-only: hdiutil/create-dmg/iconutil/sips are macOS tools.
+#
+# This script is the single source of truth for the macOS packaging steps;
+# .github/workflows/build.yml calls it so CI and local builds produce
+# byte-identical artifacts.
+set -euo pipefail
+
+VERSION="${1:?version required, e.g. 1.1.0}"
+ARCH="${2:-$(go env GOARCH)}"
+case "$ARCH" in
+  amd64) ASSET_ARCH="x64" ;;
+  arm64) ASSET_ARCH="arm64" ;;
+  *) echo "unsupported arch: $ARCH (want amd64|arm64)" >&2; exit 1 ;;
+esac
+
+APP="build/bin/SDK Version Control.app"
+
+# --- Bump about.json so the binary reports the correct version to CheckUpdate.
+jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
+echo "about.json version bumped to $VERSION"
+
+# --- Build .app
+wails build -platform "darwin/$ARCH" -o SDKVersionControl
+
+# --- Apply rounded desktop icon (Dock/Launchpad readability).
+ICONSET="$(mktemp -d)/icon.iconset"
+mkdir -p "$ICONSET"
+SRC="build/desktop-icons/icon-white-bg.png"
+for sz in 16 32 64 128 256 512; do
+  sips -z $sz $sz "$SRC" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
+  sips -z $((sz*2)) $((sz*2)) "$SRC" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null
+done
+sips -z 1024 1024 "$SRC" --out "$ICONSET/icon_512x512@2x.png" >/dev/null
+ICNS="$(dirname "$ICONSET")/iconfile.icns"
+iconutil -c icns "$ICONSET" -o "$ICNS"
+cp "$ICNS" "$APP/Contents/Resources/iconfile.icns"
+
+# NOTE: No ad-hoc codesign here. Under MDM (aliedr), ad-hoc (--sign -) is
+# rejected by amfid with -423 and is strictly worse than leaving the bundle
+# unsigned (see note/t.md). A browser-downloaded DMG carries
+# com.apple.quarantine, which the .app inherits on drag-install, routing the
+# launch through Gatekeeper (right-click -> Open) instead of the provenance
+# path that kills unsigned/ad-hoc binaries with SIGKILL 137.
+
+# --- Create DMG with a pure-white background + English red security hint.
+command -v create-dmg >/dev/null 2>&1 || brew install create-dmg
+
+# Reuse a persistent venv so local re-runs don't reinstall Pillow each time.
+VENV="/tmp/svc-dmgvenv"
+[ -d "$VENV" ] || python3 -m venv "$VENV"
+if ! "$VENV/bin/python" -c "import PIL" 2>/dev/null; then
+  "$VENV/bin/pip" install --quiet Pillow
+fi
+
+BG_PATH="build/bin/dmg_bg.png"
+export BG_PATH VERSION
+"$VENV/bin/python" << 'PYEOF'
+import os
+from PIL import Image, ImageDraw, ImageFont
+
+w, h = 660, 400
+img = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+draw = ImageDraw.Draw(img)
+
+def load_font(size):
+    for path in [
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ]:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+title_font = load_font(24)
+hint_font = load_font(14)
+small_font = load_font(12)
+cx = w / 2
+
+draw.text((cx, 40), "SDK Version Control", fill=(30, 30, 46, 255),
+          font=title_font, anchor="mm")
+draw.text((cx, 130),
+          "Drag the app icon to the Applications folder on the right",
+          fill=(90, 90, 90, 255), font=hint_font, anchor="mm")
+
+# Security hint in RED: the correct unsigned-app bypass. NOT `xattr -cr`,
+# which strips quarantine and routes MDM users back to the provenance path
+# (SIGKILL). English per spec.
+RED = (200, 0, 0, 255)
+draw.text((cx, 290), 'If macOS says "cannot be opened":',
+          fill=RED, font=small_font, anchor="mm")
+draw.text((cx, 320), 'Right-click the app  ->  Open  ->  "Open"',
+          fill=RED, font=hint_font, anchor="mm")
+
+img.save(os.environ["BG_PATH"])
+PYEOF
+
+DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
+create-dmg \
+  --volname "SDK Version Control" \
+  --background "$BG_PATH" \
+  --window-pos 200 120 \
+  --window-size 660 400 \
+  --icon-size 100 \
+  --app-drop-link 480 200 \
+  --icon "SDK Version Control.app" 180 200 \
+  --no-internet-enable \
+  "build/bin/${DMG_NAME}" \
+  "$APP"
+
+# --- Extract bare inner binary for in-app self-update.
+# ApplyUpdate swaps the executable inside the existing .app bundle, not the
+# bundle itself, so ship the inner binary as a separate .bin asset.
+BIN_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.bin"
+cp "$APP/Contents/MacOS/SDKVersionControl" "build/bin/${BIN_NAME}"
+
+echo
+echo "Built:"
+echo "  build/bin/${DMG_NAME}"
+echo "  build/bin/${BIN_NAME}"
