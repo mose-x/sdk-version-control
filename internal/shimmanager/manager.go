@@ -128,6 +128,17 @@ func (m *Manager) rebuildCommandShims() {
 	if len(cfg.Commands) == 0 {
 		return
 	}
+	// Self-update fix: existing users whose shims.json predates the python3
+	// alias get it auto-added here. ensureShimBinary calls rebuildCommandShims
+	// on startup when a new svc-shim binary lands (e.g. after a self-update), so
+	// a v1.2.0 self-update + restart makes `python3` work without reinstalling
+	// Python. Windows CPython ships python.exe (no python3.exe), so without
+	// this `python3` falls through to the Windows Store stub.
+	if m.ensurePython3Alias(&cfg) {
+		if err := m.saveShimConfig(m.cfg.ShimsConfigPath(), cfg); err != nil {
+			logger.Warn("Failed to persist python3 alias: %v", err)
+		}
+	}
 	rebuilt := 0
 	for cmd := range cfg.Commands {
 		// classifyExecutable needs the on-disk filename; reconstruct the
@@ -157,6 +168,27 @@ func (m *Manager) rebuildCommandShims() {
 	if rebuilt > 0 {
 		logger.Info("Rebuilt %d command shims to match updated svc-shim", rebuilt)
 	}
+}
+
+// ensurePython3Alias registers the python3 -> python command alias in cfg if
+// Python is configured but python3 isn't registered yet. Returns true if cfg
+// was modified (caller persists it and the rebuild loop creates the shim file).
+// Windows CPython ships python.exe (no python3.exe); without this alias
+// `python3` resolves to the Windows Store stub. Called from
+// rebuildCommandShims so a self-update + restart auto-adds python3 without
+// reinstalling Python.
+func (m *Manager) ensurePython3Alias(cfg *shim.ShimConfig) bool {
+	if _, ok := cfg.SdkTypes["python"]; !ok {
+		return false
+	}
+	if _, ok := cfg.Commands["python3"]; ok {
+		return false
+	}
+	if cfg.Commands == nil {
+		cfg.Commands = make(map[string]string)
+	}
+	cfg.Commands["python3"] = "python"
+	return true
 }
 
 // ConfigureSdk creates shims for all executables across the SDK's bin
@@ -257,6 +289,23 @@ func (m *Manager) createShimsForDirs(versionDir string, binDirs []string, sdkTyp
 			}
 			created[cmdName] = true
 			result = append(result, cmdName)
+		}
+	}
+
+	// Python on Windows ships python.exe but no python3.exe (python3 is a Unix
+	// convention). Alias python3 -> python so `python3` works on Windows like on
+	// Unix. On Unix the bin usually already has a python3 symlink (created
+	// above), so the !created guard skips it.
+	if sdkType == "python" && !created["python3"] {
+		ext := ""
+		if runtime.GOOS == "windows" {
+			ext = ".exe"
+		}
+		if err := m.createShimFor("python3", ext); err != nil {
+			logger.Warn("Failed to create python3 shim: %v", err)
+		} else {
+			created["python3"] = true
+			result = append(result, "python3")
 		}
 	}
 

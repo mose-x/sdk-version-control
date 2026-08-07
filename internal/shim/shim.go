@@ -30,6 +30,15 @@ type settings struct {
 	InstallPath string `json:"installPath"`
 }
 
+// commandAliases maps a command to an alternate name to try when the real
+// binary isn't found in the SDK's bin dirs. python3 -> python: Windows CPython
+// ships python.exe but no python3.exe (python3 is a Unix convention); the
+// shimmanager registers python3 as an alias of python, and this fallback
+// resolves it to the real python binary so `python3` works on Windows.
+var commandAliases = map[string]string{
+	"python3": "python",
+}
+
 // Run executes the shim: looks up the real binary and execs it.
 // This is called when the app binary is invoked via a hardlink named after a
 // command, or via a .cmd/.bat wrapper that delegates to svc-shim.exe.
@@ -84,6 +93,15 @@ func Run() {
 	versionDir := filepath.Join(svcHome, sdkType, version)
 
 	realBinary := resolveRealBinaryMulti(versionDir, sdkCfg.BinDirs, inv.Command)
+	if realBinary == "" {
+		// python3 -> python: Windows CPython ships python.exe but no python3.exe
+		// (a Unix convention). The shimmanager registers python3 as an alias of
+		// python; resolve it to the real python binary. Matches Unix where
+		// python3 exists as a real executable/symlink.
+		if alias, ok := commandAliases[inv.Command]; ok {
+			realBinary = resolveRealBinaryMulti(versionDir, sdkCfg.BinDirs, alias)
+		}
+	}
 	if realBinary == "" {
 		fmt.Fprintf(os.Stderr, "shim: executable not found for %q under %s\n", inv.Command, versionDir)
 		os.Exit(1)
