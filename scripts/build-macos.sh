@@ -32,7 +32,23 @@ jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.js
 echo "about.json version bumped to $VERSION"
 
 # --- Build .app
-wails build -platform "darwin/$ARCH" -o SDKVersionControl
+# SVC_SKIP_BINDINGS=1 (set by scripts/build-macos-local.sh) passes
+# -skipbindings so Wails does not run the ad-hoc-signed binding-generator
+# binary (amfid kills it under MDM). CI leaves it unset -> bindings are
+# regenerated each build (catches drift). When skipping, frontend/wailsjs/
+# must be current (commit refreshed bindings before changing Go App methods).
+WAILS_FLAGS=""
+[ "${SVC_SKIP_BINDINGS:-0}" = "1" ] && WAILS_FLAGS="-skipbindings"
+wails build $WAILS_FLAGS -platform "darwin/$ARCH" -o SDKVersionControl
+
+# Strip the ad-hoc signature Wails/Go applies to the .app bundle. An
+# ad-hoc-signed bundle under Gatekeeper (browser quarantine) shows "damaged"
+# with no right-click -> Open bypass; stripping it makes Gatekeeper treat the
+# bundle as unsigned -> "cannot verify developer" -> right-click -> Open works.
+# The inner binary keeps Go's ad-hoc signature (arm64 kernel requires signed
+# executables). Do NOT use --deep (it would strip the inner binary too -> arm64
+# can't run). See note/t.md.
+codesign --remove-signature "$APP" 2>/dev/null || true
 
 # --- Apply rounded desktop icon (Dock/Launchpad readability).
 ICONSET="$(mktemp -d)/icon.iconset"
