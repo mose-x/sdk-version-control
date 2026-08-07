@@ -23,130 +23,45 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install Wails & go-winres
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@latest
           go install github.com/tc-hib/go-winres@latest
 
-      - name: Compute version & asset arch
-        # Tag form: refs/tags/v1.2.3 → version 1.2.3
-        # Map Go GOARCH → asset arch following nvm-rust convention (amd64 → x64).
-        # Fallback for workflow_dispatch (no tag): 0.0.0-dev.
+      - name: Compute version
+        # Tag form: refs/tags/v1.2.3 -> version 1.2.3. Fallback for
+        # workflow_dispatch (no tag): 0.0.0-dev.
         shell: bash
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF" ]; then
             VERSION="0.0.0-dev"
           fi
-          case "${{ matrix.arch }}" in
-            amd64) ASSET_ARCH="x64" ;;
-            *)     ASSET_ARCH="${{ matrix.arch }}" ;;
-          esac
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
 
-      - name: Bump about.json version
-        # Embed the release tag into about.json so the built binary reports
-        # the correct version to CheckUpdate. Without this, the //go:embed'd
-        # about.json keeps whatever version was last committed, and the app
-        # would keep "finding an update" even after installing the new build.
+      - name: Build & package
+        # The packaging logic (about.json bump, go-winres, NSIS, console shim,
+        # wails build incl. frontend, asset naming) lives in
+        # scripts/build-windows.sh so CI and local builds produce identical
+        # artifacts. `wails build` runs npm install + npm run build via
+        # wails.json hooks, so no separate frontend step is needed.
         shell: bash
-        run: |
-          jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
-          echo "about.json version bumped to $VERSION:"
-          cat about.json
+        run: bash scripts/build-windows.sh "$VERSION" "${{ matrix.arch }}"
 
-      - name: Generate Windows Resources
-        run: |
-          go-winres make --arch ${{ matrix.arch }} --out resource --no-suffix
-          Rename-Item resource resource.syso
-        shell: pwsh
-
-      - name: Setup NSIS
-        # `wails build -nsis` shells out to `makensis`. The windows-latest
-        # image ships NSIS under C:\Program Files (x86)\NSIS but NOT on
-        # PATH for the bash shell, so without this Wails logs
-        # "makensis not found", silently skips the installer, and the
-        # installer-rename step below fails. Add the NSIS dir to
-        # GITHUB_PATH so makensis resolves in subsequent bash steps;
-        # fall back to choco if the image layout ever changes.
-        shell: pwsh
-        run: |
-          $candidates = @(
-            "C:\Program Files (x86)\NSIS",
-            "C:\Program Files\NSIS"
-          )
-          $nsisDir = $candidates | Where-Object { Test-Path "$_\makensis.exe" } | Select-Object -First 1
-          if (-not $nsisDir) {
-            choco install nsis -y --no-progress
-            $nsisDir = "C:\Program Files (x86)\NSIS"
-          }
-          Add-Content $env:GITHUB_PATH $nsisDir
-          Write-Host "NSIS dir: $nsisDir"
-          & "$nsisDir\makensis.exe" /VERSION
-
-      - name: Build console shim binary
-        # Build the dedicated console-subsystem svc-shim.exe and place it at
-        # the //go:embed path consumed by internal/shimmanager. This MUST run
-        # before `wails build` so the bytes are captured into the app binary
-        # at compile time. Built for the same windows/<arch> target as the
-        # app; cmd/svc-shim imports only stdlib (no CGO), so it cross-compiles
-        # cleanly on an amd64 runner for arm64. The committed file at this
-        # path is an empty placeholder (so dev `wails build` works without
-        # this step); this step overwrites it with the real binary, and the
-        # change is never committed back. Without this, the app would embed
-        # the empty placeholder and ensureShimBinary would fall back to
-        # copying the GUI-subsystem app binary — reintroducing the Windows
-        # `node -v` no-output / prompt-hang bug.
-        shell: bash
-        run: |
-          GOOS=windows GOARCH=${{ matrix.arch }} go build -o internal/shimmanager/svc-shim.windows.exe ./cmd/svc-shim
-          echo "Built console shim binary:"
-          ls -la internal/shimmanager/svc-shim.windows.exe
-
-      - name: Build
-        # -nsis produces a Windows installer (setup.exe) alongside the bare
-        # binary. The bare exe stays the self-update asset (ApplyUpdate
-        # replaces just the executable); the installer is the user-facing
-        # download with Start Menu / Desktop shortcuts and an uninstaller.
-        # wails_tools.nsh is regenerated by `wails build` from wails.json's
-        # info block, so the vendored template ships only placeholders.
-        shell: bash
-        run: |
-          wails build -nsis -nopackage -platform windows/${{ matrix.arch }} -o SDKVersionControl.exe
-          # Wails appends the arch suffix when cross-compiling; normalize to
-          # the plain name first, then rename with the final asset name so
-          # amd64/arm64 don't clobber each other when uploaded to the same release.
-          if [ -f "build/bin/SDKVersionControl-${{ matrix.arch }}.exe" ] && [ ! -f "build/bin/SDKVersionControl.exe" ]; then
-            mv "build/bin/SDKVersionControl-${{ matrix.arch }}.exe" "build/bin/SDKVersionControl.exe"
-          fi
-          ASSET_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}.exe"
-          mv build/bin/SDKVersionControl.exe "build/bin/${ASSET_NAME}"
-          echo "ASSET_NAME=$ASSET_NAME" >> $GITHUB_ENV
-          # NSIS writes *-installer.exe next to the binary. The literal name
-          # varies with INFO_PROJECTNAME (wails.json "name" has spaces), so
-          # glob it to a stable asset name. Single match on a fresh build.
-          INSTALLER_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}-installer.exe"
-          mv build/bin/*-installer.exe "build/bin/${INSTALLER_NAME}"
-          echo "INSTALLER_NAME=$INSTALLER_NAME" >> $GITHUB_ENV
-
-      - name: Upload Artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ASSET_NAME }}
-          path: build/bin/${{ env.ASSET_NAME }}
-
-      - name: Upload Installer Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.INSTALLER_NAME }}
-          path: build/bin/${{ env.INSTALLER_NAME }}
+          name: windows-${{ matrix.arch }}-assets
+          path: build/bin/SDKVersionControl-${{ env.VERSION }}-*
 
   # ====== macOS ======
   build-macos:
@@ -162,178 +77,49 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Compute version & asset arch
+      - name: Compute version
         shell: bash
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF" ]; then
             VERSION="0.0.0-dev"
           fi
-          case "${{ matrix.arch }}" in
-            amd64) ASSET_ARCH="x64" ;;
-            *)     ASSET_ARCH="${{ matrix.arch }}" ;;
-          esac
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
 
-      - name: Bump about.json version
+      - name: Build & package
+        # scripts/build-macos.sh does NOT ad-hoc sign the .app (ad-hoc is
+        # rejected by amfid -423 under MDM, worse than unsigned). The DMG
+        # background tells users to right-click -> Open (English, red). See
+        # note/t.md for the macOS provenance vs Gatekeeper analysis.
         shell: bash
-        run: |
-          jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
-          echo "about.json version bumped to $VERSION:"
-          cat about.json
+        run: bash scripts/build-macos.sh "$VERSION" "${{ matrix.arch }}"
 
-      - name: Build .app
-        run: |
-          wails build -platform darwin/${{ matrix.arch }} \
-            -o SDKVersionControl
-
-      - name: Apply rounded desktop icon
-        # Wails generates the .icns from build/appicon.png (transparent).
-        # For Dock/Launchpad readability, replace the bundle's iconfile.icns
-        # with a rounded white-plate variant built from
-        # build/desktop-icons/icon-white-bg.png (squircle + enlarged content).
-        # The in-app UI logo (frontend/src/assets/logo.png) stays transparent.
-        run: |
-          ICONSET="$(mktemp -d)/icon.iconset"
-          mkdir -p "$ICONSET"
-          SRC="build/desktop-icons/icon-white-bg.png"
-          for sz in 16 32 64 128 256 512; do
-            sips -z $sz $sz "$SRC" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
-            sips -z $((sz*2)) $((sz*2)) "$SRC" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null
-          done
-          sips -z 1024 1024 "$SRC" --out "$ICONSET/icon_512x512@2x.png" >/dev/null
-          ICNS="$(dirname "$ICONSET")/iconfile.icns"
-          iconutil -c icns "$ICONSET" -o "$ICNS"
-          cp "$ICNS" "build/bin/SDK Version Control.app/Contents/Resources/iconfile.icns"
-
-      - name: Ad-hoc sign .app
-        # Open-source release without an Apple Developer ID cannot be
-        # notarized, so Gatekeeper flags the downloaded .app as "damaged"
-        # (quarantine attr). Ad-hoc signing (--sign -) gives the bundle a
-        # valid signature structure so `xattr -cr` clears the block cleanly
-        # and the app launches without a separate codesign step on the user's
-        # machine. Deep sign so nested frameworks/binaries are covered.
-        run: |
-          APP="build/bin/SDK Version Control.app"
-          codesign --force --deep --sign - "$APP"
-          codesign --verify --verbose=1 "$APP"
-
-      - name: Create DMG
-        # Build a drag-to-Applications DMG (standard macOS install UX) using
-        # create-dmg. --app-drop-link synthesizes the Applications folder
-        # shortcut on the right; a pure-white background PNG with install
-        # hints is rendered via Pillow. Wails uses wails.json's
-        # info.productName ("SDK Version Control") as the .app bundle
-        # directory name; reference the spaced path.
-        run: |
-          brew install create-dmg
-          # Generate a 660x400 pure-white background PNG with install hints
-          # rendered via Pillow. No stripes/gradients -- solid white so the
-          # DMG window is clean. Three text blocks, all visible without
-          # resizing the window:
-          #   1. title "SDK Version Control" (top, centered)
-          #   2. drag hint (middle, above the app icon)
-          #   3. security note (bottom): how to clear the quarantine block
-          #      via xattr -cr, since this open-source release is unsigned.
-          python3 -m venv /tmp/dmgvenv
-          /tmp/dmgvenv/bin/pip install --quiet Pillow
-          BG_PATH="build/bin/dmg_bg.png"
-          export BG_PATH
-          # Background image dimensions MUST match create-dmg --window-size:
-          # Finder shows only the window-size region of the background.
-          /tmp/dmgvenv/bin/python << 'PYEOF'
-          import os
-          from PIL import Image, ImageDraw, ImageFont
-          w, h = 660, 400
-          img = Image.new("RGBA", (w, h), (255, 255, 255, 255))
-          draw = ImageDraw.Draw(img)
-          def load_font(size):
-              for path in [
-                  "/System/Library/Fonts/PingFang.ttc",
-                  "/System/Library/Fonts/Helvetica.ttc",
-                  "/System/Library/Fonts/Supplemental/Arial.ttf",
-              ]:
-                  try:
-                      return ImageFont.truetype(path, size)
-                  except Exception:
-                      pass
-              return ImageFont.load_default()
-          title_font = load_font(24)
-          hint_font = load_font(14)
-          small_font = load_font(12)
-          cx = w / 2
-          draw.text((cx, 40), "SDK Version Control", fill=(30, 30, 46, 255),
-                    font=title_font, anchor="mm")
-          draw.text((cx, 130), "Drag the app icon to the Applications folder on the right",
-                    fill=(90, 90, 90, 255), font=hint_font, anchor="mm")
-          # Bottom security note: the xattr command drawn here is pixels in
-          # the background PNG (not copyable), but the earlier extra
-          # run xattr.command file shipped inside the DMG looked awkward in
-          # the window layout, so it was dropped. Keep just the visible hint
-          # with the command line rendered in a heavier color so users can
-          # read and retype it in Terminal.
-          draw.text((cx, 300),
-                    'If macOS says "damaged", open Terminal and run:',
-                    fill=(120, 120, 120, 255), font=small_font, anchor="mm")
-          draw.text((cx, 330),
-                    'xattr -cr "/Applications/SDK Version Control.app"',
-                    fill=(40, 40, 40, 255), font=hint_font, anchor="mm")
-          img.save(os.environ["BG_PATH"])
-          PYEOF
-          DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
-          create-dmg \
-            --volname "SDK Version Control" \
-            --background "$BG_PATH" \
-            --window-pos 200 120 \
-            --window-size 660 400 \
-            --icon-size 100 \
-            --app-drop-link 480 200 \
-            --icon "SDK Version Control.app" 180 200 \
-            --no-internet-enable \
-            "build/bin/${DMG_NAME}" \
-            "build/bin/SDK Version Control.app"
-          echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
-
-      - name: Extract binary for self-update
-        # ApplyUpdate replaces the bare executable inside the .app bundle, not
-        # the bundle itself, so ship the inner binary as a separate .bin asset
-        # for the in-app updater to download.
-        run: |
-          BIN_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.bin"
-          cp "build/bin/SDK Version Control.app/Contents/MacOS/SDKVersionControl" \
-            "build/bin/${BIN_NAME}"
-          echo "BIN_NAME=$BIN_NAME" >> $GITHUB_ENV
-
-      - name: Upload DMG
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.DMG_NAME }}
-          path: build/bin/${{ env.DMG_NAME }}
-
-      - name: Upload update binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.BIN_NAME }}
-          path: build/bin/${{ env.BIN_NAME }}
+          name: macos-${{ matrix.arch }}-assets
+          path: build/bin/SDKVersionControl-${{ env.VERSION }}-*
 
   # ====== Linux ======
   build-linux:
     # Wails v2 targets webkit2gtk-4.0 (pkg-config 'webkit2gtk-4.0'), which
     # Ubuntu 24.04 (noble) removed in favor of 4.1. Wails v2 does not yet
     # support 4.1 (that lands in Wails v3), so pin to ubuntu-22.04 (jammy)
-    # where libwebkit2gtk-4.0-dev is still available.
-    # Linux ARM64 cannot be cross-compiled from amd64 because Wails links
-    # webkit2gtk/gtk+-3.0 via CGO; use a native arm64 runner instead.
+    # where libwebkit2gtk-4.0-dev is still available. Linux ARM64 cannot be
+    # cross-compiled from amd64 because Wails links webkit2gtk/gtk+-3.0 via
+    # CGO; use a native arm64 runner instead.
     strategy:
       fail-fast: false
       matrix:
@@ -350,127 +136,39 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.0-dev \
-            libayatana-appindicator3-dev librsvg2-dev \
-            ruby ruby-dev python3-pil
-          sudo gem install fpm
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Compute version & asset arch
+      - name: Compute version
         shell: bash
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF" ]; then
             VERSION="0.0.0-dev"
           fi
-          case "${{ matrix.arch }}" in
-            amd64) ASSET_ARCH="x64" ;;
-            *)     ASSET_ARCH="${{ matrix.arch }}" ;;
-          esac
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "ASSET_ARCH=$ASSET_ARCH" >> $GITHUB_ENV
 
-      - name: Bump about.json version
+      - name: Build & package
+        # scripts/build-linux.sh installs system deps (idempotent), bumps
+        # about.json, builds the bare binary, and wraps it in .deb/.rpm with a
+        # .desktop entry + hicolor icons.
         shell: bash
-        run: |
-          jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
-          echo "about.json version bumped to $VERSION:"
-          cat about.json
+        run: bash scripts/build-linux.sh "$VERSION" "${{ matrix.arch }}"
 
-      - name: Build
-        run: |
-          wails build -platform linux/${{ matrix.arch }} -o SDKVersionControl
-          # Wails appends the arch suffix when cross-compiling; normalize to
-          # the plain name first, then rename with the final asset name so
-          # amd64/arm64 don't clobber each other when uploaded to the same release.
-          if [ -f "build/bin/SDKVersionControl-${{ matrix.arch }}" ] && [ ! -f "build/bin/SDKVersionControl" ]; then
-            mv "build/bin/SDKVersionControl-${{ matrix.arch }}" "build/bin/SDKVersionControl"
-          fi
-          ASSET_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}"
-          mv build/bin/SDKVersionControl "build/bin/${ASSET_NAME}"
-          echo "ASSET_NAME=$ASSET_NAME" >> $GITHUB_ENV
-
-      - name: Build .deb and .rpm packages
-        # Wrap the bare binary in .deb/.rpm with a .desktop entry + hicolor
-        # PNG icons (rounded white-plate variant) so the app shows up in
-        # application launchers with a proper icon. Bare binary above stays
-        # the self-update asset.
-        env:
-          DEB_ARCH: ${{ matrix.arch }}
-          RPM_ARCH: ${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}
-        run: |
-          DEB_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}.deb"
-          RPM_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}.rpm"
-          STAGING="$(mktemp -d)"
-          mkdir -p "$STAGING/share/applications"
-          cat > "$STAGING/share/applications/sdkversioncontrol.desktop" <<'DESKTOP'
-          [Desktop Entry]
-          Type=Application
-          Name=SDK Version Control
-          Comment=Manage SDK versions in one place
-          Exec=/usr/bin/SDKVersionControl
-          Icon=sdkversioncontrol
-          Terminal=false
-          Categories=Development;
-          DESKTOP
-          SRC_ICON="build/desktop-icons/icon-white-bg.png"
-          for sz in 16 32 48 64 128 256 512; do
-            d="$STAGING/share/icons/hicolor/${sz}x${sz}/apps"
-            mkdir -p "$d"
-            python3 -c "from PIL import Image; Image.open('$SRC_ICON').resize(($sz,$sz), Image.LANCZOS).save('$d/sdkversioncontrol.png')"
-          done
-          fpm -s dir -t deb \
-            -n SDKVersionControl -v "${VERSION}" -a "${DEB_ARCH}" \
-            --depends libgtk-3-0 \
-            --depends libwebkit2gtk-4.0-37 \
-            --depends libayatana-appindicator3-1 \
-            --depends librsvg2-2 \
-            --description "SDK Version Control" \
-            -p "build/bin/${DEB_NAME}" \
-            "build/bin/${ASSET_NAME}=/usr/bin/SDKVersionControl" \
-            "$STAGING/share/=/usr/share/"
-          fpm -s dir -t rpm \
-            -n SDKVersionControl -v "${VERSION}" -a "${RPM_ARCH}" \
-            --depends gtk3 \
-            --depends webkit2gtk3 \
-            --depends libayatana-appindicator3 \
-            --depends librsvg2 \
-            --description "SDK Version Control" \
-            -p "build/bin/${RPM_NAME}" \
-            "build/bin/${ASSET_NAME}=/usr/bin/SDKVersionControl" \
-            "$STAGING/share/=/usr/share/"
-          echo "DEB_NAME=$DEB_NAME" >> $GITHUB_ENV
-          echo "RPM_NAME=$RPM_NAME" >> $GITHUB_ENV
-
-      - name: Upload Artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ASSET_NAME }}
-          path: build/bin/${{ env.ASSET_NAME }}
-
-      - name: Upload .deb Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.DEB_NAME }}
-          path: build/bin/${{ env.DEB_NAME }}
-
-      - name: Upload .rpm Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.RPM_NAME }}
-          path: build/bin/${{ env.RPM_NAME }}
+          name: linux-${{ matrix.arch }}-assets
+          path: build/bin/SDKVersionControl-${{ env.VERSION }}-*
 
   # ====== Release ======
   release:
@@ -483,19 +181,39 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: staging
-          # Flatten all artifacts into staging/ instead of one subdirectory
-          # per artifact (download-artifact's default). Without this, an asset
-          # named `SDKVersionControl-1.0.0-windows-x64.exe` would land at
+          # Flatten all artifacts into staging/ instead of one subdirectory per
+          # artifact (download-artifact's default). Without this, an asset named
+          # `SDKVersionControl-1.0.0-windows-x64.exe` would land at
           # `staging/SDKVersionControl-1.0.0-windows-x64.exe/SDKVersionControl-1.0.0-windows-x64.exe`,
-          # and the sha256sum glob would match the outer directory rather than
-          # the file, breaking checksum generation. Mirrors nvm-rust's setup.
+          # and the sha256sum glob would match the outer directory rather than the
+          # file, breaking checksum generation.
           merge-multiple: true
 
+      - name: Detect pre-release tag
+        # Tags with a -rc/-beta/-alpha/-pre/-dev suffix are marked as GitHub
+        # pre-releases so `releases/latest` excludes them. This protects users
+        # on older builds (which hit releases/latest) from being offered an rc.
+        # The in-app updater's pure-numeric filter (update.go) is the matching
+        # client-side guard for newer builds.
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          case "$TAG" in
+            *-rc*|*-beta*|*-alpha*|*-pre*|*-dev*)
+              echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+              echo "Tag $TAG has a pre-release suffix -> marking as pre-release (excluded from releases/latest)"
+              ;;
+            *)
+              echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+              echo "Tag $TAG is a stable release -> included in releases/latest"
+              ;;
+          esac
+
       - name: Generate sha256sums.txt
-        # sha256sums.txt is shipped as a standalone release asset so the
-        # in-app updater can verify each download against a recorded hash.
-        # Only binary assets are hashed — sha256sums.txt itself is excluded
-        # by the SDKVersionControl-* prefix glob.
+        # sha256sums.txt is shipped as a standalone release asset so the in-app
+        # updater can verify each download against a recorded hash. Only binary
+        # assets are hashed -- sha256sums.txt itself is excluded by the
+        # SDKVersionControl-* prefix glob.
         shell: bash
         run: |
           set -eu
@@ -506,12 +224,14 @@ jobs:
 
       - name: Create Release
         # Publish immediately (draft:false) so the GitHub Releases API endpoint
-        # /releases/latest resolves for the in-app updater. Edit the body
-        # manually afterwards if you want custom notes.
+        # /releases/latest resolves for the in-app updater. A suffixed tag is
+        # published as a pre-release (see step above) so it stays out of
+        # releases/latest until a stable tag supersedes it.
         uses: softprops/action-gh-release@v2
         with:
           files: |
             staging/SDKVersionControl-*
             staging/sha256sums.txt
           draft: false
+          prerelease: ${{ env.IS_PRERELEASE }}
           generate_release_notes: true
