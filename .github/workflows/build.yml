@@ -48,8 +48,30 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      - name: Setup NSIS
+        # `wails build -nsis` (in scripts/build-windows.sh) shells out to
+        # `makensis`. windows-latest ships NSIS under C:\Program Files (x86)\NSIS
+        # but not on bash's PATH, so without this wails logs "makensis not
+        # found", silently skips the installer, and the script's installer-rename
+        # step fails. Add the NSIS dir to GITHUB_PATH so the bash step resolves
+        # makensis; fall back to choco if the image layout ever changes.
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\Program Files (x86)\NSIS",
+            "C:\Program Files\NSIS"
+          )
+          $nsisDir = $candidates | Where-Object { Test-Path "$_\makensis.exe" } | Select-Object -First 1
+          if (-not $nsisDir) {
+            choco install nsis -y --no-progress
+            $nsisDir = "C:\Program Files (x86)\NSIS"
+          }
+          Add-Content $env:GITHUB_PATH $nsisDir
+          Write-Host "NSIS dir: $nsisDir"
+          & "$nsisDir\makensis.exe" /VERSION
+
       - name: Build & package
-        # The packaging logic (about.json bump, go-winres, NSIS, console shim,
+        # The packaging logic (about.json bump, go-winres, console shim,
         # wails build incl. frontend, asset naming) lives in
         # scripts/build-windows.sh so CI and local builds produce identical
         # artifacts. `wails build` runs npm install + npm run build via

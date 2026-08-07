@@ -38,21 +38,12 @@ if [ -e resource ] && [ ! -e resource.syso ]; then
   mv resource resource.syso
 fi
 
-# --- Locate NSIS so `wails build -nsis` can shell out to makensis.
-# windows-latest ships NSIS under Program Files but not on bash's PATH; on a
-# local Git Bash the layout is the same. Fall back to choco on CI if missing.
-if ! command -v makensis >/dev/null 2>&1; then
-  NSIS_DIR=""
-  for d in "/c/Program Files (x86)/NSIS" "/c/Program Files/NSIS"; do
-    if [ -f "$d/makensis.exe" ]; then NSIS_DIR="$d"; break; fi
-  done
-  if [ -n "$NSIS_DIR" ]; then
-    export PATH="$NSIS_DIR:$PATH"
-  else
-    echo "warning: makensis not found; the NSIS installer will be skipped" >&2
-  fi
-fi
-command -v makensis >/dev/null 2>&1 && makensis /VERSION || true
+# --- makensis (NSIS) must be on PATH for `wails build -nsis` to produce the
+# installer. On CI, the build.yml "Setup NSIS" step adds it to GITHUB_PATH
+# (Test-Path + choco fallback). Locally, install NSIS and ensure makensis is on
+# PATH. If makensis is absent, wails skips the installer and the guard below
+# ships the bare .exe (self-update asset) without failing the build.
+command -v makensis >/dev/null 2>&1 && makensis /VERSION || echo "warning: makensis not on PATH; installer will be skipped" >&2
 
 # --- Build the console-subsystem svc-shim binary that the app //go:embeds.
 # This MUST run before `wails build` so the bytes are captured at compile time.
@@ -77,8 +68,17 @@ mv "build/bin/SDKVersionControl.exe" "build/bin/${ASSET_NAME}"
 
 # NSIS writes *-installer.exe next to the binary; the literal name varies with
 # INFO_PRODUCTNAME (wails.json "name" has spaces), so glob to a stable name.
+# Guard: if makensis was missing, wails produced no installer -- ship the bare
+# .exe (self-update asset) without failing the build.
 INSTALLER_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}-installer.exe"
-mv build/bin/*-installer.exe "build/bin/${INSTALLER_NAME}"
+shopt -s nullglob
+installers=(build/bin/*-installer.exe)
+shopt -u nullglob
+if [ ${#installers[@]} -gt 0 ]; then
+  mv "${installers[0]}" "build/bin/${INSTALLER_NAME}"
+else
+  echo "warning: no NSIS installer produced (makensis missing); shipping bare .exe only" >&2
+fi
 
 echo
 echo "Built:"
