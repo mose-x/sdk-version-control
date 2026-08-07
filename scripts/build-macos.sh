@@ -121,6 +121,15 @@ create-dmg \
   "build/bin/${DMG_NAME}" \
   "$APP"
 
+# Stamp the DMG with com.apple.quarantine so a drag-installed .app inherits
+# it and launches via Gatekeeper (right-click -> Open), not the provenance
+# path that SIGKILLs unsigned binaries under MDM. Browser-downloaded DMGs get
+# quarantine automatically; this covers locally-built / non-browser DMGs
+# (the xattr is lost when CI uploads the artifact, but release downloaders get
+# it from the browser anyway -- see note/t.md).
+xattr -w com.apple.quarantine "0083;00000000;SVC;|com.mose-x.sdkversioncontrol" \
+  "build/bin/${DMG_NAME}" 2>/dev/null || true
+
 # --- Extract bare inner binary for in-app self-update.
 # ApplyUpdate swaps the executable inside the existing .app bundle, not the
 # bundle itself, so ship the inner binary as a separate .bin asset.
