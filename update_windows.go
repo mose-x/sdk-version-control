@@ -20,6 +20,13 @@ func backupPath(currentExe string) string {
 	return currentExe + ".bak"
 }
 
+// ApplyUpdate writes a .bat updater that: waits for the app to exit, backs up
+// the running exe to .bak, copies the downloaded update over the running exe,
+// verifies the post-copy SHA256 matches the pre-copy hash (rolling back to
+// .bak on mismatch so a corrupt binary never replaces a working one), then
+// relaunches. The hash is computed in Go BEFORE writing the script so the
+// .bat only needs certutil (a built-in Windows tool) for the post-copy check;
+// certutil output is parsed in-bat to compare against the embedded hash.
 func (a *App) ApplyUpdate() error {
 	currentExe, err := os.Executable()
 	if err != nil {
@@ -31,14 +38,52 @@ func (a *App) ApplyUpdate() error {
 		return fmt.Errorf("update file does not exist: %w", err)
 	}
 
+	// Compute the SHA256 of the downloaded update BEFORE writing the script.
+	// DownloadUpdate already verified the download against the server-
+	// published hash; this separate pre-copy hash is what the .bat compares
+	// the post-copy bytes against, catching a partial copy / mid-copy crash
+	// that would otherwise leave a corrupt binary in place of a working app.
+	expectedHash, err := sha256OfFile(newExe)
+	if err != nil {
+		return fmt.Errorf("failed to hash update file: %w", err)
+	}
+
 	bak := backupPath(currentExe)
 	scriptPath := filepath.Join(os.TempDir(), "svc_updater.bat")
-	// Windows cannot overwrite a running .exe, but it CAN rename it. Flow:
-	// wait for the app to close, rename old → .bak (overwriting prior bak),
-	// copy new → current, relaunch, self-delete. The rename-then-copy pattern
-	// leaves .bak pointing at the previous version for RollbackUpdate.
 	pid := os.Getpid()
-	scriptContent := fmt.Sprintf(`@echo off
+	scriptContent := buildUpdateScript(pid, currentExe, bak, newExe, expectedHash)
+
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0644); err != nil {
+		return fmt.Errorf("failed to create update script: %w", err)
+	}
+
+	cmd := createCmd("cmd", "/C", scriptPath)
+	cmd.Dir = os.TempDir()
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to launch update script: %w", err)
+	}
+
+	wailsRuntime.Quit(a.ctx)
+	return nil
+}
+
+// buildUpdateScript renders the .bat body for ApplyUpdate. Extracted so the
+// hash-verify + rollback logic can be unit-tested without launching the
+// updater for real (it touches the running exe + quits the app).
+//
+// certutil -hashfile prints:
+//
+//	SHA256 hash of <file>:
+//	<hash>
+//	CertUtil: -hashfile command completed successfully.
+//
+// `skip=1 delims=` makes the for-loop body see line 2 first (the hash), with
+// no token splitting; `if not defined actual` captures only that first line.
+// `if /i` compares case-insensitively because certutil emits uppercase hex on
+// some Windows versions and lowercase on others, while sha256OfFile always
+// returns lowercase.
+func buildUpdateScript(pid int, currentExe, bak, newExe, expectedHash string) string {
+	return fmt.Sprintf(`@echo off
 echo Waiting for application to close...
 set /a timeout=60
 :waitloop
@@ -64,23 +109,22 @@ if errorlevel 1 (
     echo Update failed!
     exit /b 1
 )
+echo Verifying integrity...
+set "expected=%s"
+set "actual="
+for /f "skip=1 delims=" %%%%i in ('certutil -hashfile "%s" SHA256') do (
+    if not defined actual set "actual=%%%%i"
+)
+if /i not "%%actual%%"=="%%expected%%" (
+    echo Integrity check failed: expected %%expected%%, got %%actual%%
+    echo Rolling back to previous version...
+    copy /Y "%s" "%s" >NUL
+    exit /b 1
+)
 echo Starting new version...
 start "" "%s"
 del "%%~f0"
-`, pid, pid, currentExe, bak, newExe, currentExe, currentExe)
-
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0644); err != nil {
-		return fmt.Errorf("failed to create update script: %w", err)
-	}
-
-	cmd := createCmd("cmd", "/C", scriptPath)
-	cmd.Dir = os.TempDir()
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to launch update script: %w", err)
-	}
-
-	wailsRuntime.Quit(a.ctx)
-	return nil
+`, pid, pid, currentExe, bak, newExe, currentExe, expectedHash, currentExe, bak, currentExe, currentExe)
 }
 
 // RollbackUpdate restores the .bak binary created by the previous ApplyUpdate.

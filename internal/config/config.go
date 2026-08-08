@@ -118,6 +118,15 @@ func (c *Config) SetSvcDir(dir string) {
 	c.svcDir = dir
 }
 
+// SetHomeDir overrides the user home directory (mainly for tests, so
+// RcFilePath — which derives from homeDir, not svcDir — lands in a temp dir
+// instead of the process working directory).
+func (c *Config) SetHomeDir(dir string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.homeDir = dir
+}
+
 // DefaultSvcDir returns the default install directory
 func DefaultSvcDir() string {
 	home, err := os.UserHomeDir()

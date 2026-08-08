@@ -120,6 +120,29 @@ func (m *Manager) RemoveEnvVars(keys []string) {
 	broadcastEnvChange()
 }
 
+// applyEnvVarsToSystem writes env vars (JAVA_HOME, GOROOT, ...) to the registry
+// so IDEs that read the registry see them. The shim runtime sets the same vars
+// via os.Setenv before exec, so CLI-via-shim already works without this; this
+// is purely for tooling that reads the registry instead of inheriting the
+// shim's environment.
+func (m *Manager) applyEnvVarsToSystem(envVars []envVarEntry) {
+	if len(envVars) == 0 {
+		return
+	}
+	if err := m.SetEnvVars(envVars); err != nil {
+		logger.Warn("Failed to write env vars to registry: %v", err)
+	}
+}
+
+// removeEnvVarsFromSystem deletes env vars from the registry when an SDK is
+// removed, so a leftover JAVA_HOME doesn't point at a now-uninstalled JDK.
+func (m *Manager) removeEnvVarsFromSystem(keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+	m.RemoveEnvVars(keys)
+}
+
 // detectConfiguredShells returns the list of configured shells (Windows).
 // On Windows, "configured" means the shims dir is in the registry PATH.
 func (m *Manager) detectConfiguredShells() []string {
