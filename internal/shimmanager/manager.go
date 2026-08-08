@@ -38,7 +38,43 @@ func (m *Manager) EnsureSetup() error {
 		return fmt.Errorf("failed to install shim binary: %w", err)
 	}
 
+	// Ensure the python3 -> python alias is registered + shim created on every
+	// startup, not only when the shim binary is updated. Without this, a stale
+	// shims.json (missing python3) with a current shim binary would leave
+	// python3 unrouteable forever (ensurePython3Alias previously only ran
+	// inside rebuildCommandShims, which is skipped when needUpdate=false).
+	m.ensurePython3Shim()
+
 	return m.ensurePathEntry()
+}
+
+// ensurePython3Shim registers the python3 -> python command alias in
+// shims.json (if Python is configured but python3 is missing) and creates the
+// python3 shim file. Runs on every startup (EnsureSetup), independent of
+// whether the shim binary was updated, so a stale shims.json self-heals. If
+// persisting the alias fails, the shim file is NOT created (avoids leaving an
+// orphan hardlink that routes to "unknown command"). Windows CPython ships
+// python.exe (no python3.exe); without this alias `python3` resolves to the
+// Windows Store stub.
+func (m *Manager) ensurePython3Shim() {
+	cfg := m.loadShimConfig()
+	if !m.ensurePython3Alias(&cfg) {
+		return
+	}
+	// Persist BEFORE creating the shim file: if save fails, the on-disk
+	// shims.json won't have python3, so a shim file would be an unrouteable
+	// orphan (hardlink exists, but shim.Run can't resolve the command).
+	if err := m.saveShimConfig(m.cfg.ShimsConfigPath(), cfg); err != nil {
+		logger.Warn("Failed to persist python3 alias: %v", err)
+		return
+	}
+	ext := ""
+	if runtime.GOOS == "windows" {
+		ext = ".exe"
+	}
+	if err := m.createShimFor("python3", ext); err != nil {
+		logger.Warn("Failed to create python3 shim: %v", err)
+	}
 }
 
 // ensureShimBinary installs ~/.svc/shims/svc-shim[.exe] if it is missing or
@@ -128,17 +164,10 @@ func (m *Manager) rebuildCommandShims() {
 	if len(cfg.Commands) == 0 {
 		return
 	}
-	// Self-update fix: existing users whose shims.json predates the python3
-	// alias get it auto-added here. ensureShimBinary calls rebuildCommandShims
-	// on startup when a new svc-shim binary lands (e.g. after a self-update), so
-	// a v1.2.0 self-update + restart makes `python3` work without reinstalling
-	// Python. Windows CPython ships python.exe (no python3.exe), so without
-	// this `python3` falls through to the Windows Store stub.
-	if m.ensurePython3Alias(&cfg) {
-		if err := m.saveShimConfig(m.cfg.ShimsConfigPath(), cfg); err != nil {
-			logger.Warn("Failed to persist python3 alias: %v", err)
-		}
-	}
+	// NOTE: the python3 alias is ensured separately by ensurePython3Shim
+	// (called from EnsureSetup on every startup, independent of whether the
+	// shim binary was updated). This function only rebuilds the on-disk shim
+	// files for commands already registered in shims.json.
 	rebuilt := 0
 	for cmd := range cfg.Commands {
 		// classifyExecutable needs the on-disk filename; reconstruct the
