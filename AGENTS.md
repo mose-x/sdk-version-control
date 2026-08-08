@@ -10,10 +10,21 @@ The hooks (pre-commit identity + lang fmt/lint, commit-msg message rules, pre-pu
 - `main` — release branch. A `vX.Y.Z` tag push triggers `build.yml`.
 - `dev` — the only pushable working branch. `[allowed_branches]` in code-hooks `hook-rules.conf` is `dev` only, so no other branch can be pushed and `main` cannot be pushed directly.
 
+## Testing
+
+All code changes (new features, bug fixes, refactors) MUST include unit tests covering the new/changed behavior. A PR without tests for its code changes is incomplete and will not be merged.
+
+- Go tests live alongside the code: `*_test.go` in the same package (e.g. `internal/shim/shim_test.go`, `internal/shimmanager/manager_test.go`).
+- Use `t.TempDir()` for filesystem-touching logic (fake SVC home via `config.Config{}.SetSvcDir(t.TempDir())`); never touch the real `~/.svc` in tests.
+- Tests must be platform-aware where the code is (use `runtime.GOOS`/`runtime.GOARCH` for .exe vs bare-name, hardlink vs .cmd wrapper, etc.) so they pass on all 3 CI OSes (windows/macos/linux).
+- Pure-logic functions (parsers, mappers, alias maps, version comparison) get pure-logic tests (no filesystem).
+- CI runs `go test ./...` on Windows + macOS + Linux — all green is required before merge.
+- Existing tests: SDK fetchers in `internal/sdk/*_test.go`; shim system in `internal/shim/shim_test.go` + `internal/shimmanager/manager_test.go`.
+
 ## Commit flow (per dev cycle)
 
 1. **Create a fresh `dev` from `main` each cycle** — do NOT reuse an old `dev`. On the remote, create `dev` from `main` (GitHub UI "New branch: dev from main", or `git push origin origin/main:refs/heads/dev`), then `git fetch && git checkout dev`. See "Why recreate dev" below.
-2. Commit on `dev` with conventional-commit messages: ASCII, subject ≤100, total message ≤200, no forbidden tokens (see `hook-rules.conf`). Author/committer email must be in `[identities]`.
+2. Commit on `dev` with conventional-commit messages: ASCII, subject ≤100, total message ≤200, no forbidden tokens (see `hook-rules.conf`). Author/committer email must be in `[identities]`. **Include unit tests for new/changed code** (see Testing below) — a PR without tests for its code changes won't be merged.
 3. `git push origin dev` (fast-forward). The pre-push hook scans the push range and runs the per-language `test` stage.
 4. Open PR `dev → main`. Wait for CI fully green (lint gofmt/vet, test × 3 OSes, commit-lint).
 5. **Squash-merge** to `main`. This creates a `noreply@github.com`-committer squash commit on `main` — fine, `main` is never pushed by you.

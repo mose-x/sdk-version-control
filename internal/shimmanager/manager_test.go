@@ -15,8 +15,10 @@ import (
 // createShimFor can hardlink to it.
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
+	dir := t.TempDir()
 	cfg := &config.Config{}
-	cfg.SetSvcDir(t.TempDir())
+	cfg.SetHomeDir(dir) // RcFilePath derives from homeDir, not svcDir.
+	cfg.SetSvcDir(dir)  // ShimsDir / ShimsConfigPath derive from svcDir.
 	m := New(cfg)
 	shimsDir := cfg.ShimsDir()
 	if err := os.MkdirAll(shimsDir, 0755); err != nil {
@@ -179,5 +181,87 @@ func TestRebuildCommandShims_rebuildsPython3(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(shimsDir, name+shimExt())); err != nil {
 			t.Errorf("%s shim not rebuilt by rebuildCommandShims: %v", name, err)
 		}
+	}
+}
+
+// --- createShimFor (BUG F: removes other variants) ---
+
+// TestCreateShimFor_removesOtherVariants pins BUG F: creating a .exe shim
+// must also clean up any stale .cmd/.bat wrappers (and the bare file) so the
+// old variant doesn't linger and shadow the new one. The previous code only
+// removed the target variant (os.Remove(cmdName+ext)), so switching
+// extensions left a stale sibling on disk.
+func TestCreateShimFor_removesOtherVariants(t *testing.T) {
+	m := newTestManager(t)
+	shimsDir := m.cfg.ShimsDir()
+	name := "node"
+	ext := shimExt() // ".exe" on Windows, "" on Unix
+
+	// Pre-create every variant that removeShim should purge as stale.
+	// On Windows: bare + .exe + .cmd + .bat. On Unix: bare only (removeShim
+	// is bare-only on Unix; .exe/.cmd/.bat are Windows-only cleanup).
+	staleVariants := []string{name}
+	if runtime.GOOS == "windows" {
+		staleVariants = append(staleVariants, name+".exe", name+".cmd", name+".bat")
+	}
+	for _, v := range staleVariants {
+		if err := os.WriteFile(filepath.Join(shimsDir, v), []byte("stale-"+v), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := m.createShimFor(name, ext); err != nil {
+		t.Fatal(err)
+	}
+
+	// The new shim must exist + contain the svc-shim bytes (hardlink or copy
+	// of svc-shim, which newTestManager wrote as "fake-svc-shim").
+	target := filepath.Join(shimsDir, name+ext)
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("new shim %s not created: %v", target, err)
+	}
+	if string(got) != "fake-svc-shim" {
+		t.Errorf("new shim content = %q; want %q (svc-shim bytes)", string(got), "fake-svc-shim")
+	}
+
+	// All OTHER pre-created variants must be gone.
+	for _, v := range staleVariants {
+		if v == name+ext {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(shimsDir, v)); !os.IsNotExist(err) {
+			t.Errorf("stale variant %s still exists after createShimFor; want removed", v)
+		}
+	}
+}
+
+// --- filesEqual (BUG G: content comparison helper) ---
+
+// TestFilesEqual pins BUG G's helper: same bytes -> true; different bytes or
+// different size -> false; missing file -> false. ensureShimBinary uses this
+// to catch same-size-different-content binaries that the size+modtime
+// heuristic would miss.
+func TestFilesEqual(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "shim.bin")
+	content := []byte("hello shim bytes")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !filesEqual(path, content) {
+		t.Error("filesEqual(path, content) = false; want true (identical bytes)")
+	}
+	if filesEqual(path, []byte("different content")) {
+		t.Error("filesEqual(path, different) = true; want false (different content)")
+	}
+	// Different size: a prefix of the content is NOT equal (size check is
+	// implicit in bytes.Equal, which returns false when lengths differ).
+	if filesEqual(path, content[:len(content)-1]) {
+		t.Error("filesEqual(path, content[:n-1]) = true; want false (different size)")
+	}
+	// Missing file -> false (read error is treated as not-equal).
+	if filesEqual(filepath.Join(dir, "nope.bin"), content) {
+		t.Error("filesEqual(missing, content) = true; want false (read error)")
 	}
 }

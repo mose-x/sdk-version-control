@@ -63,6 +63,9 @@ func (m *Manager) collectEnvVars() []envVarEntry {
 func (m *Manager) updateRcFile() error {
 	envVars := m.collectEnvVars()
 	content := m.generateRcContent(envVars)
+	// Mirror env vars into the OS-level store on platforms that have one
+	// (Windows registry). No-op on Unix, where .svc.rc is the only store.
+	m.applyEnvVarsToSystem(envVars)
 	rcPath := m.cfg.RcFilePath()
 	return os.WriteFile(rcPath, []byte(content), 0644)
 }

@@ -1,6 +1,7 @@
 package shimmanager
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -124,7 +125,22 @@ func (m *Manager) ensureShimBinary() error {
 	needUpdate := true
 	if shimInfo, err := os.Stat(shimPath); err == nil {
 		if shimInfo.Size() == expectedSize && !shimInfo.ModTime().Before(appInfo.ModTime()) {
-			needUpdate = false
+			// Size + modtime match, but that's not enough: two builds can
+			// land at the same file size with different bytes (e.g. a
+			// rebuild after a tiny code change). Without a content check,
+			// needUpdate=false skips rebuildCommandShims, and on Windows the
+			// existing command hardlinks (node.exe, ...) keep pointing at
+			// the OLD svc-shim inode. Compare the on-disk shim bytes to the
+			// expected bytes; only when they match can we skip the update.
+			var expected []byte
+			if useEmbedded {
+				expected = embeddedShimBinary
+			} else if b, err := os.ReadFile(appPath); err == nil {
+				expected = b
+			}
+			if filesEqual(shimPath, expected) {
+				needUpdate = false
+			}
 		}
 	}
 
@@ -258,6 +274,16 @@ func (m *Manager) RemoveSdk(sdkType string, extraEnvVars map[string]string) erro
 		m.removeShim(cmd)
 	}
 
+	// Drop the SDK's env vars from the OS-level store (Windows registry) so a
+	// leftover JAVA_HOME doesn't point at a now-uninstalled JDK. No-op on
+	// Unix where .svc.rc regeneration is the only path. extraEnvVars is the
+	// map originally passed to ConfigureSdk; its keys are the env var names.
+	keys := make([]string, 0, len(extraEnvVars))
+	for k := range extraEnvVars {
+		keys = append(keys, k)
+	}
+	m.removeEnvVarsFromSystem(keys)
+
 	// Remove SDK type from shims.json
 	if err := m.removeSdkFromConfig(sdkType); err != nil {
 		return fmt.Errorf("failed to remove SDK from shim config: %w", err)
@@ -372,10 +398,17 @@ func classifyExecutable(name string) (cmdName, ext string, ok bool) {
 //     route it to the active SDK version. A hardlink cannot be used here
 //     because cmd.exe would try to interpret the PE binary as a batch script.
 func (m *Manager) createShimFor(cmdName, ext string) error {
+	// Purge ALL variants of cmdName first. The previous code only removed
+	// the target variant (os.Remove(cmdName+ext)); switching extensions
+	// (e.g. a .cmd wrapper existed and now we create .exe, or vice versa)
+	// left the old variant on disk as a stale, conflicting shim. removeShim
+	// already does multi-variant removal on Windows (bare+.exe+.cmd+.bat)
+	// and bare-only on Unix, so reuse it.
+	m.removeShim(cmdName)
+
 	if ext == "" || ext == ".exe" {
 		shimPath := m.getShimBinaryPath()
 		linkPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
-		os.Remove(linkPath)
 		// Resolve symlinks on Unix so the hardlink targets the real file.
 		// On Windows os.Stat already follows; SymlinkTarget is not needed.
 		target := shimPath
@@ -511,4 +544,17 @@ func copyFile(src, dst string, perm os.FileMode) error {
 		return err
 	}
 	return os.WriteFile(dst, data, perm)
+}
+
+// filesEqual reports whether the bytes at path equal expected. Used by
+// ensureShimBinary to catch same-size-different-content binaries that the
+// size+modtime heuristic would miss (a rebuild with coincidentally identical
+// file size but different bytes). A read error is treated as not-equal so the
+// caller falls through to the safe "rebuild" path.
+func filesEqual(path string, expected []byte) bool {
+	got, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(got, expected)
 }
