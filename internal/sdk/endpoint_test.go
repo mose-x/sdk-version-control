@@ -11,7 +11,7 @@ func TestChinaMirrors(t *testing.T) {
 		key, want string
 	}{
 		{"storage.googleapis.com", "storage.flutter-io.cn"},
-		{"dl.google.com", "mirrors.tuna.tsinghua.edu.cn/android/repository"},
+		{"dl.google.com", "https://mirrors.tuna.tsinghua.edu.cn"},
 		{"go.dev", "golang.google.cn"},
 	}
 	for _, tt := range tests {
