@@ -47,6 +47,18 @@ type gcsListResponse struct {
 	NextPageToken string   `json:"nextPageToken"`
 }
 
+// dartArch maps runtime.GOARCH to the Dart SDK archive arch token. Dart
+// publishes arm64 builds for every platform, so arm64 is returned for all
+// OSes (not just darwin). Pure so tests can exercise every combo on any host.
+func dartArch(goos, goarch string) string {
+	switch goarch {
+	case "arm64":
+		return "arm64"
+	default:
+		return "x64"
+	}
+}
+
 func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo
 	pageToken := ""
@@ -88,16 +100,13 @@ func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			major, _ := strconv.Atoi(vParts[0])
 
 			osName := "windows"
-			arch := "x64"
 			if runtime.GOOS == "linux" {
 				osName = "linux"
 			}
 			if runtime.GOOS == "darwin" {
 				osName = "macos"
-				if runtime.GOARCH == "arm64" {
-					arch = "arm64"
-				}
 			}
+			arch := dartArch(runtime.GOOS, runtime.GOARCH)
 
 			versions = append(versions, VersionInfo{
 				Version:     ver,
@@ -119,16 +128,13 @@ func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 
 func (f *DartFetcher) GetDownloadURL(version string) (string, string, error) {
 	osName := "windows"
-	arch := "x64"
 	if runtime.GOOS == "linux" {
 		osName = "linux"
 	}
 	if runtime.GOOS == "darwin" {
 		osName = "macos"
-		if runtime.GOARCH == "arm64" {
-			arch = "arm64"
-		}
 	}
+	arch := dartArch(runtime.GOOS, runtime.GOARCH)
 	url := f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/dart-archive/channels/stable/release/%s/sdk/dartsdk-%s-%s-release.zip", version, osName, arch))
 	return url, fmt.Sprintf("dartsdk-%s-%s-release.zip", osName, arch), nil
 }

@@ -3,8 +3,42 @@ package sdk
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
+
+func TestRustFetcher_VerifyCommand(t *testing.T) {
+	f := &RustFetcher{}
+	bin, args := f.VerifyCommand()
+	if bin != "rustc" {
+		t.Errorf("VerifyCommand bin: expected 'rustc', got '%s'", bin)
+	}
+	want := []string{"--print", "sysroot"}
+	if !reflect.DeepEqual(args, want) {
+		t.Errorf("VerifyCommand args: expected %v, got %v", want, args)
+	}
+}
+
+func TestRustTarget(t *testing.T) {
+	tests := []struct {
+		goos, goarch, want string
+	}{
+		{"windows", "amd64", "x86_64-pc-windows-msvc"},
+		{"windows", "arm64", "aarch64-pc-windows-msvc"},
+		{"linux", "amd64", "x86_64-unknown-linux-gnu"},
+		{"linux", "arm64", "aarch64-unknown-linux-gnu"},
+		{"darwin", "amd64", "x86_64-apple-darwin"},
+		{"darwin", "arm64", "aarch64-apple-darwin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.goos+"-"+tt.goarch, func(t *testing.T) {
+			got := rustTarget(tt.goos, tt.goarch)
+			if got != tt.want {
+				t.Errorf("rustTarget(%q, %q): expected %q, got %q", tt.goos, tt.goarch, tt.want, got)
+			}
+		})
+	}
+}
 
 func TestRustMergeComponents(t *testing.T) {
 	dir := t.TempDir()

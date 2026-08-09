@@ -1,8 +1,14 @@
 package sdk
 
 import (
+	"context"
 	"encoding/xml"
+	"fmt"
+	"net"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestAndroidXMLHostOSParsing(t *testing.T) {
@@ -67,5 +73,35 @@ func TestAndroidXMLHostOSParsing(t *testing.T) {
 	}
 	if archives[1].URL != "commandlinetools-win-15859902_latest.zip" {
 		t.Errorf("archive[1] URL: expected windows zip, got '%s'", archives[1].URL)
+	}
+}
+
+func TestAndroidFetcher_GetDownloadURL_noFallback(t *testing.T) {
+	// Clear any cached Android versions so GetDownloadURL performs a real
+	// fetch instead of short-circuiting on the in-memory cache.
+	globalVersionCache.mu.Lock()
+	delete(globalVersionCache.entries, Android)
+	globalVersionCache.mu.Unlock()
+
+	// An HTTP client whose Transport always fails to dial, so
+	// FetchRemoteVersions returns an error without touching the real network.
+	// With f.sm == nil, useEndpoint returns the default dl.google.com URL.
+	f := &AndroidFetcher{
+		httpClient: &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return nil, fmt.Errorf("simulated unreachable endpoint")
+				},
+			},
+		},
+	}
+
+	_, _, err := f.GetDownloadURL("14.0")
+	if err == nil {
+		t.Fatal("expected GetDownloadURL to return an error when fetch fails (no silent fallback), got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to fetch Android cmdline-tools versions") {
+		t.Errorf("expected error to mention the fetch failure, got: %v", err)
 	}
 }

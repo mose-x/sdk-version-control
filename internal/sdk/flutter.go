@@ -53,6 +53,18 @@ func (f *FlutterFetcher) buildOSName() string {
 	}
 }
 
+// flutterArchSuffix returns the architecture segment inserted into the macOS
+// Flutter archive name. macOS arm64 uses an "_arm64" suffix (e.g.
+// flutter_macos_arm64_<ver>-stable.zip); all other platforms/arches use "".
+// Flutter does not publish arm64-specific builds for Windows or Linux.
+// Pure so tests can exercise every (goos, goarch) combo on any host.
+func flutterArchSuffix(goos, goarch string) string {
+	if goos == "darwin" && goarch == "arm64" {
+		return "_arm64"
+	}
+	return ""
+}
+
 func (f *FlutterFetcher) buildExt() string {
 	if runtime.GOOS == "linux" {
 		return "tar.xz"
@@ -97,10 +109,11 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			}
 			osName := f.buildOSName()
 			ext := f.buildExt()
+			archSuffix := flutterArchSuffix(runtime.GOOS, runtime.GOARCH)
 			versions = append(versions, VersionInfo{
 				Version: ver, Major: major, ReleaseDate: date,
-				DownloadURL: f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s_%s-stable.%s", osName, osName, ver, ext)),
-				FileName:    fmt.Sprintf("flutter_%s_%s-stable.%s", osName, ver, ext),
+				DownloadURL: f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s%s_%s-stable.%s", osName, osName, archSuffix, ver, ext)),
+				FileName:    fmt.Sprintf("flutter_%s%s_%s-stable.%s", osName, archSuffix, ver, ext),
 			})
 		}
 		page++
@@ -112,8 +125,9 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 func (f *FlutterFetcher) GetDownloadURL(version string) (string, string, error) {
 	osName := f.buildOSName()
 	ext := f.buildExt()
-	url := f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s_%s-stable.%s", osName, osName, version, ext))
-	return url, fmt.Sprintf("flutter_%s_%s-stable.%s", osName, version, ext), nil
+	archSuffix := flutterArchSuffix(runtime.GOOS, runtime.GOARCH)
+	url := f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/flutter_infra_release/releases/stable/%s/flutter_%s%s_%s-stable.%s", osName, osName, archSuffix, version, ext))
+	return url, fmt.Sprintf("flutter_%s%s_%s-stable.%s", osName, archSuffix, version, ext), nil
 }
 
 func (f *FlutterFetcher) GetLocalStatus() (*SdkStatus, error) {

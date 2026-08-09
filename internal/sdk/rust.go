@@ -50,7 +50,35 @@ func (f *RustFetcher) GetBinDirs() []string {
 func (f *RustFetcher) GetExtraEnvVars() map[string]string {
 	return nil
 }
-func (f *RustFetcher) VerifyCommand() (string, []string) { return "rustc", []string{"--version"} }
+
+// rustTarget maps a (goos, goarch) pair to the Rust target triple used in
+// download URLs and filenames. Extracted as a pure function so tests can
+// exercise all 6 platform combos on any host without overriding runtime.GOOS /
+// runtime.GOARCH.
+func rustTarget(goos, goarch string) string {
+	switch goos + "/" + goarch {
+	case "windows/amd64":
+		return "x86_64-pc-windows-msvc"
+	case "windows/arm64":
+		return "aarch64-pc-windows-msvc"
+	case "linux/amd64":
+		return "x86_64-unknown-linux-gnu"
+	case "linux/arm64":
+		return "aarch64-unknown-linux-gnu"
+	case "darwin/amd64":
+		return "x86_64-apple-darwin"
+	case "darwin/arm64":
+		return "aarch64-apple-darwin"
+	default:
+		return "x86_64-pc-windows-msvc"
+	}
+}
+
+func (f *RustFetcher) VerifyCommand() (string, []string) {
+	// --print sysroot detects broken installs: a working sysroot contains
+	// lib/rustlib, while a partial/corrupt install prints a path missing it.
+	return "rustc", []string{"--print", "sysroot"}
+}
 
 // MergeComponents copies rust-std-{target}/lib/rustlib/ into cargo/lib/ and
 // rustc/lib/ so that rustc and cargo find the std library at their sysroot
@@ -177,30 +205,12 @@ func (f *RustFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *RustFetcher) buildDownloadURL(version string) string {
-	target := "x86_64-pc-windows-msvc"
-	if runtime.GOOS == "linux" {
-		target = "x86_64-unknown-linux-gnu"
-	}
-	if runtime.GOOS == "darwin" {
-		target = "x86_64-apple-darwin"
-		if runtime.GOARCH == "arm64" {
-			target = "aarch64-apple-darwin"
-		}
-	}
+	target := rustTarget(runtime.GOOS, runtime.GOARCH)
 	return f.useEndpoint(fmt.Sprintf("https://static.rust-lang.org/dist/rust-%s-%s.tar.gz", version, target))
 }
 
 func (f *RustFetcher) buildFileName(version string) string {
-	target := "x86_64-pc-windows-msvc"
-	if runtime.GOOS == "linux" {
-		target = "x86_64-unknown-linux-gnu"
-	}
-	if runtime.GOOS == "darwin" {
-		target = "x86_64-apple-darwin"
-		if runtime.GOARCH == "arm64" {
-			target = "aarch64-apple-darwin"
-		}
-	}
+	target := rustTarget(runtime.GOOS, runtime.GOARCH)
 	return fmt.Sprintf("rust-%s-%s.tar.gz", version, target)
 }
 

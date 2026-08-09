@@ -26,3 +26,20 @@ func DefaultEndpoints() []EndpointInfo {
 		{string(Dart), SdkDisplayName(Dart), "https://storage.googleapis.com"},
 	}
 }
+
+// ChinaMirrors returns the built-in China mirror mappings for Google-backed
+// download domains. This is data-only: nothing is rewritten automatically.
+// Users can configure a mirror via the settings Endpoints map / useEndpoint,
+// and a one-click switch UI is a follow-up.
+//
+// Keys are the original hostnames; values are the mirror hostnames. The
+// Android (dl.google.com) mirror also carries a path prefix, since TUNA
+// serves Android repository files under /android/repository rather than
+// mirroring the host root.
+func ChinaMirrors() map[string]string {
+	return map[string]string{
+		"storage.googleapis.com": "storage.flutter-io.cn",
+		"dl.google.com":          "mirrors.tuna.tsinghua.edu.cn/android/repository",
+		"go.dev":                 "golang.google.cn",
+	}
+}

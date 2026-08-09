@@ -119,25 +119,35 @@ func (f *NodejsFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	return versions, nil
 }
 
-func (f *NodejsFetcher) buildDownloadURL(version string) (string, string) {
-	os := runtime.GOOS
-	arch := runtime.GOARCH
-
-	var suffix string
-	switch {
-	case os == "windows" && arch == "amd64":
-		suffix = "win-x64.zip"
-	case os == "linux" && arch == "amd64":
-		suffix = "linux-x64.tar.xz"
-	case os == "darwin" && arch == "arm64":
-		suffix = "darwin-arm64.tar.gz"
-	case os == "darwin" && arch == "amd64":
-		suffix = "darwin-x64.tar.gz"
+// nodejsPlatformArch maps a (goos, goarch) pair to the Node.js archive suffix
+// (e.g. "win-x64") and extension (e.g. "zip"). Returns ("", "") for unknown
+// combos. Pure so tests can exercise all 6 platform combos on any host.
+func nodejsPlatformArch(goos, goarch string) (suffix, ext string) {
+	switch goos + "/" + goarch {
+	case "windows/amd64":
+		return "win-x64", "zip"
+	case "windows/arm64":
+		return "win-arm64", "zip"
+	case "linux/amd64":
+		return "linux-x64", "tar.xz"
+	case "linux/arm64":
+		return "linux-arm64", "tar.xz"
+	case "darwin/amd64":
+		return "darwin-x64", "tar.gz"
+	case "darwin/arm64":
+		return "darwin-arm64", "tar.gz"
 	default:
 		return "", ""
 	}
+}
 
-	fileName := fmt.Sprintf("node-v%s-%s", version, suffix)
+func (f *NodejsFetcher) buildDownloadURL(version string) (string, string) {
+	suffix, ext := nodejsPlatformArch(runtime.GOOS, runtime.GOARCH)
+	if suffix == "" {
+		return "", ""
+	}
+
+	fileName := fmt.Sprintf("node-v%s-%s.%s", version, suffix, ext)
 	url := f.useEndpoint(fmt.Sprintf("https://nodejs.org/dist/v%s/%s", version, fileName))
 	return url, fileName
 }

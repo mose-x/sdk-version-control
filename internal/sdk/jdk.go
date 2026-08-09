@@ -112,7 +112,7 @@ func (f *JdkFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 
 	var versions []VersionInfo
 	for _, major := range releases.AvailableReleases {
-		url := f.useEndpoint(fmt.Sprintf("https://api.adoptium.net/v3/assets/latest/%d/hotspot?architecture=x64&os=%s&image_type=jdk", major, os))
+		url := f.useEndpoint(fmt.Sprintf("https://api.adoptium.net/v3/assets/latest/%d/hotspot?architecture=%s&os=%s&image_type=jdk", major, jdkArch(runtime.GOARCH), os))
 		resp, err := f.httpClient.Get(url)
 		if err != nil {
 			continue
@@ -156,7 +156,7 @@ func (f *JdkFetcher) GetDownloadURL(version string) (string, string, error) {
 	parts := strings.Split(version, ".")
 	major, _ := strconv.Atoi(parts[0])
 
-	url := f.useEndpoint(fmt.Sprintf("https://api.adoptium.net/v3/assets/latest/%d/hotspot?architecture=x64&os=%s&image_type=jdk", major, os))
+	url := f.useEndpoint(fmt.Sprintf("https://api.adoptium.net/v3/assets/latest/%d/hotspot?architecture=%s&os=%s&image_type=jdk", major, jdkArch(runtime.GOARCH), os))
 	resp, err := f.httpClient.Get(url)
 	if err != nil {
 		return "", "", err
@@ -216,5 +216,17 @@ func (f *JdkFetcher) osParam() string {
 		return "mac"
 	default:
 		return ""
+	}
+}
+
+// jdkArch maps runtime.GOARCH to the Adoptium API "architecture" query
+// parameter (x64 for amd64, aarch64 for arm64). Pure so tests can exercise
+// every architecture on any host.
+func jdkArch(goarch string) string {
+	switch goarch {
+	case "arm64":
+		return "aarch64"
+	default:
+		return "x64"
 	}
 }
