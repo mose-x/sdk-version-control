@@ -117,6 +117,9 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		downloadURL := ""
 		fileName := ""
 		for _, a := range pkg.Archives.Archive {
+			// a.OS == "" is a safety net for archives that genuinely omit
+			// <host-os> (not the old ,attr bug — E1 fixed that). Kept to avoid
+			// breaking on future archive entries without host-os.
 			if a.OS == osKey || a.OS == "" {
 				downloadURL = f.useEndpoint("https://dl.google.com/android/repository/" + a.URL)
 				parts := strings.Split(a.URL, "/")
