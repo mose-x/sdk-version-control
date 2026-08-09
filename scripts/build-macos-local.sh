@@ -6,7 +6,7 @@
 #   arch:     amd64 | arm64  (default: native GOARCH)
 #
 # Identical to scripts/build-macos.sh but sets SVC_SKIP_BINDINGS=1 so Wails
-# skips binding generation. Under MDM (aliedr), `wails build` runs an
+# skips binding generation. Under strict MDM, `wails build` runs an
 # ad-hoc-signed binding-generator binary that amfid kills on the provenance
 # path (no quarantine, local build); -skipbindings avoids that run so the build
 # completes on an MDM-Mac.

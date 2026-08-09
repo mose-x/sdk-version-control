@@ -46,7 +46,7 @@ wails build $WAILS_FLAGS -platform "darwin/$ARCH" -o SDKVersionControl
 # right-click -> Open bypass. Strip BOTH the bundle signature AND the inner
 # executable's ad-hoc: removing only the bundle seal while leaving the inner
 # binary ad-hoc-signed leaves a signature mismatch that Gatekeeper still
-# rejects (confirmed on an aliedr MDM Mac: bundle-only strip still blocked;
+# rejects (confirmed on a strict MDM Mac: bundle-only strip still blocked;
 # stripping both let the app launch). The arm64 kernel re-applies an ad-hoc
 # signature to the inner binary at exec time, so stripping it is safe (the
 # binary still runs). See note/t.md.
@@ -66,7 +66,7 @@ ICNS="$(dirname "$ICONSET")/iconfile.icns"
 iconutil -c icns "$ICONSET" -o "$ICNS"
 cp "$ICNS" "$APP/Contents/Resources/iconfile.icns"
 
-# NOTE: No ad-hoc codesign here. Under MDM (aliedr), ad-hoc (--sign -) is
+# NOTE: No ad-hoc codesign here. Under strict MDM, ad-hoc (--sign -) is
 # rejected by amfid with -423 and is strictly worse than leaving the bundle
 # unsigned (see note/t.md). A browser-downloaded DMG carries
 # com.apple.quarantine, which the .app inherits on drag-install, routing the
