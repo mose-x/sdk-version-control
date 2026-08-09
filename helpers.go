@@ -25,8 +25,15 @@ func extractVersionFromOutput(cmd string, args []string) string {
 	if err != nil {
 		return ""
 	}
+	return extractVersionFromString(string(out))
+}
+
+// extractVersionFromString applies the version-extraction regex to a command's
+// raw output. Used by extractVersionFromOutput (system-detected SDKs) and
+// detectVersionFromDir (imported SDKs). Returns "" if no version pattern found.
+func extractVersionFromString(s string) string {
 	re := regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`)
-	return re.FindString(string(out))
+	return re.FindString(s)
 }
 
 func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string, error) {
@@ -80,8 +87,7 @@ func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string
 		return "", fmt.Errorf("failed to execute %s: %s", cmdName, strings.TrimSpace(string(out)))
 	}
 
-	re := regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`)
-	ver := re.FindString(string(out))
+	ver := extractVersionFromString(string(out))
 	if ver == "" {
 		return "", fmt.Errorf("unable to parse version from %s output", cmdName)
 	}

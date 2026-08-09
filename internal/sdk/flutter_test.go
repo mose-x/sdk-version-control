@@ -59,6 +59,18 @@ func TestFlutterGetDownloadURL(t *testing.T) {
 	if !strings.HasSuffix(fileName, "-stable."+ext) {
 		t.Errorf("fileName should end with '-stable.%s', got: %s", ext, fileName)
 	}
+	// On darwin/arm64 the URL + fileName must include the _arm64 suffix
+	// (C3 fix). A bare "macos" check would false-pass if the suffix were
+	// missing, so explicitly assert it.
+	suffix := flutterArchSuffix(runtime.GOOS, runtime.GOARCH)
+	if suffix != "" {
+		if !strings.Contains(url, suffix) {
+			t.Errorf("URL should contain arch suffix %q, got: %s", suffix, url)
+		}
+		if !strings.Contains(fileName, suffix) {
+			t.Errorf("fileName should contain arch suffix %q, got: %s", suffix, fileName)
+		}
+	}
 }
 
 func TestFlutterArchSuffix(t *testing.T) {
