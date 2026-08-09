@@ -9,13 +9,13 @@
 #
 # 当你从本地构建的 DMG 安装了 SDK Version Control 后,macOS 可能会因为
 # 签名和隔离属性的问题阻止应用启动(表现为"已损坏,无法打开"或进程
-# 被 SIGKILL 137 杀掉)。这在阿里集团 MDM (aliedr) 管控的 Mac 上尤为常见。
+# 被 SIGKILL 137 杀掉)。这在严格 MDM 管控的 Mac 上尤为常见。
 #
 # After installing SDK Version Control from a locally-built DMG, macOS may
 # block the app from launching due to ad-hoc signature + quarantine
 # attributes. You'll see "damaged and can't be opened" or the process
-# gets SIGKILL'd (exit 137). This is especially common on Alibaba MDM
-# (aliedr) managed Macs.
+# gets SIGKILL'd (exit 137). This is especially common on strict MDM
+# managed Macs.
 #
 # 这个脚本做四件事 / This script does four things:
 #   1. 去掉 .app bundle 的 ad-hoc 签名 / Strip ad-hoc signature from .app bundle
