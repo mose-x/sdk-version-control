@@ -83,18 +83,30 @@ func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	return versions, nil
 }
 
+// dotnetRID maps a (goos, goarch) pair to the .NET Runtime ID (RID) used in
+// download URLs and filenames. Pure so tests can exercise all 6 platform combos
+// on any host.
+func dotnetRID(goos, goarch string) string {
+	switch goos + "/" + goarch {
+	case "windows/amd64":
+		return "win-x64"
+	case "windows/arm64":
+		return "win-arm64"
+	case "linux/amd64":
+		return "linux-x64"
+	case "linux/arm64":
+		return "linux-arm64"
+	case "darwin/amd64":
+		return "osx-x64"
+	case "darwin/arm64":
+		return "osx-arm64"
+	default:
+		return "win-x64"
+	}
+}
+
 func (f *DotNetFetcher) buildRID() string {
-	rid := "win-x64"
-	if runtime.GOOS == "linux" {
-		rid = "linux-x64"
-	}
-	if runtime.GOOS == "darwin" {
-		rid = "osx-x64"
-		if runtime.GOARCH == "arm64" {
-			rid = "osx-arm64"
-		}
-	}
-	return rid
+	return dotnetRID(runtime.GOOS, runtime.GOARCH)
 }
 
 func (f *DotNetFetcher) buildExt() string {

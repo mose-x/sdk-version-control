@@ -60,3 +60,22 @@ func TestFlutterGetDownloadURL(t *testing.T) {
 		t.Errorf("fileName should end with '-stable.%s', got: %s", ext, fileName)
 	}
 }
+
+func TestFlutterArchSuffix(t *testing.T) {
+	tests := []struct {
+		goos, goarch, want string
+	}{
+		{"darwin", "amd64", ""},
+		{"darwin", "arm64", "_arm64"},
+		{"linux", "amd64", ""},
+		{"windows", "arm64", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.goos+"-"+tt.goarch, func(t *testing.T) {
+			got := flutterArchSuffix(tt.goos, tt.goarch)
+			if got != tt.want {
+				t.Errorf("flutterArchSuffix(%q, %q): expected %q, got %q", tt.goos, tt.goarch, tt.want, got)
+			}
+		})
+	}
+}

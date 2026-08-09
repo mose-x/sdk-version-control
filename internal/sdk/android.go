@@ -75,23 +75,22 @@ type androidPackage struct {
 func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://dl.google.com/android/repository/repository2-3.xml"))
 	if err != nil {
-		// Fall back to known versions
-		return f.fallbackVersions(), nil
+		return nil, fmt.Errorf("android repository request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return f.fallbackVersions(), nil
+		return nil, fmt.Errorf("android repository returned HTTP %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return f.fallbackVersions(), nil
+		return nil, fmt.Errorf("failed to read android repository response: %w", err)
 	}
 
 	var repo androidRepository
 	if err := xml.Unmarshal(body, &repo); err != nil {
-		return f.fallbackVersions(), nil
+		return nil, fmt.Errorf("failed to parse android repository XML: %w", err)
 	}
 
 	osKey := "windows"
@@ -138,7 +137,7 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	}
 
 	if len(versions) == 0 {
-		return f.fallbackVersions(), nil
+		return nil, fmt.Errorf("no Android cmdline-tools versions found in repository")
 	}
 
 	sort.Slice(versions, func(i, j int) bool { return CompareVersions(versions[i].Version, versions[j].Version) > 0 })
@@ -168,23 +167,20 @@ func (f *AndroidFetcher) GetDownloadURL(version string) (string, string, error) 
 	if url, name, ok := LookupCachedDownloadURL(Android, version); ok {
 		return url, name, nil
 	}
-	// First try to fetch from remote
-	versions, _ := f.FetchRemoteVersions()
+	// Fetch from remote. Unlike the previous behaviour (which silently fell
+	// back to a hardcoded 14.0/build when the XML fetch failed), a fetch
+	// failure now surfaces as an error so the caller does not install the
+	// wrong version.
+	versions, err := f.FetchRemoteVersions()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to fetch Android cmdline-tools versions: %w", err)
+	}
 	for _, v := range versions {
 		if v.Version == version {
 			return v.DownloadURL, v.FileName, nil
 		}
 	}
-	osKey := "win"
-	if runtime.GOOS == "linux" {
-		osKey = "linux"
-	}
-	if runtime.GOOS == "darwin" {
-		osKey = "mac"
-	}
-	build := "14742923"
-	return f.useEndpoint(fmt.Sprintf("https://dl.google.com/android/repository/commandlinetools-%s-%s_latest.zip", osKey, build)),
-		fmt.Sprintf("commandlinetools-%s-%s_latest.zip", osKey, build), nil
+	return "", "", fmt.Errorf("Android cmdline-tools version not found: %s", version)
 }
 
 func (f *AndroidFetcher) GetLocalStatus() (*SdkStatus, error) {

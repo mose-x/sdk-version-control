@@ -49,3 +49,24 @@ func TestDotNetBuildFileName(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", expected, name)
 	}
 }
+
+func TestDotnetRID(t *testing.T) {
+	tests := []struct {
+		goos, goarch, want string
+	}{
+		{"windows", "amd64", "win-x64"},
+		{"windows", "arm64", "win-arm64"},
+		{"linux", "amd64", "linux-x64"},
+		{"linux", "arm64", "linux-arm64"},
+		{"darwin", "amd64", "osx-x64"},
+		{"darwin", "arm64", "osx-arm64"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.goos+"-"+tt.goarch, func(t *testing.T) {
+			got := dotnetRID(tt.goos, tt.goarch)
+			if got != tt.want {
+				t.Errorf("dotnetRID(%q, %q): expected %q, got %q", tt.goos, tt.goarch, tt.want, got)
+			}
+		})
+	}
+}
