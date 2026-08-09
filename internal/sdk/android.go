@@ -144,23 +144,6 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	return versions, nil
 }
 
-func (f *AndroidFetcher) fallbackVersions() []VersionInfo {
-	osKey := "win"
-	if runtime.GOOS == "linux" {
-		osKey = "linux"
-	}
-	if runtime.GOOS == "darwin" {
-		osKey = "mac"
-	}
-	build := "14742923"
-	return []VersionInfo{{
-		Version:     "14.0",
-		Major:       14,
-		DownloadURL: f.useEndpoint(fmt.Sprintf("https://dl.google.com/android/repository/commandlinetools-%s-%s_latest.zip", osKey, build)),
-		FileName:    fmt.Sprintf("commandlinetools-%s-%s_latest.zip", osKey, build),
-	}}
-}
-
 func (f *AndroidFetcher) GetDownloadURL(version string) (string, string, error) {
 	// Cache short-circuit: skip a fresh FetchRemoteVersions round-trip when the
 	// version list was already fetched (see PythonFetcher.GetDownloadURL).

@@ -75,9 +75,13 @@ func rustTarget(goos, goarch string) string {
 }
 
 func (f *RustFetcher) VerifyCommand() (string, []string) {
-	// --print sysroot detects broken installs: a working sysroot contains
-	// lib/rustlib, while a partial/corrupt install prints a path missing it.
-	return "rustc", []string{"--print", "sysroot"}
+	// --version prints "rustc 1.75.0 (...)" which extractVersionFromOutput
+	// can parse for a version number. --print sysroot prints a bare path
+	// (no version) which breaks version extraction for system-detected Rust.
+	// The sysroot health itself is ensured by MergeComponents (A1), not by
+	// this command — --print sysroot always succeeds even if lib/rustlib is
+	// missing, so it doesn't actually detect the problem it was meant to.
+	return "rustc", []string{"--version"}
 }
 
 // MergeComponents copies rust-std-{target}/lib/rustlib/ into cargo/lib/ and

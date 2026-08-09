@@ -13,7 +13,7 @@ func TestRustFetcher_VerifyCommand(t *testing.T) {
 	if bin != "rustc" {
 		t.Errorf("VerifyCommand bin: expected 'rustc', got '%s'", bin)
 	}
-	want := []string{"--print", "sysroot"}
+	want := []string{"--version"}
 	if !reflect.DeepEqual(args, want) {
 		t.Errorf("VerifyCommand args: expected %v, got %v", want, args)
 	}
