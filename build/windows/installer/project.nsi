@@ -56,6 +56,10 @@ ManifestDPIAware true
 !define MUI_FINISHPAGE_NOAUTOCLOSE # Wait on the INSTFILES page so the user can take a look into the details of the installation steps
 !define MUI_ABORTWARNING # This will warn the user if they exit from the installer.
 
+# If already installed, skip the directory selection page and reuse the
+# previous install path silently (read from the registry).
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipDirIfInstalled
+
 !insertmacro MUI_PAGE_WELCOME # Welcome to the installer page.
 # !insertmacro MUI_PAGE_LICENSE "resources\eula.txt" # Adds a EULA page to the installer
 !insertmacro MUI_PAGE_DIRECTORY # In which folder install page.
@@ -73,16 +77,37 @@ ManifestDPIAware true
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the installer's file.
 InstallDir "$PROGRAMFILES64\${INFO_PRODUCTNAME}" # Default installing folder ($PROGRAMFILES is Program Files folder).
+# Auto-detect previous install location from the registry (enables upgrade-in-place).
+InstallDirRegKey HKLM "${UNINST_KEY}" "InstallLocation"
 ShowInstDetails show # This will always show the installation details.
 
 Function .onInit
    !insertmacro wails.checkArchitecture
 FunctionEnd
 
+# Skip the directory page on upgrade: if a previous install location is
+# found in the registry, set $INSTDIR to it and Abort (skip) the page.
+Function SkipDirIfInstalled
+    ReadRegStr $0 HKLM "${UNINST_KEY}" "InstallLocation"
+    ${If} $0 != ""
+        StrCpy $INSTDIR $0
+        Abort
+    ${EndIf}
+FunctionEnd
+
 Section
     !insertmacro wails.setShellContext
 
     !insertmacro wails.webview2runtime
+
+    # Kill any running instance of the app before overwriting the binary.
+    # Windows locks a running .exe; without this, the File step fails.
+    ExecWait 'taskkill /F /IM "${PRODUCT_EXECUTABLE}" /T' $0
+
+    # Backup the previous version before overwriting (for manual rollback).
+    IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}" 0 skipBackup
+        CopyFiles /SILENT "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.bak"
+    skipBackup:
 
     SetOutPath $INSTDIR
 
@@ -104,6 +129,9 @@ Section
     !insertmacro wails.associateCustomProtocols
 
     !insertmacro wails.writeUninstaller
+
+    # Write InstallLocation so the next upgrade can detect + skip the dir page.
+    WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
 SectionEnd
 
 Section "uninstall"
