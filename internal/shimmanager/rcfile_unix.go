@@ -239,5 +239,20 @@ func removeSourceLineFromFile(filePath, checkStr string) error {
 		return nil
 	}
 
+	// Backup before overwriting (O1: RC file non-atomic edit without backup).
+	// If os.WriteFile fails or corrupts the file, the user can restore from .bak.
+	backupFile(filePath)
+
 	return os.WriteFile(filePath, []byte(strings.Join(filtered, "\n")), 0644)
+}
+
+// backupFile copies the file to a .svc.bak sibling before modifying it.
+// Non-fatal: if the backup fails (e.g. permissions), the modification still
+// proceeds — the backup is defense-in-depth, not a gate.
+func backupFile(filePath string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return
+	}
+	os.WriteFile(filePath+".svc.bak", data, 0644)
 }

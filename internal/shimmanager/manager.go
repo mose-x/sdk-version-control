@@ -424,6 +424,14 @@ func (m *Manager) createShimFor(cmdName, ext string) error {
 	}
 
 	// Windows .cmd / .bat wrapper. %~dp0 resolves to the shims directory.
+	// Validate cmdName to prevent batch injection: only alphanumeric + hyphen
+	// are allowed (all SDK command names are simple identifiers like "go",
+	// "node", "python3", "rustc").
+	for _, c := range cmdName {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+			return fmt.Errorf("refusing to create shim for unsafe command name: %s", cmdName)
+		}
+	}
 	wrapperPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
 	content := fmt.Sprintf("@echo off\r\n\"%%~dp0svc-shim.exe\" %s %%*\r\n", cmdName)
 	return os.WriteFile(wrapperPath, []byte(content), 0644)

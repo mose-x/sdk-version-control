@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/sdk"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -164,6 +165,9 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	// Resolve the expected sha256 from sha256sums.txt (also a release asset).
 	// Verification is skipped if sha256sums.txt is absent (lenient fallback).
 	sha := a.fetchAssetSha256(client, release.Assets, asset.Name)
+	if sha == "" {
+		logger.Warn("No sha256sums.txt found in release assets, checksum verification will be skipped")
+	}
 
 	return UpdateInfo{
 		HasUpdate:     true,
