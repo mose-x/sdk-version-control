@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Modal, Table, Tag, Button, App, Empty } from 'antd'
-import { ImportOutlined, CheckCircleFilled, FolderOutlined } from '@ant-design/icons'
+import {
+  ImportOutlined,
+  CheckCircleFilled,
+  FolderOutlined,
+} from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import { GetPathEntries, ImportSdk } from '../../../wailsjs/go/main/App'
 
@@ -47,7 +51,7 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
     try {
       const result = await GetPathEntries()
       // Only show SDK paths not yet imported into SVC
-      const filtered = (result || []).filter(e => e.sdkType && !e.isManaged)
+      const filtered = (result || []).filter((e) => e.sdkType && !e.isManaged)
       setEntries(filtered)
     } catch (e) {
       console.error('Failed to get PATH information:', e)
@@ -72,7 +76,10 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
       cancelText: t('app.cancel'),
       maskClosable: false,
       onOk: async () => {
-        ref.update({ cancelButtonProps: { disabled: true }, okButtonProps: { loading: true } })
+        ref.update({
+          cancelButtonProps: { disabled: true },
+          okButtonProps: { loading: true },
+        })
         setImporting(entry.path)
         try {
           await ImportSdk(entry.path, entry.sdkType)
@@ -81,7 +88,10 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
           onRefresh()
         } catch (e: any) {
           msgApi.error(t('path.importFail', { error: e?.message || e }))
-          ref.update({ cancelButtonProps: { disabled: false }, okButtonProps: { loading: false } })
+          ref.update({
+            cancelButtonProps: { disabled: false },
+            okButtonProps: { loading: false },
+          })
           throw e
         } finally {
           setImporting(null)
@@ -96,13 +106,12 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
       dataIndex: 'sdkType',
       key: 'sdkType',
       width: 100,
-      render: (type: string) => type ? (
-        <Tag color={sdkColors[type] || '#666'}>
-          {sdkNames[type] || type}
-        </Tag>
-      ) : (
-        <Tag>{t('path.noSdkDetected')}</Tag>
-      ),
+      render: (type: string) =>
+        type ? (
+          <Tag color={sdkColors[type] || '#666'}>{sdkNames[type] || type}</Tag>
+        ) : (
+          <Tag>{t('path.noSdkDetected')}</Tag>
+        ),
     },
     {
       title: t('path.title'),
@@ -122,48 +131,51 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
       key: 'status',
       width: 120,
       align: 'right' as const,
-      render: (managed: boolean, entry: PathEntry) => managed ? (
-        <Tag icon={<CheckCircleFilled />} color="success">{t('path.managed')}</Tag>
-      ) : entry.sdkType ? (
-        <Button
-          size="small"
-          type="primary"
-          icon={<ImportOutlined />}
-          loading={importing === entry.path}
-          onClick={() => handleImport(entry)}
-        >
-          {importing === entry.path ? t('path.importing') : t('path.import')}
-        </Button>
-      ) : (
-        <Tag>{t('path.system')}</Tag>
-      ),
+      render: (managed: boolean, entry: PathEntry) =>
+        managed ? (
+          <Tag icon={<CheckCircleFilled />} color="success">
+            {t('path.managed')}
+          </Tag>
+        ) : entry.sdkType ? (
+          <Button
+            size="small"
+            type="primary"
+            icon={<ImportOutlined />}
+            loading={importing === entry.path}
+            onClick={() => handleImport(entry)}
+          >
+            {importing === entry.path ? t('path.importing') : t('path.import')}
+          </Button>
+        ) : (
+          <Tag>{t('path.system')}</Tag>
+        ),
     },
   ]
 
   return (
     <>
-    {modalContextHolder}
-    <Modal
-      title={t('path.title')}
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      width={800}
-    >
-      {entries.length === 0 && !loading ? (
-        <Empty description={t('path.emptyPath')} />
-      ) : (
-        <Table
-          dataSource={entries}
-          columns={columns}
-          rowKey="path"
-          loading={loading}
-          pagination={false}
-          size="small"
-          scroll={{ y: 400 }}
-        />
-      )}
-    </Modal>
+      {modalContextHolder}
+      <Modal
+        title={t('path.title')}
+        open={open}
+        onCancel={onClose}
+        footer={null}
+        width={800}
+      >
+        {entries.length === 0 && !loading ? (
+          <Empty description={t('path.emptyPath')} />
+        ) : (
+          <Table
+            dataSource={entries}
+            columns={columns}
+            rowKey={(r: any) => `${r.path}|${r.sdkType}`}
+            loading={loading}
+            pagination={false}
+            size="small"
+            scroll={{ y: 400 }}
+          />
+        )}
+      </Modal>
     </>
   )
 }
