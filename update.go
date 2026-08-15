@@ -91,12 +91,19 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	// by stripping the trailing "/latest" so the existing about.json updateUrl
 	// (ending in /latest) keeps working without a config change.
 	listURL := strings.TrimSuffix(a.appInfo.UpdateURL, "/latest")
+	mirroredURL := a.applyGithubMirror(listURL)
+	token := sdk.DecodeGithubToken(a.settings)
+	useToken := token != "" && mirroredURL == listURL
+	listURL = mirroredURL
 	req, err := http.NewRequest(http.MethodGet, listURL, nil)
 	if err != nil {
 		return UpdateInfo{}, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "SDKVersionControl")
+	if useToken {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	q := req.URL.Query()
 	q.Set("per_page", "30")
 	req.URL.RawQuery = q.Encode()
