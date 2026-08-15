@@ -104,6 +104,8 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
         return t('progress.downloading')
       case 'extracting':
         return t('progress.extracting')
+      case 'verifying':
+        return t('progress.verifying')
       case 'configuring_path':
         return t('progress.configuring_path')
       case 'done':
@@ -449,15 +451,23 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
       cancelText: t('app.cancel'),
       maskClosable: false,
       onOk: async () => {
-        ref.update({ cancelButtonProps: { disabled: true }, okButtonProps: { loading: true } })
+        ref.update({
+          cancelButtonProps: { disabled: true },
+          okButtonProps: { loading: true },
+        })
         try {
           await ImportPathSdk(status.sdkType)
-          msgApi.success(t('sidebar.importSuccess', { sdk: status.displayName }))
+          msgApi.success(
+            t('sidebar.importSuccess', { sdk: status.displayName }),
+          )
           onRefresh()
           fetchPackageManagers()
         } catch (e: any) {
           msgApi.error(t('sidebar.importFail', { error: e?.message || e }))
-          ref.update({ cancelButtonProps: { disabled: false }, okButtonProps: { loading: false } })
+          ref.update({
+            cancelButtonProps: { disabled: false },
+            okButtonProps: { loading: false },
+          })
           throw e
         }
       },
@@ -799,12 +809,14 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
               menu={{
                 items: [
                   ...(status && !status.configured && status.pathConfigured
-                    ? [{
-                        key: 'path',
-                        icon: <ImportOutlined />,
-                        label: t('detail.importPath'),
-                        onClick: handleImportPath,
-                      }]
+                    ? [
+                        {
+                          key: 'path',
+                          icon: <ImportOutlined />,
+                          label: t('detail.importPath'),
+                          onClick: handleImportPath,
+                        },
+                      ]
                     : []),
                   {
                     key: 'file',

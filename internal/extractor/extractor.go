@@ -181,6 +181,12 @@ func (e *SevenZipExtractor) Extract(archivePath, destDir string) error {
 
 // extractTar generic tar extractor
 func extractTar(tr *tar.Reader, destDir string) error {
+	type pendingLink struct {
+		name     string
+		linkname string
+	}
+	var pending []pendingLink
+
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -229,20 +235,30 @@ func extractTar(tr *tar.Reader, destDir string) error {
 				return fmt.Errorf("failed to create symlink: %w", err)
 			}
 		case tar.TypeLink:
-			// Hard links reference another entry already in the archive.
-			// Linkname is relative to the archive root, so resolve it
-			// against destDir and validate it stays within destDir.
+			// Validate path escape immediately for security, but defer the
+			// actual os.Link call: the target file may not be extracted yet
+			// (forward reference). Retry all pending hardlinks after the
+			// main loop completes.
 			linkTarget := filepath.Join(destDir, header.Linkname)
 			if !strings.HasPrefix(filepath.Clean(linkTarget), filepath.Clean(destDir)+string(os.PathSeparator)) && filepath.Clean(linkTarget) != filepath.Clean(destDir) {
 				return fmt.Errorf("invalid hardlink: %s -> %s", header.Name, header.Linkname)
 			}
-			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-				return err
-			}
-			os.Remove(path)
-			if err := os.Link(linkTarget, path); err != nil {
-				return fmt.Errorf("failed to create hardlink %s -> %s: %w", header.Name, header.Linkname, err)
-			}
+			pending = append(pending, pendingLink{name: header.Name, linkname: header.Linkname})
+		}
+	}
+
+	// Second pass: create hardlinks now that all regular files are extracted.
+	// A missing target (e.g., file in a sibling component not shipped in this
+	// tarball) is a non-fatal warning — the rest of the archive is still valid.
+	for _, pl := range pending {
+		path := filepath.Join(destDir, pl.name)
+		linkTarget := filepath.Join(destDir, pl.linkname)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
+		os.Remove(path)
+		if err := os.Link(linkTarget, path); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: skipping hardlink %s -> %s: %v\n", pl.name, pl.linkname, err)
 		}
 	}
 	return nil

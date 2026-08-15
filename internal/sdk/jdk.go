@@ -170,7 +170,7 @@ func (f *JdkFetcher) GetDownloadURL(version string) (string, string, error) {
 	}
 
 	for _, asset := range assets {
-		if strings.Contains(asset.Version.Semver, version) || asset.Version.Semver == version {
+		if asset.Version.Semver == version {
 			return asset.Binary.Package.Link, asset.Binary.Package.Name, nil
 		}
 	}
