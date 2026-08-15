@@ -227,7 +227,7 @@ type InstallProgress struct {
 
 // PackageManagerInfo describes a package manager
 type PackageManagerInfo struct {
-	Name      string  `json:"name"`      // npm, yarn, pnpm, composer
+	Name      string  `json:"name"`      // npm, yarn, pnpm, composer, pip
 	Version   string  `json:"version"`   // current version
 	Installed bool    `json:"installed"` // whether installed
 	ParentSdk SdkType `json:"parentSdk"` // parent SDK type

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"sdk_version_control/internal/sdk"
@@ -25,6 +26,15 @@ func (a *App) GetPackageManagers(sdkType string) []sdk.PackageManagerInfo {
 	case sdk.PHP:
 		return []sdk.PackageManagerInfo{
 			a.detectPM("composer", "composer", []string{"--version"}, sdk.PHP),
+		}
+	case sdk.Python:
+		if runtime.GOOS == "windows" {
+			return []sdk.PackageManagerInfo{
+				a.detectPM("pip", "python", []string{"-m", "pip", "--version"}, sdk.Python),
+			}
+		}
+		return []sdk.PackageManagerInfo{
+			a.detectPM("pip", "pip", []string{"--version"}, sdk.Python),
 		}
 	default:
 		return nil
@@ -50,7 +60,21 @@ func (a *App) detectPM(name, cmd string, args []string, parent sdk.SdkType) sdk.
 			ver = parts[2]
 		}
 	}
+	if name == "pip" {
+		ver = parsePipVersion(string(out))
+	}
 	return sdk.PackageManagerInfo{Name: name, Version: ver, Installed: true, ParentSdk: parent}
+}
+
+func parsePipVersion(raw string) string {
+	ver := strings.TrimSpace(raw)
+	if strings.HasPrefix(ver, "pip ") {
+		parts := strings.Fields(ver)
+		if len(parts) >= 2 {
+			return parts[1]
+		}
+	}
+	return ver
 }
 
 func (a *App) InstallPackageManager(name string) error {
@@ -75,6 +99,11 @@ func (a *App) InstallPackageManager(name string) error {
 			return fmt.Errorf("please install PHP first")
 		}
 		return fmt.Errorf("Composer requires manual download: https://getcomposer.org/download/")
+	case "pip":
+		if a.cfg.GetActiveVersion("python") == "" {
+			return fmt.Errorf("please install Python first")
+		}
+		return fmt.Errorf("pip is installed with Python, please install Python first")
 	default:
 		return fmt.Errorf("unknown package manager: %s", name)
 	}
@@ -90,6 +119,8 @@ func (a *App) UpdatePackageManager(name string) error {
 		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "pnpm@latest")
 	case "composer":
 		return a.runScopedCommand("composer", sdk.PHP, "self-update")
+	case "pip":
+		return a.runScopedCommand("python", sdk.Python, "-m", "pip", "install", "--upgrade", "pip")
 	default:
 		return fmt.Errorf("unknown package manager: %s", name)
 	}
