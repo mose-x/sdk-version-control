@@ -235,11 +235,13 @@ func (m *WindowsPathManager) cleanExternalFromKey(sdkType string, version string
 				continue
 			}
 		}
-		detected := detectSdkTypeByBin(p)
-		if detected == "" {
-			detected = detectSdkTypeFromPath(p)
+		detected := detectSdkTypesByBin(p)
+		if len(detected) == 0 {
+			if t := detectSdkTypeFromPath(p); t != "" {
+				detected = []string{t}
+			}
 		}
-		if detected == sdkType && version != "" && strings.Contains(p, version) {
+		if sliceContains(detected, sdkType) && version != "" && strings.Contains(p, version) {
 			removed = true
 			continue
 		}
@@ -298,17 +300,31 @@ func (m *WindowsPathManager) readPathFromKey(root registry.Key, keyPath string) 
 			continue
 		}
 		isManaged := strings.Contains(p, ".svc")
-		sdkType := ""
 		if isManaged {
-			sdkType = detectSdkTypeFromPath(p)
+			sdkType := detectSdkTypeFromPath(p)
+			entries = append(entries, PathEntry{
+				Path:      p,
+				IsManaged: isManaged,
+				SdkType:   sdkType,
+			})
 		} else {
-			sdkType = detectSdkTypeByBin(p)
+			sdkTypes := detectSdkTypesByBin(p)
+			if len(sdkTypes) == 0 {
+				entries = append(entries, PathEntry{
+					Path:      p,
+					IsManaged: isManaged,
+					SdkType:   "",
+				})
+			} else {
+				for _, st := range sdkTypes {
+					entries = append(entries, PathEntry{
+						Path:      p,
+						IsManaged: isManaged,
+						SdkType:   st,
+					})
+				}
+			}
 		}
-		entries = append(entries, PathEntry{
-			Path:      p,
-			IsManaged: isManaged,
-			SdkType:   sdkType,
-		})
 	}
 	return entries
 }
@@ -332,11 +348,13 @@ func (m *WindowsPathManager) DetectSystemConflicts(sdkType string, envKeys []str
 					conflicts = append(conflicts, fmt.Sprintf("PATH: %s", p))
 					continue
 				}
-				detected := detectSdkTypeByBin(p)
-				if detected == "" {
-					detected = detectSdkTypeFromPath(p)
+				detected := detectSdkTypesByBin(p)
+				if len(detected) == 0 {
+					if t := detectSdkTypeFromPath(p); t != "" {
+						detected = []string{t}
+					}
 				}
-				if detected == sdkType {
+				if sliceContains(detected, sdkType) {
 					conflicts = append(conflicts, fmt.Sprintf("PATH: %s", p))
 				}
 			}
