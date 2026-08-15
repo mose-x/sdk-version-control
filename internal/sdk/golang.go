@@ -208,6 +208,10 @@ func (f *GolangFetcher) FetchChecksum(version string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("checksum fetch failed: HTTP %d", resp.StatusCode)
+	}
+
 	var raw []goVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return "", err

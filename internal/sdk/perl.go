@@ -294,6 +294,10 @@ func (f *PerlFetcher) FetchChecksum(version string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("checksum fetch failed: HTTP %d", resp.StatusCode)
+	}
+
 	var releases []strawberryRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return "", err

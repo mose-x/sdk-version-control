@@ -96,6 +96,24 @@ func isInShimsDir(binaryPath, shimsDir string) bool {
 	return isShimsDir(dir, shimsDir)
 }
 
+// SvcShimsDir returns the absolute path to the SVC shims directory (~/.svc/shims).
+// Exported for use by package main (resolveCommand) to exclude shims from PATH scans.
+func SvcShimsDir() string {
+	return svcShimsDir()
+}
+
+// IsShimsDirEntry reports whether a PATH entry equals the SVC shims directory.
+// Exported for use by package main (resolveCommand).
+func IsShimsDirEntry(dir, shimsDir string) bool {
+	return isShimsDir(dir, shimsDir)
+}
+
+// IsShimsPath reports whether a resolved binary path lives inside the SVC
+// shims directory. Exported for use by package main (resolveCommand).
+func IsShimsPath(binaryPath, shimsDir string) bool {
+	return isInShimsDir(binaryPath, shimsDir)
+}
+
 // SdkType defines the supported SDK types
 type SdkType string
 

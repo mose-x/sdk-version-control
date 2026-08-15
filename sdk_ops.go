@@ -219,6 +219,8 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	logger.Info("Download URL: %s", downloadURL)
 	a.emitProgress(sdkType, version, "downloading", 0, "Downloading...", 0, 0, 0, downloadURL)
 
+	defer os.Remove(tmpFile)
+
 	installCtx, cancel := context.WithCancel(a.ctx)
 	a.cancelMu.Lock()
 	if old, ok := a.cancelFuncs[sdkTypeStr]; ok {
@@ -250,7 +252,6 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		a.emitProgress(sdkType, version, "error", 0, fmt.Sprintf("Download failed: %v", err), 0, 0, 0, downloadURL)
 		return fmt.Errorf("download failed: %w", err)
 	}
-	defer os.Remove(tmpFile)
 
 	// Verify download integrity via SHA256 if the fetcher supports it (M1).
 	if cf, ok := f.(sdk.ChecksumFetcher); ok {
