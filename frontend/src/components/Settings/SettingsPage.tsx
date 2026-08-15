@@ -178,32 +178,48 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   }, [updateInfo])
 
   useEffect(() => {
-    GetSettings().then((s) => setSettings(s))
-    GetAppInfo().then((info) => {
-      setAppInfo(info)
-      setOriginalVersion(info.version)
-    })
-    GetDefaultEndpoints().then((de) => setDefaultEndpoints(de || []))
-    GetDefaultInstallPath().then((p) => {
-      setDefaultInstallPath(p)
-      setInstallPathDraft(p)
-    })
-    GetInstallPath().then((p) => {
-      setInstallPath(p)
-      setInstallPathDraft(p)
-    })
-    GetEndpoints().then((ce) => {
-      const endpoints = ce || {}
-      setCustomEndpoints(endpoints)
-      setDraftEndpoints({ ...endpoints })
-    })
+    GetSettings()
+      .then((s) => setSettings(s))
+      .catch(() => {})
+    GetAppInfo()
+      .then((info) => {
+        setAppInfo(info)
+        setOriginalVersion(info.version)
+      })
+      .catch(() => {})
+    GetDefaultEndpoints()
+      .then((de) => setDefaultEndpoints(de || []))
+      .catch(() => {})
+    GetDefaultInstallPath()
+      .then((p) => {
+        setDefaultInstallPath(p)
+        setInstallPathDraft(p)
+      })
+      .catch(() => {})
+    GetInstallPath()
+      .then((p) => {
+        setInstallPath(p)
+        setInstallPathDraft(p)
+      })
+      .catch(() => {})
+    GetEndpoints()
+      .then((ce) => {
+        const endpoints = ce || {}
+        setCustomEndpoints(endpoints)
+        setDraftEndpoints({ ...endpoints })
+      })
+      .catch(() => {})
     loadTmpCacheSize()
     loadLogFiles()
-    GetLogDir().then((d: string) => setLogDir(d || ''))
+    GetLogDir()
+      .then((d: string) => setLogDir(d || ''))
+      .catch(() => {})
   }, [])
 
   const loadTmpCacheSize = () => {
-    GetTmpCacheSize().then((size) => setTmpCacheSize(size || 0))
+    GetTmpCacheSize()
+      .then((size) => setTmpCacheSize(size || 0))
+      .catch(() => {})
   }
 
   const loadLogFiles = () => {
@@ -212,6 +228,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
       .then((files: any[]) => {
         setLogFiles(files || [])
       })
+      .catch(() => {})
       .finally(() => {
         setLoadingLogs(false)
       })
@@ -324,20 +341,28 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   const handleThemeChange = (theme: string) => {
     const newSettings = { ...settings, theme } as any
     setSettings(newSettings)
-    SaveSettings(newSettings).then(() => {
-      onThemeChange(theme)
-      msgApi.success(t('settings.settingsSaved'))
-    })
+    SaveSettings(newSettings)
+      .then(() => {
+        onThemeChange(theme)
+        msgApi.success(t('settings.settingsSaved'))
+      })
+      .catch((e: any) =>
+        msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+      )
   }
 
   const handleLanguageChange = (lang: string) => {
     const newSettings = { ...settings, language: lang } as any
     setSettings(newSettings)
-    SaveSettings(newSettings).then(() => {
-      i18n.changeLanguage(lang)
-      onLanguageChange(lang)
-      msgApi.success(t('settings.settingsSaved'))
-    })
+    SaveSettings(newSettings)
+      .then(() => {
+        i18n.changeLanguage(lang)
+        onLanguageChange(lang)
+        msgApi.success(t('settings.settingsSaved'))
+      })
+      .catch((e: any) =>
+        msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+      )
   }
 
   const handleProxyToggle = (enabled: boolean) => {
@@ -346,9 +371,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
       proxy: { ...settings.proxy, enabled },
     } as any
     setSettings(newSettings)
-    SaveSettings(newSettings).then(() => {
-      msgApi.success(t('settings.settingsSaved'))
-    })
+    SaveSettings(newSettings)
+      .then(() => {
+        msgApi.success(t('settings.settingsSaved'))
+      })
+      .catch((e: any) =>
+        msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+      )
   }
 
   const handleProxyModeChange = (mode: string) => {
@@ -357,9 +386,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
       proxy: { ...settings.proxy, mode },
     } as any
     setSettings(newSettings)
-    SaveSettings(newSettings).then(() => {
-      msgApi.success(t('settings.settingsSaved'))
-    })
+    SaveSettings(newSettings)
+      .then(() => {
+        msgApi.success(t('settings.settingsSaved'))
+      })
+      .catch((e: any) =>
+        msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+      )
   }
 
   const handleProxyUrlChange = (url: string) => {
@@ -368,9 +401,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
       proxy: { ...settings.proxy, url },
     } as any
     setSettings(newSettings)
-    SaveSettings(newSettings).then(() => {
-      msgApi.success(t('settings.settingsSaved'))
-    })
+    SaveSettings(newSettings)
+      .then(() => {
+        msgApi.success(t('settings.settingsSaved'))
+      })
+      .catch((e: any) =>
+        msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+      )
   }
 
   const handleProxyProtocolChange = (protocol: string) => {
@@ -379,17 +416,25 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
       proxy: { ...settings.proxy, protocol },
     } as any
     setSettings(newSettings)
-    SaveSettings(newSettings).then(() => {
-      msgApi.success(t('settings.settingsSaved'))
-    })
+    SaveSettings(newSettings)
+      .then(() => {
+        msgApi.success(t('settings.settingsSaved'))
+      })
+      .catch((e: any) =>
+        msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+      )
   }
 
   const handleGithubMirrorChange = (url: string) => {
     const newSettings = { ...settings, githubMirror: url } as any
     setSettings(newSettings)
-    SaveSettings(newSettings).then(() => {
-      msgApi.success(t('settings.settingsSaved'))
-    })
+    SaveSettings(newSettings)
+      .then(() => {
+        msgApi.success(t('settings.settingsSaved'))
+      })
+      .catch((e: any) =>
+        msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+      )
   }
 
   // GitHub Token: stored base64 on the backend, returned masked (first6***last6)
@@ -450,9 +495,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   const handleDownloadThreadsChange = (threads: number) => {
     const newSettings = { ...settings, downloadThreads: threads } as any
     setSettings(newSettings)
-    SaveSettings(newSettings).then(() => {
-      msgApi.success(t('settings.settingsSaved'))
-    })
+    SaveSettings(newSettings)
+      .then(() => {
+        msgApi.success(t('settings.settingsSaved'))
+      })
+      .catch((e: any) =>
+        msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+      )
   }
 
   const handleCheckUpdate = async () => {
@@ -1403,7 +1452,12 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
                     type="primary"
                     onClick={async () => {
                       if (!updateInfo?.downloadUrl) {
-                        BrowserOpenURL(updateInfo?.downloadUrl || '')
+                        const releasesUrl = appInfo?.repoUrl
+                          ? `${appInfo.repoUrl}/releases`
+                          : ''
+                        if (releasesUrl) {
+                          BrowserOpenURL(releasesUrl)
+                        }
                         setUpdateModalOpen(false)
                         return
                       }
@@ -1431,8 +1485,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
         }
       >
         <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>
-          {t('about.currentVersion', { version: originalVersion || appInfo?.version || '' })} → v
-          {updateInfo?.latestVersion}
+          {t('about.currentVersion', {
+            version: originalVersion || appInfo?.version || '',
+          })}{' '}
+          → v{updateInfo?.latestVersion}
         </div>
 
         {downloading && downloadProgress && (

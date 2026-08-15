@@ -147,6 +147,7 @@
     "goVersion": "Go 版本",
     "upToDate": "当前已是最新版本",
     "settingsSaved": "设置已保存",
+    "saveFail": "保存失败: {{error}}",
     "githubMirror": "GitHub 镜像",
     "githubMirrorDesc": "加速 GitHub 下载，填入镜像地址如 https://ghfast.top，留空使用原始链接",
     "githubToken": "GitHub Token",
