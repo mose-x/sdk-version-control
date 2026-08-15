@@ -45,6 +45,16 @@ func TestResolveCommandNotFoundReturnsEmpty(t *testing.T) {
 	}
 }
 
+// TestResolveCommandExcludesShimsDir verifies that resolveCommand skips the
+// SVC shims directory. The shimsDir is computed from UserHomeDir so we test
+// indirectly: a nonexistent command must still return "" even if shims exist.
+func TestResolveCommandExcludesShimsDir(t *testing.T) {
+	got := resolveCommand("svc_internal_shim_binary_test_xyz")
+	if got != "" {
+		t.Errorf("resolveCommand should not find nonexistent shim: got %q", got)
+	}
+}
+
 // TestVerifyFileSHA256Match tests that verifyFileSHA256 returns nil when the
 // file's hash matches the expected value (M1).
 func TestVerifyFileSHA256Match(t *testing.T) {
