@@ -13,7 +13,33 @@ import (
 	"sdk_version_control/internal/sdk"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"strings"
 )
+
+// verifyFileSHA256 computes the SHA256 hash of a file and compares it to the
+// expected hex-encoded checksum. Returns nil if they match, an error otherwise.
+func verifyFileSHA256(filePath, expectedSHA256 string) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file for checksum: %w", err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("failed to compute checksum: %w", err)
+	}
+
+	actual := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(actual, expectedSHA256) {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedSHA256, actual)
+	}
+	return nil
+}
 
 func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
 	if a.registry == nil {
@@ -226,21 +252,43 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	}
 	defer os.Remove(tmpFile)
 
+	// Verify download integrity via SHA256 if the fetcher supports it (M1).
+	if cf, ok := f.(sdk.ChecksumFetcher); ok {
+		expected, err := cf.FetchChecksum(version)
+		if err != nil {
+			logger.Warn("Failed to fetch checksum for %s %s: %v (skipping verification)", sdkTypeStr, version, err)
+		} else if expected != "" {
+			a.emitProgress(sdkType, version, "verifying", 0, "Verifying checksum...", 0, 0, 0, downloadURL)
+			if err := verifyFileSHA256(tmpFile, expected); err != nil {
+				a.emitProgress(sdkType, version, "error", 0, fmt.Sprintf("Checksum verification failed: %v", err), 0, 0, 0, downloadURL)
+				return fmt.Errorf("checksum verification failed: %w", err)
+			}
+			logger.Info("Checksum verified for %s %s", sdkTypeStr, version)
+		} else {
+			logger.Warn("No checksum available for %s %s, skipping verification", sdkTypeStr, version)
+		}
+	}
+
 	logger.Info("Download completed, extracting...")
 	a.emitProgress(sdkType, version, "extracting", 0, "Extracting...", 0, 0, 0, downloadURL)
 	versionDir := a.cfg.SdkVersionDir(string(sdkType), version)
-	if err := os.RemoveAll(versionDir); err != nil {
-		return fmt.Errorf("failed to clean old version directory: %w", err)
-	}
-	if err := os.MkdirAll(versionDir, 0755); err != nil {
+
+	// Extract to a temporary sibling directory first, then atomically replace
+	// the old version on success. This preserves the previously-working version
+	// if extraction fails (M4: data loss on extraction failure).
+	tmpVersionDir := versionDir + ".new"
+	os.RemoveAll(tmpVersionDir)
+	if err := os.MkdirAll(tmpVersionDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	ext, err := extractor.NewExtractor(fileName)
 	if err != nil {
+		os.RemoveAll(tmpVersionDir)
 		return fmt.Errorf("unsupported archive format: %w", err)
 	}
-	if err := ext.Extract(tmpFile, versionDir); err != nil {
+	if err := ext.Extract(tmpFile, tmpVersionDir); err != nil {
+		os.RemoveAll(tmpVersionDir)
 		return fmt.Errorf("extraction failed: %w", err)
 	}
 	// Strip the archive's top-level directory only when the fetcher opts in.
@@ -249,7 +297,8 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	// "perl/bin"+"c/bin") set StripArchiveTopDir()=false so the top dir is
 	// preserved and their bin paths resolve correctly.
 	if f.StripArchiveTopDir() {
-		if err := extractor.StripTopDir(versionDir); err != nil {
+		if err := extractor.StripTopDir(tmpVersionDir); err != nil {
+			os.RemoveAll(tmpVersionDir)
 			return fmt.Errorf("extraction failed: %w", err)
 		}
 	}
@@ -257,9 +306,19 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	// Rust-specific: merge rust-std component's lib/rustlib into cargo/ and
 	// rustc/ so that sysroot resolution finds the std library.
 	if rustFetcher, ok := f.(*sdk.RustFetcher); ok {
-		if err := rustFetcher.MergeComponents(versionDir); err != nil {
+		if err := rustFetcher.MergeComponents(tmpVersionDir); err != nil {
+			os.RemoveAll(tmpVersionDir)
 			return fmt.Errorf("failed to merge Rust components: %w", err)
 		}
+	}
+
+	// Atomically replace the old version directory.
+	if err := os.RemoveAll(versionDir); err != nil {
+		os.RemoveAll(tmpVersionDir)
+		return fmt.Errorf("failed to clean old version directory: %w", err)
+	}
+	if err := os.Rename(tmpVersionDir, versionDir); err != nil {
+		return fmt.Errorf("failed to move extracted files into place: %w", err)
 	}
 
 	logger.Info("Extraction completed, configuring environment...")

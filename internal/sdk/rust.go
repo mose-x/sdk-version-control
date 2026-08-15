@@ -243,3 +243,29 @@ func (f *RustFetcher) GetLocalStatus() (*SdkStatus, error) {
 		NeedsSwitch: needsSwitch,
 	}, nil
 }
+
+// FetchChecksum returns the SHA256 of the Rust tarball for the given version.
+// Rust publishes .sha256 sidecar files alongside each download.
+func (f *RustFetcher) FetchChecksum(version string) (string, error) {
+	url, _, err := f.GetDownloadURL(version)
+	if err != nil {
+		return "", err
+	}
+	sumURL := url + ".sha256"
+	resp, err := f.httpClient.Get(sumURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	// The .sha256 file format: "<hash>  <filename>" (or just the hash)
+	fields := strings.Fields(string(body))
+	if len(fields) > 0 {
+		return fields[0], nil
+	}
+	return "", nil
+}

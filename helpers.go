@@ -16,6 +16,9 @@ import (
 
 func extractVersionFromOutput(cmd string, args []string) string {
 	fullPath := resolveCommand(cmd)
+	if fullPath == "" {
+		return ""
+	}
 	c := createCmd(fullPath, args...)
 	sysPath := sdk.GetSystemPath()
 	if sysPath != "" {
@@ -135,12 +138,12 @@ func isDir(p string) bool {
 	return err == nil && info.IsDir()
 }
 
+// resolveCommand resolves a command name to its full path using the system PATH.
+// Returns "" when the command is not found (matching exec.LookPath semantics).
+// Callers must check for empty string before using the result.
 func resolveCommand(cmd string) string {
 	sysPath := sdk.GetSystemPath()
-	sep := ";"
-	if runtime.GOOS != "windows" {
-		sep = ":"
-	}
+	sep := string(os.PathListSeparator)
 	exts := []string{""}
 	if runtime.GOOS == "windows" {
 		exts = []string{"", ".exe", ".cmd", ".bat"}
@@ -160,5 +163,5 @@ func resolveCommand(cmd string) string {
 	if p, err := exec.LookPath(cmd); err == nil {
 		return p
 	}
-	return cmd
+	return ""
 }

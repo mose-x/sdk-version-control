@@ -280,3 +280,29 @@ func (f *PerlFetcher) GetLocalStatus() (*SdkStatus, error) {
 		NeedsSwitch: needsSwitch,
 	}, nil
 }
+
+// FetchChecksum returns the SHA256 of the Perl archive for the given version.
+// Windows: strawberryperl.com/releases.json includes sha256 per release.
+// Unix: skaji/relocatable-perl GitHub assets don't publish checksums — skip.
+func (f *PerlFetcher) FetchChecksum(version string) (string, error) {
+	if runtime.GOOS != "windows" {
+		return "", nil
+	}
+	resp, err := f.httpClient.Get(f.useEndpoint("https://strawberryperl.com/releases.json"))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var releases []strawberryRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return "", err
+	}
+
+	for _, r := range releases {
+		if r.Version == version {
+			return r.Edition.Portable.Sha256, nil
+		}
+	}
+	return "", nil
+}

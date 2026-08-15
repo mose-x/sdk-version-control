@@ -76,9 +76,10 @@ type adoptiumRelease struct {
 	} `json:"version"`
 	Binary struct {
 		Package struct {
-			Link string `json:"link"`
-			Name string `json:"name"`
-			Size int64  `json:"size"`
+			Link     string `json:"link"`
+			Name     string `json:"name"`
+			Size     int64  `json:"size"`
+			Checksum string `json:"checksum"`
 		} `json:"package"`
 	} `json:"binary"`
 	ReleaseName string `json:"release_name"`
@@ -229,4 +230,34 @@ func jdkArch(goarch string) string {
 	default:
 		return "x64"
 	}
+}
+
+// FetchChecksum returns the SHA256 of the JDK archive for the given version.
+// The Adoptium API includes a checksum field in the binary package response.
+func (f *JdkFetcher) FetchChecksum(version string) (string, error) {
+	os := f.osParam()
+	if os == "" {
+		return "", nil
+	}
+	parts := strings.Split(version, ".")
+	major, _ := strconv.Atoi(parts[0])
+
+	url := f.useEndpoint(fmt.Sprintf("https://api.adoptium.net/v3/assets/latest/%d/hotspot?architecture=%s&os=%s&image_type=jdk", major, jdkArch(runtime.GOARCH), os))
+	resp, err := f.httpClient.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var assets []adoptiumRelease
+	if err := json.NewDecoder(resp.Body).Decode(&assets); err != nil {
+		return "", err
+	}
+
+	for _, asset := range assets {
+		if asset.Version.Semver == version {
+			return asset.Binary.Package.Checksum, nil
+		}
+	}
+	return "", nil
 }

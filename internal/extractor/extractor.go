@@ -228,6 +228,21 @@ func extractTar(tr *tar.Reader, destDir string) error {
 			if err := os.Symlink(header.Linkname, path); err != nil {
 				return fmt.Errorf("failed to create symlink: %w", err)
 			}
+		case tar.TypeLink:
+			// Hard links reference another entry already in the archive.
+			// Linkname is relative to the archive root, so resolve it
+			// against destDir and validate it stays within destDir.
+			linkTarget := filepath.Join(destDir, header.Linkname)
+			if !strings.HasPrefix(filepath.Clean(linkTarget), filepath.Clean(destDir)+string(os.PathSeparator)) && filepath.Clean(linkTarget) != filepath.Clean(destDir) {
+				return fmt.Errorf("invalid hardlink: %s -> %s", header.Name, header.Linkname)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				return err
+			}
+			os.Remove(path)
+			if err := os.Link(linkTarget, path); err != nil {
+				return fmt.Errorf("failed to create hardlink %s -> %s: %w", header.Name, header.Linkname, err)
+			}
 		}
 	}
 	return nil

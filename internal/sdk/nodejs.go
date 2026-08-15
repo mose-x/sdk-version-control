@@ -3,6 +3,7 @@ package sdk
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime"
 	"sort"
@@ -216,4 +217,34 @@ func CompareVersions(a, b string) int {
 		}
 	}
 	return 0
+}
+
+// FetchChecksum returns the SHA256 of the Node.js archive for the given version.
+// Node.js publishes SHASUMS256.txt alongside each release in the dist directory.
+func (f *NodejsFetcher) FetchChecksum(version string) (string, error) {
+	sumURL := f.useEndpoint(fmt.Sprintf("https://nodejs.org/dist/v%s/SHASUMS256.txt", version))
+	resp, err := f.httpClient.Get(sumURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	_, fileName := f.buildDownloadURL(version)
+	if fileName == "" {
+		return "", nil
+	}
+
+	// SHASUMS256.txt format: "<hash>  <filename>"
+	for _, line := range strings.Split(string(body), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == fileName {
+			return fields[0], nil
+		}
+	}
+	return "", nil
 }
