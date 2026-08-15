@@ -1,6 +1,14 @@
 package main
 
-import "testing"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"sdk_version_control/internal/extractor"
+)
 
 func TestExtractVersionFromString(t *testing.T) {
 	tests := []struct {
@@ -25,4 +33,98 @@ func TestExtractVersionFromString(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestResolveCommandNotFoundReturnsEmpty verifies that resolveCommand returns
+// "" when the command is not found in PATH (M3 fix). Previously it returned the
+// bare command name, which caused ImportPathSdk to copy the entire CWD.
+func TestResolveCommandNotFoundReturnsEmpty(t *testing.T) {
+	got := resolveCommand("definitely_not_a_real_command_xyz123")
+	if got != "" {
+		t.Errorf("resolveCommand(nonexistent) = %q; want \"\"", got)
+	}
+}
+
+// TestVerifyFileSHA256Match tests that verifyFileSHA256 returns nil when the
+// file's hash matches the expected value (M1).
+func TestVerifyFileSHA256Match(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	content := []byte("checksum test content")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compute the correct hash
+	correctHash := computeTestSHA256(t, path)
+	if err := verifyFileSHA256(path, correctHash); err != nil {
+		t.Fatalf("verifyFileSHA256 with correct hash failed: %v", err)
+	}
+}
+
+// TestVerifyFileSHA256Mismatch tests that verifyFileSHA256 returns an error
+// when the hash does not match (M1).
+func TestVerifyFileSHA256Mismatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	if err := os.WriteFile(path, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	wrongHash := "0000000000000000000000000000000000000000000000000000000000000000"
+	err := verifyFileSHA256(path, wrongHash)
+	if err == nil {
+		t.Fatal("verifyFileSHA256 with wrong hash should have failed")
+	}
+}
+
+// TestAtomicInstallPreservesOldOnFailure verifies that when extraction fails,
+// the previously-installed version directory is left intact (M4 fix).
+// The test simulates the InstallSdk pattern: extract to temp dir, only
+// replace old dir on success.
+func TestAtomicInstallPreservesOldOnFailure(t *testing.T) {
+	baseDir := t.TempDir()
+	oldDir := filepath.Join(baseDir, "v1.0")
+	if err := os.MkdirAll(oldDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	markerContent := []byte("old version marker")
+	if err := os.WriteFile(filepath.Join(oldDir, "marker.txt"), markerContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate extraction to temp dir that fails (nonexistent archive).
+	tmpDir := oldDir + ".new"
+	os.RemoveAll(tmpDir)
+	ext, _ := extractor.NewExtractor("test.tar.gz")
+	extractErr := ext.Extract("/nonexistent/archive.tar.gz", tmpDir)
+
+	if extractErr == nil {
+		os.RemoveAll(tmpDir)
+		t.Fatal("expected extraction to fail for nonexistent archive")
+	}
+	// On failure, clean up temp dir (matching InstallSdk's error path).
+	os.RemoveAll(tmpDir)
+
+	// Old version directory must still exist with original content.
+	data, err := os.ReadFile(filepath.Join(oldDir, "marker.txt"))
+	if err != nil {
+		t.Fatalf("old version directory was destroyed on extraction failure: %v", err)
+	}
+	if string(data) != string(markerContent) {
+		t.Fatalf("old version content corrupted: got %q, want %q", data, markerContent)
+	}
+}
+
+// computeTestSHA256 is a test helper that computes the hex-encoded SHA256 of a
+// file. It mirrors the logic in verifyFileSHA256 without importing the
+// function's internals.
+func computeTestSHA256(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
 }

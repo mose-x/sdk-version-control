@@ -30,3 +30,12 @@ type VersionFetcher interface {
 	// But Go, Perl, Android, Dart etc. have GetBinDir that already includes the top-level dir name, so they should not be stripped
 	StripArchiveTopDir() bool
 }
+
+// ChecksumFetcher is an optional interface that fetchers may implement to
+// provide a SHA256 checksum for a given version's download. When implemented,
+// InstallSdk verifies the downloaded archive against this checksum before
+// extraction. Returning ("", nil) means no checksum is available for this
+// version — verification is skipped with a warning, not an error.
+type ChecksumFetcher interface {
+	FetchChecksum(version string) (string, error)
+}

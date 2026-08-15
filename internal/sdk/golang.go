@@ -198,3 +198,33 @@ func (f *GolangFetcher) archParam() string {
 		return "amd64"
 	}
 }
+
+// FetchChecksum returns the SHA256 of the Go archive for the given version.
+// The Go API at go.dev/dl/?mode=json includes SHA256 for every file.
+func (f *GolangFetcher) FetchChecksum(version string) (string, error) {
+	resp, err := f.httpClient.Get(f.useEndpoint("https://go.dev/dl/?mode=json&include=all"))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var raw []goVersionJSON
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return "", err
+	}
+
+	os := f.osParam()
+	arch := f.archParam()
+	goVersion := "go" + version
+
+	for _, v := range raw {
+		if v.Version == goVersion {
+			for _, file := range v.Files {
+				if file.Kind == "archive" && file.OS == os && file.Arch == arch {
+					return file.SHA256, nil
+				}
+			}
+		}
+	}
+	return "", nil
+}
