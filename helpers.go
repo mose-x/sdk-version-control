@@ -43,12 +43,35 @@ func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string
 	cmdName, args := f.VerifyCommand()
 	sdkType := string(f.Type())
 
-	binDir := sdkRoot
-	if d := filepath.Join(sdkRoot, "bin"); isDir(d) {
-		binDir = d
+	// Search each declared binDir for the executable. SDKs like Go
+	// (go/bin), Dart (dart-sdk/bin), Android (cmdline-tools/bin) ship
+	// binaries in wrapper subdirs that a plain sdkRoot/bin/ check misses.
+	var binPath, binDir string
+	for _, bd := range f.GetBinDirs() {
+		dir := sdkRoot
+		if bd != "" {
+			dir = filepath.Join(sdkRoot, bd)
+		}
+		if p := findExecutable(dir, cmdName); p != "" {
+			binPath = p
+			binDir = dir
+			break
+		}
 	}
-
-	binPath := findExecutable(binDir, cmdName)
+	// Fallback: try sdkRoot/bin/ (common layout for stripped SDKs)
+	if binPath == "" {
+		if d := filepath.Join(sdkRoot, "bin"); isDir(d) {
+			if p := findExecutable(d, cmdName); p != "" {
+				binPath = p
+				binDir = d
+			}
+		}
+	}
+	// Final fallback: sdkRoot itself (SDKs with binDir = "")
+	if binPath == "" {
+		binDir = sdkRoot
+		binPath = findExecutable(binDir, cmdName)
+	}
 	if binPath == "" {
 		return "", fmt.Errorf("%s executable not found in directory", cmdName)
 	}

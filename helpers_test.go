@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -164,11 +165,16 @@ func computeTestSHA256(t *testing.T, path string) string {
 func TestCheckCriticalFiles(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create a fake Go SDK structure: go/bin/go, go/bin/gofmt
+	// Create a fake Go SDK structure matching criticalFilesFor output.
+	// On Windows the critical files include .exe suffix.
+	goName, gofmtName := "go", "gofmt"
+	if runtime.GOOS == "windows" {
+		goName, gofmtName = "go.exe", "gofmt.exe"
+	}
 	binDir := filepath.Join(dir, "go", "bin")
 	os.MkdirAll(binDir, 0755)
-	os.WriteFile(filepath.Join(binDir, "go"), []byte("fake"), 0755)
-	os.WriteFile(filepath.Join(binDir, "gofmt"), []byte("fake"), 0755)
+	os.WriteFile(filepath.Join(binDir, goName), []byte("fake"), 0755)
+	os.WriteFile(filepath.Join(binDir, gofmtName), []byte("fake"), 0755)
 
 	// All critical files present → no error
 	if err := checkCriticalFiles(dir, sdk.Golang); err != nil {
@@ -176,7 +182,7 @@ func TestCheckCriticalFiles(t *testing.T) {
 	}
 
 	// Remove gofmt → should error mentioning the missing file
-	os.Remove(filepath.Join(binDir, "gofmt"))
+	os.Remove(filepath.Join(binDir, gofmtName))
 	err := checkCriticalFiles(dir, sdk.Golang)
 	if err == nil {
 		t.Fatal("checkCriticalFiles should fail when gofmt is missing")

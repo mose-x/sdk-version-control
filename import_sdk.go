@@ -15,9 +15,11 @@ import (
 )
 
 // copyToTargetAtomically copies sourceDir to a temp sibling of targetDir,
-// aligns the import layout, then atomically replaces targetDir via Rename.
-// On failure (copy or align error), the old targetDir is preserved.
-func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string) error {
+// aligns the import layout, runs the verify callback on the temp dir, then
+// atomically replaces targetDir via Rename. On failure (copy, align, or verify),
+// the old targetDir is preserved because the swap hasn't happened yet.
+// The verify callback may be nil to skip verification.
+func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string, verify func(string) error) error {
 	tmpDir := targetDir + ".new"
 	os.RemoveAll(tmpDir)
 	if err := pathmgr.CopyDir(sourceDir, tmpDir); err != nil {
@@ -26,6 +28,14 @@ func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string) error
 	}
 	if err := pathmgr.AlignImportLayout(tmpDir, binDirs); err != nil {
 		logger.Warn("Failed to align import layout: %v", err)
+	}
+	// Layer 3: verify the copied content BEFORE swapping — if verification
+	// fails, the old targetDir is still intact (not yet RemoveAll'd).
+	if verify != nil {
+		if err := verify(tmpDir); err != nil {
+			os.RemoveAll(tmpDir)
+			return err
+		}
 	}
 	if err := os.RemoveAll(targetDir); err != nil {
 		os.RemoveAll(tmpDir)
@@ -44,6 +54,9 @@ func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string) error
 func criticalFilesFor(t sdk.SdkType) []string {
 	switch t {
 	case sdk.Golang:
+		if runtime.GOOS == "windows" {
+			return []string{"go/bin/go.exe", "go/bin/gofmt.exe"}
+		}
 		return []string{"go/bin/go", "go/bin/gofmt"}
 	case sdk.NodeJS:
 		if runtime.GOOS == "windows" {
@@ -54,6 +67,9 @@ func criticalFilesFor(t sdk.SdkType) []string {
 		if runtime.GOOS == "darwin" {
 			return []string{"Contents/Home/bin/java", "Contents/Home/bin/javac"}
 		}
+		if runtime.GOOS == "windows" {
+			return []string{"bin/java.exe", "bin/javac.exe"}
+		}
 		return []string{"bin/java", "bin/javac"}
 	case sdk.Python:
 		if runtime.GOOS == "windows" {
@@ -61,8 +77,14 @@ func criticalFilesFor(t sdk.SdkType) []string {
 		}
 		return []string{"python/bin/python3"}
 	case sdk.Rust:
+		if runtime.GOOS == "windows" {
+			return []string{"cargo/bin/cargo.exe", "rustc/bin/rustc.exe"}
+		}
 		return []string{"cargo/bin/cargo", "rustc/bin/rustc"}
 	case sdk.Ruby:
+		if runtime.GOOS == "windows" {
+			return []string{"bin/ruby.exe"}
+		}
 		return []string{"bin/ruby"}
 	case sdk.DotNet:
 		if runtime.GOOS == "windows" {
@@ -88,6 +110,9 @@ func criticalFilesFor(t sdk.SdkType) []string {
 	case sdk.Android:
 		return []string{"cmdline-tools/bin/sdkmanager"}
 	case sdk.Dart:
+		if runtime.GOOS == "windows" {
+			return []string{"dart-sdk/bin/dart.exe"}
+		}
 		return []string{"dart-sdk/bin/dart"}
 	default:
 		return nil
@@ -194,19 +219,18 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
 	binDirs := f.GetBinDirs()
-	if err := copyToTargetAtomically(sourceDir, targetDir, binDirs); err != nil {
+	verifyImport := func(dir string) error {
+		postVer, err := a.detectVersionFromDir(dir, f)
+		if err != nil {
+			return fmt.Errorf("post-import verification failed: %w", err)
+		}
+		if postVer != versionName {
+			return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
+		}
+		return nil
+	}
+	if err := copyToTargetAtomically(sourceDir, targetDir, binDirs, verifyImport); err != nil {
 		return err
-	}
-
-	// Layer 3: Post-check — verify the copied binary runs and version matches.
-	postVer, err := a.detectVersionFromDir(targetDir, f)
-	if err != nil {
-		os.RemoveAll(targetDir)
-		return fmt.Errorf("post-import verification failed: %w", err)
-	}
-	if postVer != versionName {
-		os.RemoveAll(targetDir)
-		return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
@@ -253,19 +277,18 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 
 	targetDir := a.cfg.SdkVersionDir(sdkType, versionName)
 	binDirs := f.GetBinDirs()
-	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs); err != nil {
+	verifyImport := func(dir string) error {
+		postVer, err := a.detectVersionFromDir(dir, f)
+		if err != nil {
+			return fmt.Errorf("post-import verification failed: %w", err)
+		}
+		if postVer != versionName {
+			return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
+		}
+		return nil
+	}
+	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs, verifyImport); err != nil {
 		return err
-	}
-
-	// Layer 3: Post-check — verify the copied binary runs and version matches.
-	postVer, err := a.detectVersionFromDir(targetDir, f)
-	if err != nil {
-		os.RemoveAll(targetDir)
-		return fmt.Errorf("post-import verification failed: %w", err)
-	}
-	if postVer != versionName {
-		os.RemoveAll(targetDir)
-		return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
@@ -332,19 +355,18 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
 	binDirs := f.GetBinDirs()
-	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs); err != nil {
+	verifyImport := func(dir string) error {
+		postVer, err := a.detectVersionFromDir(dir, f)
+		if err != nil {
+			return fmt.Errorf("post-import verification failed: %w", err)
+		}
+		if postVer != versionName {
+			return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
+		}
+		return nil
+	}
+	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs, verifyImport); err != nil {
 		return err
-	}
-
-	// Layer 3: Post-check — verify the copied binary runs and version matches.
-	postVer, err := a.detectVersionFromDir(targetDir, f)
-	if err != nil {
-		os.RemoveAll(targetDir)
-		return fmt.Errorf("post-import verification failed: %w", err)
-	}
-	if postVer != versionName {
-		os.RemoveAll(targetDir)
-		return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
