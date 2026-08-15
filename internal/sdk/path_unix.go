@@ -3,9 +3,11 @@
 package sdk
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 var (
@@ -31,12 +33,15 @@ func getPlatformPath() string {
 // -l = login (sources /etc/profile, ~/.zprofile/.bash_profile),
 // -i = interactive (sources ~/.zshrc/.bashrc),
 // -c = command. printf (not echo) avoids trailing newline issues.
+// A 5s timeout prevents a hung .zshrc (e.g. nvm prompt) from blocking startup.
 func detectShellPath() string {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	cmd := exec.Command(shell, "-lic", "printf '%s' \"$PATH\"")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, shell, "-lic", "printf '%s' \"$PATH\"")
 	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {
 		return ""
