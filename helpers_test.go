@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"sdk_version_control/internal/extractor"
@@ -158,4 +159,29 @@ func computeTestSHA256(t *testing.T, path string) string {
 	}
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
+}
+
+func TestCheckCriticalFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a fake Go SDK structure: go/bin/go, go/bin/gofmt
+	binDir := filepath.Join(dir, "go", "bin")
+	os.MkdirAll(binDir, 0755)
+	os.WriteFile(filepath.Join(binDir, "go"), []byte("fake"), 0755)
+	os.WriteFile(filepath.Join(binDir, "gofmt"), []byte("fake"), 0755)
+
+	// All critical files present → no error
+	if err := checkCriticalFiles(dir, sdk.Golang); err != nil {
+		t.Errorf("checkCriticalFiles with all files present: got %v, want nil", err)
+	}
+
+	// Remove gofmt → should error mentioning the missing file
+	os.Remove(filepath.Join(binDir, "gofmt"))
+	err := checkCriticalFiles(dir, sdk.Golang)
+	if err == nil {
+		t.Fatal("checkCriticalFiles should fail when gofmt is missing")
+	}
+	if !strings.Contains(err.Error(), "gofmt") {
+		t.Errorf("error should mention gofmt, got: %v", err)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"sdk_version_control/internal/extractor"
 	"sdk_version_control/internal/logger"
@@ -33,6 +34,73 @@ func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string) error
 	if err := os.Rename(tmpDir, targetDir); err != nil {
 		os.RemoveAll(tmpDir)
 		return fmt.Errorf("failed to move files into place: %w", err)
+	}
+	return nil
+}
+
+// criticalFilesFor returns the relative paths (from SDK root) of files that
+// must exist for the SDK to be considered complete. Used by the import flow
+// to reject incomplete SDKs before copying (layer 2 of integrity verification).
+func criticalFilesFor(t sdk.SdkType) []string {
+	switch t {
+	case sdk.Golang:
+		return []string{"go/bin/go", "go/bin/gofmt"}
+	case sdk.NodeJS:
+		if runtime.GOOS == "windows" {
+			return []string{"node.exe", "npm.cmd"}
+		}
+		return []string{"bin/node", "bin/npm"}
+	case sdk.JDK:
+		if runtime.GOOS == "darwin" {
+			return []string{"Contents/Home/bin/java", "Contents/Home/bin/javac"}
+		}
+		return []string{"bin/java", "bin/javac"}
+	case sdk.Python:
+		if runtime.GOOS == "windows" {
+			return []string{"python/python.exe"}
+		}
+		return []string{"python/bin/python3"}
+	case sdk.Rust:
+		return []string{"cargo/bin/cargo", "rustc/bin/rustc"}
+	case sdk.Ruby:
+		return []string{"bin/ruby"}
+	case sdk.DotNet:
+		if runtime.GOOS == "windows" {
+			return []string{"dotnet.exe"}
+		}
+		return []string{"dotnet"}
+	case sdk.PHP:
+		if runtime.GOOS == "windows" {
+			return []string{"php.exe"}
+		}
+		return []string{"php"}
+	case sdk.Perl:
+		if runtime.GOOS == "windows" {
+			return []string{"perl/bin/perl.exe"}
+		}
+		return []string{"bin/perl"}
+	case sdk.Maven:
+		return []string{"bin/mvn"}
+	case sdk.Gradle:
+		return []string{"bin/gradle"}
+	case sdk.Flutter:
+		return []string{"bin/flutter"}
+	case sdk.Android:
+		return []string{"cmdline-tools/bin/sdkmanager"}
+	case sdk.Dart:
+		return []string{"dart-sdk/bin/dart"}
+	default:
+		return nil
+	}
+}
+
+// checkCriticalFiles verifies that the critical files for the SDK type exist
+// in sdkRoot. Returns an error listing the first missing file.
+func checkCriticalFiles(sdkRoot string, t sdk.SdkType) error {
+	for _, file := range criticalFilesFor(t) {
+		if _, err := os.Stat(filepath.Join(sdkRoot, file)); err != nil {
+			return fmt.Errorf("SDK incomplete, missing %s", file)
+		}
 	}
 	return nil
 }
@@ -113,24 +181,32 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		sourceDir = pathmgr.DetectSdkRoot(tmpDir, sdkTypeStr)
 	}
 
-	var versionName string
-	if ver, err := a.detectVersionFromDir(sourceDir, f); err == nil && ver != "" {
-		versionName = ver
-	} else {
-		if err != nil {
-			logger.Warn("Failed to run verify command to get version (%s): %v", sdkTypeStr, err)
-		}
-		dirName := filepath.Base(sourceDir)
-		versionName = pathmgr.ExtractVersion(dirName)
-		if versionName == "" || versionName == "." || versionName == dirName {
-			versionName = "imported"
-		}
+	// Layer 1: Pre-check — run the verify binary to confirm it's usable.
+	versionName, err := a.detectVersionFromDir(sourceDir, f)
+	if err != nil {
+		return fmt.Errorf("SDK binary verification failed, cannot import: %w", err)
+	}
+
+	// Layer 2: Critical files check — verify the SDK is complete.
+	if err := checkCriticalFiles(sourceDir, sdkType); err != nil {
+		return err
 	}
 
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
 	binDirs := f.GetBinDirs()
 	if err := copyToTargetAtomically(sourceDir, targetDir, binDirs); err != nil {
 		return err
+	}
+
+	// Layer 3: Post-check — verify the copied binary runs and version matches.
+	postVer, err := a.detectVersionFromDir(targetDir, f)
+	if err != nil {
+		os.RemoveAll(targetDir)
+		return fmt.Errorf("post-import verification failed: %w", err)
+	}
+	if postVer != versionName {
+		os.RemoveAll(targetDir)
+		return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
@@ -164,16 +240,32 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 	logger.Info("Importing SDK: %s from %s", sdkType, externalPath)
 	sdkRoot := pathmgr.DetectSdkRoot(externalPath, sdkType)
 
-	dirName := filepath.Base(sdkRoot)
-	versionName := pathmgr.ExtractVersion(dirName)
-	if versionName == "" || versionName == "." {
-		versionName = "imported"
+	// Layer 1: Pre-check — run the verify binary to confirm it's usable.
+	versionName, err := a.detectVersionFromDir(sdkRoot, f)
+	if err != nil {
+		return fmt.Errorf("SDK binary verification failed, cannot import: %w", err)
+	}
+
+	// Layer 2: Critical files check — verify the SDK is complete.
+	if err := checkCriticalFiles(sdkRoot, sdk.SdkType(sdkType)); err != nil {
+		return err
 	}
 
 	targetDir := a.cfg.SdkVersionDir(sdkType, versionName)
 	binDirs := f.GetBinDirs()
 	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs); err != nil {
 		return err
+	}
+
+	// Layer 3: Post-check — verify the copied binary runs and version matches.
+	postVer, err := a.detectVersionFromDir(targetDir, f)
+	if err != nil {
+		os.RemoveAll(targetDir)
+		return fmt.Errorf("post-import verification failed: %w", err)
+	}
+	if postVer != versionName {
+		os.RemoveAll(targetDir)
+		return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
@@ -227,21 +319,32 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 	binDir := filepath.Dir(binPath)
 	sdkRoot := pathmgr.DetectSdkRoot(binDir, sdkTypeStr)
 
-	var versionName string
-	if ver, err := a.detectVersionFromDir(sdkRoot, f); err == nil && ver != "" {
-		versionName = ver
-	} else {
-		dirName := filepath.Base(sdkRoot)
-		versionName = pathmgr.ExtractVersion(dirName)
-		if versionName == "" || versionName == "." || versionName == dirName {
-			versionName = "imported"
-		}
+	// Layer 1: Pre-check — run the verify binary to confirm it's usable.
+	versionName, err := a.detectVersionFromDir(sdkRoot, f)
+	if err != nil {
+		return fmt.Errorf("SDK binary verification failed, cannot import: %w", err)
+	}
+
+	// Layer 2: Critical files check — verify the SDK is complete.
+	if err := checkCriticalFiles(sdkRoot, sdkType); err != nil {
+		return err
 	}
 
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
 	binDirs := f.GetBinDirs()
 	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs); err != nil {
 		return err
+	}
+
+	// Layer 3: Post-check — verify the copied binary runs and version matches.
+	postVer, err := a.detectVersionFromDir(targetDir, f)
+	if err != nil {
+		os.RemoveAll(targetDir)
+		return fmt.Errorf("post-import verification failed: %w", err)
+	}
+	if postVer != versionName {
+		os.RemoveAll(targetDir)
+		return fmt.Errorf("post-import version mismatch: expected %s, got %s", versionName, postVer)
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
