@@ -11,6 +11,7 @@ import (
 
 	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/logger"
+	"sdk_version_control/internal/sdk"
 )
 
 // UnixPathManager handles PATH management on Linux/macOS.
@@ -103,7 +104,7 @@ func (m *UnixPathManager) GetCurrentConfig() (map[string]string, error) {
 }
 
 func (m *UnixPathManager) GetAllPathEntries() ([]PathEntry, error) {
-	pathEnv := os.Getenv("PATH")
+	pathEnv := sdk.GetSystemPath()
 	var entries []PathEntry
 	for _, p := range strings.Split(pathEnv, ":") {
 		p = strings.TrimSpace(p)
@@ -111,17 +112,31 @@ func (m *UnixPathManager) GetAllPathEntries() ([]PathEntry, error) {
 			continue
 		}
 		isManaged := strings.Contains(p, ".svc")
-		sdkType := ""
 		if isManaged {
-			sdkType = detectSdkTypeFromPath(p)
+			sdkType := detectSdkTypeFromPath(p)
+			entries = append(entries, PathEntry{
+				Path:      p,
+				IsManaged: isManaged,
+				SdkType:   sdkType,
+			})
 		} else {
-			sdkType = detectSdkTypeByBin(p)
+			sdkTypes := detectSdkTypesByBin(p)
+			if len(sdkTypes) == 0 {
+				entries = append(entries, PathEntry{
+					Path:      p,
+					IsManaged: isManaged,
+					SdkType:   "",
+				})
+			} else {
+				for _, st := range sdkTypes {
+					entries = append(entries, PathEntry{
+						Path:      p,
+						IsManaged: isManaged,
+						SdkType:   st,
+					})
+				}
+			}
 		}
-		entries = append(entries, PathEntry{
-			Path:      p,
-			IsManaged: isManaged,
-			SdkType:   sdkType,
-		})
 	}
 	return DeduplicateEntries(entries), nil
 }
@@ -228,9 +243,11 @@ func (m *UnixPathManager) isExternalMatch(path string, sdkType string, version s
 	}
 	detected := detectSdkTypeFromPath(path)
 	if detected == "" {
-		detected = detectSdkTypeByBin(path)
-	}
-	if detected != sdkType {
+		detectedTypes := detectSdkTypesByBin(path)
+		if !sliceContains(detectedTypes, sdkType) {
+			return false
+		}
+	} else if detected != sdkType {
 		return false
 	}
 	if version != "" && strings.Contains(path, version) {
@@ -510,11 +527,13 @@ func (m *UnixPathManager) DetectSystemConflicts(sdkType string, envKeys []string
 						conflicts = append(conflicts, fmt.Sprintf("%s: %s", filepath.Base(file), word))
 						continue
 					}
-					detected := detectSdkTypeByBin(word)
-					if detected == "" {
-						detected = detectSdkTypeFromPath(word)
+					detectedTypes := detectSdkTypesByBin(word)
+					if len(detectedTypes) == 0 {
+						if t := detectSdkTypeFromPath(word); t != "" {
+							detectedTypes = []string{t}
+						}
 					}
-					if detected == sdkType {
+					if sliceContains(detectedTypes, sdkType) {
 						conflicts = append(conflicts, fmt.Sprintf("%s: %s", filepath.Base(file), word))
 					}
 				}

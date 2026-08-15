@@ -49,10 +49,11 @@ func detectSdkTypeFromPath(p string) string {
 	return ""
 }
 
-// detectSdkTypeByBin checks whether a directory contains a characteristic executable
-func detectSdkTypeByBin(dir string) string {
+// detectSdkTypesByBin checks whether a directory contains characteristic executables.
+// Returns ALL matching SDK types (not just the first), so a directory like /usr/bin
+// with node+python+go+rust gets all four detected.
+func detectSdkTypesByBin(dir string) []string {
 	dirs := []string{dir, filepath.Join(dir, "bin")}
-	// Characteristic executables (cross-platform)
 	checks := []struct {
 		bin     string
 		sdkType string
@@ -74,17 +75,34 @@ func detectSdkTypeByBin(dir string) string {
 		{"sdkmanager", "android"},
 		{"dart", "dart"},
 	}
+	var types []string
 	for _, d := range dirs {
 		for _, c := range checks {
-			// Check no extension (Unix) and with extension (Windows)
 			for _, ext := range []string{"", ".exe", ".cmd", ".bat"} {
 				if _, err := os.Stat(filepath.Join(d, c.bin+ext)); err == nil {
-					return c.sdkType
+					if !sliceContains(types, c.sdkType) {
+						types = append(types, c.sdkType)
+					}
+					break
 				}
 			}
 		}
 	}
-	return detectSdkTypeFromPath(dir)
+	if len(types) == 0 {
+		if t := detectSdkTypeFromPath(dir); t != "" {
+			return []string{t}
+		}
+	}
+	return types
+}
+
+func sliceContains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 // DetectSdkRoot walks up from the bin directory to find the SDK root
@@ -119,23 +137,16 @@ func DetectSdkRoot(binDir string, sdkType string) string {
 	return candidate
 }
 
-// DeduplicateEntries dedupes entries by SDK root, keeping only one record per SDK install
-// When duplicate entries exist, the IsManaged=true flag is preserved with priority
+// DeduplicateEntries dedupes entries by SDK type + path, keeping only one
+// record per unique (sdkType, path) pair. The original PATH entry path is
+// preserved for display — DetectSdkRoot is NOT applied to e.Path so the
+// user sees the real PATH directory (e.g. /usr/bin, not /usr).
 func DeduplicateEntries(entries []PathEntry) []PathEntry {
 	seen := make(map[string]int) // key -> index in result
 	var result []PathEntry
 
 	for _, e := range entries {
-		var key string
-		if e.SdkType == "" {
-			key = "unknown:" + strings.ToLower(filepath.Clean(e.Path))
-		} else {
-			root := DetectSdkRoot(e.Path, e.SdkType)
-			if e.SdkType == "jdk" {
-				root = normalizeJdkRoot(root)
-			}
-			key = e.SdkType + ":" + strings.ToLower(root)
-		}
+		key := e.SdkType + ":" + strings.ToLower(filepath.Clean(e.Path))
 
 		if idx, exists := seen[key]; exists {
 			if e.IsManaged {
@@ -145,12 +156,6 @@ func DeduplicateEntries(entries []PathEntry) []PathEntry {
 		}
 
 		seen[key] = len(result)
-		if e.SdkType != "" {
-			e.Path = DetectSdkRoot(e.Path, e.SdkType)
-			if e.SdkType == "jdk" {
-				e.Path = normalizeJdkRoot(e.Path)
-			}
-		}
 		result = append(result, e)
 	}
 	return result
