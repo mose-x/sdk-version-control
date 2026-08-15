@@ -13,6 +13,30 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// copyToTargetAtomically copies sourceDir to a temp sibling of targetDir,
+// aligns the import layout, then atomically replaces targetDir via Rename.
+// On failure (copy or align error), the old targetDir is preserved.
+func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string) error {
+	tmpDir := targetDir + ".new"
+	os.RemoveAll(tmpDir)
+	if err := pathmgr.CopyDir(sourceDir, tmpDir); err != nil {
+		os.RemoveAll(tmpDir)
+		return fmt.Errorf("failed to copy SDK: %w", err)
+	}
+	if err := pathmgr.AlignImportLayout(tmpDir, binDirs); err != nil {
+		logger.Warn("Failed to align import layout: %v", err)
+	}
+	if err := os.RemoveAll(targetDir); err != nil {
+		os.RemoveAll(tmpDir)
+		return fmt.Errorf("failed to clean target directory: %w", err)
+	}
+	if err := os.Rename(tmpDir, targetDir); err != nil {
+		os.RemoveAll(tmpDir)
+		return fmt.Errorf("failed to move files into place: %w", err)
+	}
+	return nil
+}
+
 func (a *App) SelectLocalFile() (string, error) {
 	if a.ctx == nil {
 		return "", fmt.Errorf("app not initialized")
@@ -104,21 +128,9 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 	}
 
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
-	if err := os.RemoveAll(targetDir); err != nil {
-		return fmt.Errorf("failed to clean target directory: %w", err)
-	}
-
-	if err := pathmgr.CopyDir(sourceDir, targetDir); err != nil {
-		return fmt.Errorf("failed to copy SDK: %w", err)
-	}
-
-	// DetectSdkRoot returns the wrapper dir itself (e.g. GOROOT for Go) and
-	// CopyDir copies its contents, so the top-level wrapper is lost. For SDKs
-	// whose GetBinDirs() carries the wrapper (Go "go/bin", Python "python/bin",
-	// Dart "dart-sdk/bin", ...), re-wrap the content so binDirs resolve.
 	binDirs := f.GetBinDirs()
-	if err := pathmgr.AlignImportLayout(targetDir, binDirs); err != nil {
-		logger.Warn("Failed to align import layout for %s: %v", sdkTypeStr, err)
+	if err := copyToTargetAtomically(sourceDir, targetDir, binDirs); err != nil {
+		return err
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
@@ -159,18 +171,9 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 	}
 
 	targetDir := a.cfg.SdkVersionDir(sdkType, versionName)
-
-	if err := os.RemoveAll(targetDir); err != nil {
-		return fmt.Errorf("failed to clean target directory: %w", err)
-	}
-
-	if err := pathmgr.CopyDir(sdkRoot, targetDir); err != nil {
-		return fmt.Errorf("failed to copy SDK: %w", err)
-	}
-
 	binDirs := f.GetBinDirs()
-	if err := pathmgr.AlignImportLayout(targetDir, binDirs); err != nil {
-		logger.Warn("Failed to align import layout for %s: %v", sdkType, err)
+	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs); err != nil {
+		return err
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
@@ -236,17 +239,9 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 	}
 
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
-	if err := os.RemoveAll(targetDir); err != nil {
-		return fmt.Errorf("failed to clean target directory: %w", err)
-	}
-
-	if err := pathmgr.CopyDir(sdkRoot, targetDir); err != nil {
-		return fmt.Errorf("failed to copy SDK: %w", err)
-	}
-
 	binDirs := f.GetBinDirs()
-	if err := pathmgr.AlignImportLayout(targetDir, binDirs); err != nil {
-		logger.Warn("Failed to align import layout for %s: %v", sdkTypeStr, err)
+	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs); err != nil {
+		return err
 	}
 
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {

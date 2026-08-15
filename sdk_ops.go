@@ -318,6 +318,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		return fmt.Errorf("failed to clean old version directory: %w", err)
 	}
 	if err := os.Rename(tmpVersionDir, versionDir); err != nil {
+		os.RemoveAll(tmpVersionDir)
 		return fmt.Errorf("failed to move extracted files into place: %w", err)
 	}
 
