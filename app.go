@@ -21,18 +21,27 @@ import (
 //go:embed about.json
 var aboutJSON []byte
 
+// cancelEntry pairs a cancel func with a monotonic install ID so the deferred
+// cleanup in InstallSdk only deletes the map entry when it still belongs to
+// THIS install (not a newer concurrent install of the same SDK type).
+type cancelEntry struct {
+	cancel context.CancelFunc
+	id     uint64
+}
+
 // App struct - Wails bound core structure
 type App struct {
-	ctx         context.Context
-	cfg         *config.Config
-	registry    *sdk.Registry
-	downloader  *downloader.Downloader
-	pathMgr     pathmgr.PathManager
-	shimMgr     *shimmanager.Manager
-	settings    *config.SettingsManager
-	appInfo     AppInfo
-	cancelMu    sync.Mutex
-	cancelFuncs map[string]context.CancelFunc
+	ctx          context.Context
+	cfg          *config.Config
+	registry     *sdk.Registry
+	downloader   *downloader.Downloader
+	pathMgr      pathmgr.PathManager
+	shimMgr      *shimmanager.Manager
+	settings     *config.SettingsManager
+	appInfo      AppInfo
+	cancelMu     sync.Mutex
+	cancelFuncs  map[string]cancelEntry
+	nextCancelID uint64
 }
 
 // NewApp creates an App instance
@@ -56,7 +65,7 @@ func NewApp() *App {
 		pathMgr:     pathMgr,
 		shimMgr:     shimMgr,
 		downloader:  downloader.NewDownloader(),
-		cancelFuncs: make(map[string]context.CancelFunc),
+		cancelFuncs: make(map[string]cancelEntry),
 	}
 	app.loadAboutInfo()
 	return app
@@ -101,9 +110,9 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) shutdown(ctx context.Context) {
 	logger.Info("Application shutting down...")
 	a.cancelMu.Lock()
-	for sdkType, cancel := range a.cancelFuncs {
+	for sdkType, entry := range a.cancelFuncs {
 		logger.Info("Cancelling ongoing install: %s", sdkType)
-		cancel()
+		entry.cancel()
 	}
 	a.cancelMu.Unlock()
 	logger.Info("Application shutdown complete")

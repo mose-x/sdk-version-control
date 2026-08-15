@@ -224,14 +224,18 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	installCtx, cancel := context.WithCancel(a.ctx)
 	a.cancelMu.Lock()
 	if old, ok := a.cancelFuncs[sdkTypeStr]; ok {
-		old()
+		old.cancel()
 	}
-	a.cancelFuncs[sdkTypeStr] = cancel
+	myID := a.nextCancelID
+	a.nextCancelID++
+	a.cancelFuncs[sdkTypeStr] = cancelEntry{cancel: cancel, id: myID}
 	a.cancelMu.Unlock()
 	defer func() {
 		cancel()
 		a.cancelMu.Lock()
-		delete(a.cancelFuncs, sdkTypeStr)
+		if entry, ok := a.cancelFuncs[sdkTypeStr]; ok && entry.id == myID {
+			delete(a.cancelFuncs, sdkTypeStr)
+		}
 		a.cancelMu.Unlock()
 	}()
 
@@ -349,8 +353,8 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 
 func (a *App) CancelInstall(sdkType string) {
 	a.cancelMu.Lock()
-	if cancel, ok := a.cancelFuncs[sdkType]; ok {
-		cancel()
+	if entry, ok := a.cancelFuncs[sdkType]; ok {
+		entry.cancel()
 		delete(a.cancelFuncs, sdkType)
 	}
 	a.cancelMu.Unlock()

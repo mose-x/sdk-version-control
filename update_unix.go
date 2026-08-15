@@ -50,6 +50,15 @@ func (a *App) ApplyUpdate() error {
 		return fmt.Errorf("update file does not exist: %w", err)
 	}
 
+	// Compute the SHA256 of the downloaded update BEFORE writing the script.
+	// DownloadUpdate already verified against the server-published hash;
+	// this pre-copy hash is what the shell script compares the post-copy
+	// bytes against, catching a partial copy or /tmp TOCTOU swap.
+	expectedHash, err := sha256OfFile(newExe)
+	if err != nil {
+		return fmt.Errorf("failed to hash update file: %w", err)
+	}
+
 	bak := backupPath(currentExe)
 	scriptPath := filepath.Join(os.TempDir(), "svc_updater.sh")
 	pid := os.Getpid()
@@ -58,7 +67,9 @@ func (a *App) ApplyUpdate() error {
 	exeQ := shellQuote(currentExe)
 	bakQ := shellQuote(bak)
 	newQ := shellQuote(newExe)
+	hashQ := shellQuote(expectedHash)
 	scriptContent := fmt.Sprintf(`#!/bin/sh
+expected_hash=%s
 echo "Waiting for application to close..."
 timeout=60
 while kill -0 %d 2>/dev/null; do
@@ -88,10 +99,18 @@ if ! mv -f %s %s 2>/dev/null; then
     fi
 fi
 chmod +x %s
+echo "Verifying integrity..."
+hash_output=$(sha256sum %s 2>/dev/null || shasum -a 256 %s)
+actual_hash=$(echo "$hash_output" | cut -d' ' -f1)
+if [ "$actual_hash" != "$expected_hash" ]; then
+    echo "Checksum mismatch! Restoring backup..."
+    mv -f %s %s 2>/dev/null || cp -f %s %s
+    exit 1
+fi
 echo "Starting new version..."
 nohup %s > /dev/null 2>&1 &
 rm -f "$0"
-`, pid, exeQ, bakQ, exeQ, bakQ, exeQ, newQ, exeQ, newQ, exeQ, newQ, bakQ, exeQ, bakQ, exeQ, exeQ, exeQ)
+`, hashQ, pid, exeQ, bakQ, exeQ, bakQ, exeQ, newQ, exeQ, newQ, exeQ, newQ, bakQ, exeQ, bakQ, exeQ, exeQ, exeQ, exeQ, bakQ, exeQ, bakQ, exeQ, exeQ)
 
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		return fmt.Errorf("failed to create update script: %w", err)

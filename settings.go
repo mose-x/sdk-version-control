@@ -47,6 +47,7 @@ func (a *App) SaveGithubToken(token string) error {
 	}
 	s := a.settings.Get()
 	s.GitHubToken = base64.StdEncoding.EncodeToString([]byte(token))
+	logger.Warn("GitHub token stored as base64 (reversible, not encrypted). Consider using a token with minimal scopes.")
 	logger.Info("Saved GitHub token (masked=%s)", sdk.MaskGithubToken(a.settings))
 	return a.settings.Update(s)
 }
