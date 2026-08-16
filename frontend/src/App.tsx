@@ -9,7 +9,11 @@ import HomePage from './components/HomePage/HomePage'
 import PathModal from './components/PathModal/PathModal'
 import SettingsPage from './components/Settings/SettingsPage'
 import { SdkStatus, SdkType, InstallProgress } from './types/sdk'
-import { GetAllSdkStatus, GetSettings } from '../wailsjs/go/main/App'
+import {
+  GetAllSdkStatus,
+  GetSettings,
+  GetAppInfo,
+} from '../wailsjs/go/main/App'
 import {
   EventsOn,
   WindowSetLightTheme,
@@ -39,8 +43,9 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showPathModal, setShowPathModal] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
+  const [appVersion, setAppVersion] = useState('')
 
-  // Load settings on mount
+  // Load settings + app version on mount
   useEffect(() => {
     GetSettings()
       .then((s) => {
@@ -49,6 +54,17 @@ function App() {
           const lang = s.language || 'zh'
           setLanguage(lang)
           i18n.changeLanguage(lang)
+        }
+      })
+      .catch(() => {})
+    GetAppInfo()
+      .then((info) => {
+        setAppVersion(info.version)
+        const link = document.querySelector(
+          "link[rel='icon']",
+        ) as HTMLLinkElement | null
+        if (link) {
+          link.href = `${logoImg}?v=${info.version}`
         }
       })
       .catch(() => {})
@@ -142,7 +158,11 @@ function App() {
               gap: 16,
             }}
           >
-            <img src={logoImg} alt="logo" style={{ width: 120, height: 120 }} />
+            <img
+              src={appVersion ? `${logoImg}?v=${appVersion}` : logoImg}
+              alt="logo"
+              style={{ width: 120, height: 120 }}
+            />
             <Spin size="large" />
             <div style={{ fontSize: 15, color: isDark ? '#aaa' : '#666' }}>
               {t('sidebar.loadingSdk')}
@@ -154,6 +174,7 @@ function App() {
               statuses={sdkStatuses}
               selectedSdk={showSettings ? null : selectedSdk}
               downloadingSdks={downloadingSdks}
+              appVersion={appVersion}
               onSelect={handleSelectSdk}
               onGoHome={() => {
                 setSelectedSdk(null)
@@ -181,6 +202,7 @@ function App() {
             ) : (
               <HomePage
                 statuses={sdkStatuses}
+                appVersion={appVersion}
                 onSelect={handleSelectSdk}
                 onOpenPathInfo={() => setShowPathModal(true)}
               />
