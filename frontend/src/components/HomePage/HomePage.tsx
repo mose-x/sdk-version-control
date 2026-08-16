@@ -15,36 +15,70 @@ import logoImg from '../../assets/logo.png'
 
 interface HomePageProps {
   statuses: SdkStatus[]
+  appVersion?: string
   onSelect: (sdkType: SdkType) => void
   onOpenPathInfo: () => void
 }
 
-const CATEGORY_META: Record<string, { icon: React.ReactNode; color: string }> = {
-  runtime: { icon: <CodeOutlined />, color: '#1677ff' },
-  build: { icon: <ToolOutlined />, color: '#722ed1' },
-  mobile: { icon: <MobileOutlined />, color: '#13c2c2' },
-}
+const CATEGORY_META: Record<string, { icon: React.ReactNode; color: string }> =
+  {
+    runtime: { icon: <CodeOutlined />, color: '#1677ff' },
+    build: { icon: <ToolOutlined />, color: '#722ed1' },
+    mobile: { icon: <MobileOutlined />, color: '#13c2c2' },
+  }
 
 const SDK_CATEGORIES = [
-  { key: 'runtime', sdkTypes: ['nodejs', 'jdk', 'go', 'python', 'rust', 'ruby', 'dotnet', 'php', 'perl'] },
+  {
+    key: 'runtime',
+    sdkTypes: [
+      'nodejs',
+      'jdk',
+      'go',
+      'python',
+      'rust',
+      'ruby',
+      'dotnet',
+      'php',
+      'perl',
+    ],
+  },
   { key: 'build', sdkTypes: ['maven', 'gradle'] },
   { key: 'mobile', sdkTypes: ['flutter', 'android', 'dart'] },
 ]
 
 const sdkColors: Record<string, string> = {
-  nodejs: '#339933', jdk: '#f89820', go: '#00ADD8', python: '#3776AB',
-  rust: '#CE422B', ruby: '#CC342D', dotnet: '#512BD4', php: '#777BB4', perl: '#39457E',
-  maven: '#C71A36', gradle: '#02303A',
-  flutter: '#02569B', android: '#3DDC84', dart: '#0175C2',
+  nodejs: '#339933',
+  jdk: '#f89820',
+  go: '#00ADD8',
+  python: '#3776AB',
+  rust: '#CE422B',
+  ruby: '#CC342D',
+  dotnet: '#512BD4',
+  php: '#777BB4',
+  perl: '#39457E',
+  maven: '#C71A36',
+  gradle: '#02303A',
+  flutter: '#02569B',
+  android: '#3DDC84',
+  dart: '#0175C2',
 }
 
-const HomePage: React.FC<HomePageProps> = ({ statuses, onSelect, onOpenPathInfo }) => {
+const HomePage: React.FC<HomePageProps> = ({
+  statuses,
+  appVersion,
+  onSelect,
+  onOpenPathInfo,
+}) => {
   const { t } = useTranslation()
 
   const stats = useMemo(() => {
-    const configured = statuses.filter(s => s.configured).length
-    const pathOnly = statuses.filter(s => s.pathConfigured && !s.configured).length
-    const notConfigured = statuses.filter(s => !s.configured && !s.pathConfigured).length
+    const configured = statuses.filter((s) => s.configured).length
+    const pathOnly = statuses.filter(
+      (s) => s.pathConfigured && !s.configured,
+    ).length
+    const notConfigured = statuses.filter(
+      (s) => !s.configured && !s.pathConfigured,
+    ).length
     const total = statuses.length
     return { configured, pathOnly, notConfigured, total }
   }, [statuses])
@@ -52,7 +86,11 @@ const HomePage: React.FC<HomePageProps> = ({ statuses, onSelect, onOpenPathInfo 
   return (
     <div className="home-page">
       <div className="home-hero">
-        <img src={logoImg} alt="logo" className="home-logo" />
+        <img
+          src={appVersion ? `${logoImg}?v=${appVersion}` : logoImg}
+          alt="logo"
+          className="home-logo"
+        />
         <div style={{ flex: 1 }}>
           <h1 className="home-title">{t('home.welcome')}</h1>
           <p className="home-subtitle">{t('home.subtitle')}</p>
@@ -75,7 +113,10 @@ const HomePage: React.FC<HomePageProps> = ({ statuses, onSelect, onOpenPathInfo 
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card className="home-stat-card home-stat-card-success" variant="borderless">
+          <Card
+            className="home-stat-card home-stat-card-success"
+            variant="borderless"
+          >
             <Statistic
               title={t('home.configured')}
               value={stats.configured}
@@ -85,7 +126,10 @@ const HomePage: React.FC<HomePageProps> = ({ statuses, onSelect, onOpenPathInfo 
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card className="home-stat-card home-stat-card-warning" variant="borderless">
+          <Card
+            className="home-stat-card home-stat-card-warning"
+            variant="borderless"
+          >
             <Statistic
               title={t('home.pathOnly')}
               value={stats.pathOnly}
@@ -95,7 +139,10 @@ const HomePage: React.FC<HomePageProps> = ({ statuses, onSelect, onOpenPathInfo 
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card className="home-stat-card home-stat-card-error" variant="borderless">
+          <Card
+            className="home-stat-card home-stat-card-error"
+            variant="borderless"
+          >
             <Statistic
               title={t('home.notConfigured')}
               value={stats.notConfigured}
@@ -107,10 +154,14 @@ const HomePage: React.FC<HomePageProps> = ({ statuses, onSelect, onOpenPathInfo 
       </Row>
 
       <div className="home-categories">
-        {SDK_CATEGORIES.map(cat => {
+        {SDK_CATEGORIES.map((cat) => {
           const meta = CATEGORY_META[cat.key]
-          const catStatuses = statuses.filter(s => cat.sdkTypes.includes(s.sdkType))
-          const catConfigured = catStatuses.filter(s => s.configured || s.pathConfigured).length
+          const catStatuses = statuses.filter((s) =>
+            cat.sdkTypes.includes(s.sdkType),
+          )
+          const catConfigured = catStatuses.filter(
+            (s) => s.configured || s.pathConfigured,
+          ).length
 
           return (
             <Card
@@ -127,7 +178,7 @@ const HomePage: React.FC<HomePageProps> = ({ statuses, onSelect, onOpenPathInfo 
               }
             >
               <div className="home-sdk-grid">
-                {catStatuses.map(s => (
+                {catStatuses.map((s) => (
                   <Tooltip
                     key={s.sdkType}
                     title={
@@ -148,7 +199,9 @@ const HomePage: React.FC<HomePageProps> = ({ statuses, onSelect, onOpenPathInfo 
                       />
                       <span className="home-sdk-name">{s.displayName}</span>
                       {s.configured && (
-                        <span className="home-sdk-ver">v{s.currentVersion}</span>
+                        <span className="home-sdk-ver">
+                          v{s.currentVersion}
+                        </span>
                       )}
                     </div>
                   </Tooltip>
