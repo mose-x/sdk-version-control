@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"sdk_version_control/internal/sdk"
@@ -77,6 +78,24 @@ func parsePipVersion(raw string) string {
 	return ver
 }
 
+// nodeSupportsCorepack returns true if the Node.js version is >= 16.9.0
+// (corepack was introduced in Node.js 16.9.0). Falls back to false on parse error.
+func nodeSupportsCorepack(version string) bool {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	major, _ := strconv.Atoi(parts[0])
+	minor, _ := strconv.Atoi(parts[1])
+	if major > 16 {
+		return true
+	}
+	if major == 16 && minor >= 9 {
+		return true
+	}
+	return false
+}
+
 func (a *App) InstallPackageManager(name string) error {
 	switch name {
 	case "npm":
@@ -88,10 +107,22 @@ func (a *App) InstallPackageManager(name string) error {
 		if a.cfg.GetActiveVersion("nodejs") == "" {
 			return fmt.Errorf("please install Node.js first")
 		}
+		if nodeSupportsCorepack(a.cfg.GetActiveVersion("nodejs")) {
+			if err := a.runScopedCommand("corepack", sdk.NodeJS, "enable"); err != nil {
+				return err
+			}
+			return a.runScopedCommand("corepack", sdk.NodeJS, "prepare", "yarn@latest", "--activate")
+		}
 		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "yarn")
 	case "pnpm":
 		if a.cfg.GetActiveVersion("nodejs") == "" {
 			return fmt.Errorf("please install Node.js first")
+		}
+		if nodeSupportsCorepack(a.cfg.GetActiveVersion("nodejs")) {
+			if err := a.runScopedCommand("corepack", sdk.NodeJS, "enable"); err != nil {
+				return err
+			}
+			return a.runScopedCommand("corepack", sdk.NodeJS, "prepare", "pnpm@latest", "--activate")
 		}
 		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "pnpm")
 	case "composer":
@@ -114,8 +145,14 @@ func (a *App) UpdatePackageManager(name string) error {
 	case "npm":
 		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "npm@latest")
 	case "yarn":
+		if nodeSupportsCorepack(a.cfg.GetActiveVersion("nodejs")) {
+			return a.runScopedCommand("corepack", sdk.NodeJS, "prepare", "yarn@latest", "--activate")
+		}
 		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "yarn@latest")
 	case "pnpm":
+		if nodeSupportsCorepack(a.cfg.GetActiveVersion("nodejs")) {
+			return a.runScopedCommand("corepack", sdk.NodeJS, "prepare", "pnpm@latest", "--activate")
+		}
 		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "pnpm@latest")
 	case "composer":
 		return a.runScopedCommand("composer", sdk.PHP, "self-update")

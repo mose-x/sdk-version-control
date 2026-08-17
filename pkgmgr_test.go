@@ -23,3 +23,30 @@ func TestParsePipVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeSupportsCorepack(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"16.9.0", true},
+		{"16.9.1", true},
+		{"16.10.0", true},
+		{"16.8.0", false},
+		{"16.0.0", false},
+		{"18.0.0", true},
+		{"20.10.0", true},
+		{"14.17.0", false},
+		{"", false},
+		{"invalid", false},
+		{"16", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			got := nodeSupportsCorepack(tt.version)
+			if got != tt.want {
+				t.Errorf("nodeSupportsCorepack(%q) = %v; want %v", tt.version, got, tt.want)
+			}
+		})
+	}
+}
