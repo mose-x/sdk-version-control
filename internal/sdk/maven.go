@@ -62,6 +62,10 @@ func (f *MavenFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch maven versions: HTTP %d", resp.StatusCode)
+	}
+
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse Maven version page: %w", err)

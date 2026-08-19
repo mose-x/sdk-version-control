@@ -3,6 +3,7 @@ package extractor
 import (
 	"archive/tar"
 	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -240,5 +241,19 @@ func TestExtractTarHardlinkEscapingRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid hardlink") {
 		t.Fatalf("error should mention invalid hardlink, got: %v", err)
+	}
+}
+
+// TestLimitedCopy verifies that limitedCopy succeeds for small and empty data.
+func TestLimitedCopy(t *testing.T) {
+	small := strings.Repeat("x", 100)
+	err := limitedCopy(io.Discard, strings.NewReader(small))
+	if err != nil {
+		t.Errorf("limitedCopy with small data: got %v, want nil", err)
+	}
+
+	err = limitedCopy(io.Discard, strings.NewReader(""))
+	if err != nil {
+		t.Errorf("limitedCopy with empty data: got %v, want nil", err)
 	}
 }

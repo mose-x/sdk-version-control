@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"sdk_version_control/internal/downloader"
+	"sdk_version_control/internal/logger"
 )
 
 func (a *App) getProxyConfig() downloader.ProxyConfig {
@@ -74,6 +75,8 @@ func (a *App) buildProxyTransport() *http.Transport {
 				proxyURL, err := url.Parse(s.Proxy.URL)
 				if err == nil {
 					transport.Proxy = http.ProxyURL(proxyURL)
+				} else {
+					logger.Warn("Invalid proxy URL %q: %v — proxy will not be applied", s.Proxy.URL, err)
 				}
 			}
 		}

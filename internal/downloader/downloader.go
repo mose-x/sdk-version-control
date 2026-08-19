@@ -66,7 +66,7 @@ func BuildClient(proxy ProxyConfig) *http.Client {
 
 	return &http.Client{
 		Transport: transport,
-		Timeout:   0,
+		Timeout:   5 * time.Minute,
 	}
 }
 
@@ -302,7 +302,14 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
+			// O6: If server returns 200 instead of 206, it ignored the Range
+			// header and is sending the full file. Writing it at the chunk offset
+			// would corrupt the output. Fall back to single-thread.
+			if resp.StatusCode == http.StatusOK {
+				errCh <- fmt.Errorf("fallback: server returned 200 instead of 206, range not supported")
+				return
+			}
+			if resp.StatusCode != http.StatusPartialContent {
 				errCh <- fmt.Errorf("segmented download failed, HTTP status code: %d", resp.StatusCode)
 				return
 			}

@@ -191,3 +191,33 @@ func TestCheckCriticalFiles(t *testing.T) {
 		t.Errorf("error should mention gofmt, got: %v", err)
 	}
 }
+
+func TestIsSystemPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		systemPaths := []string{`C:\Windows`, `C:\Windows\System32`, `C:\Program Files`, `c:\program files (x86)`, `C:\ProgramData\foo`}
+		for _, p := range systemPaths {
+			if !isSystemPath(p) {
+				t.Errorf("isSystemPath(%q) = false; want true", p)
+			}
+		}
+		validPaths := []string{`C:\Users\mose\.svc`, `D:\SDKs`, `C:\dev\sdk-version-control`}
+		for _, p := range validPaths {
+			if isSystemPath(p) {
+				t.Errorf("isSystemPath(%q) = true; want false", p)
+			}
+		}
+	} else {
+		systemPaths := []string{"/usr", "/usr/local", "/bin", "/etc", "/var/log", "/sbin", "/boot"}
+		for _, p := range systemPaths {
+			if !isSystemPath(p) {
+				t.Errorf("isSystemPath(%q) = false; want true", p)
+			}
+		}
+		validPaths := []string{"/home/user/.svc", "/opt/sdks", "/Users/mose/.svc"}
+		for _, p := range validPaths {
+			if isSystemPath(p) {
+				t.Errorf("isSystemPath(%q) = true; want false", p)
+			}
+		}
+	}
+}

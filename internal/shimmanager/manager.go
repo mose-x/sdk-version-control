@@ -536,13 +536,18 @@ func (m *Manager) loadShimConfig() shim.ShimConfig {
 	return cfg
 }
 
-// saveShimConfig writes shims.json.
+// saveShimConfig writes shims.json atomically (temp file + rename).
+// On failure, the existing shims.json is preserved — no silent empty fallback.
 func (m *Manager) saveShimConfig(path string, cfg shim.ShimConfig) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // copyFile copies a file from src to dst with the given permissions.
