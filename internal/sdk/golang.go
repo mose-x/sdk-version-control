@@ -75,6 +75,10 @@ func (f *GolangFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch go versions: HTTP %d", resp.StatusCode)
+	}
+
 	var raw []goVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("failed to parse Go version data: %w", err)
@@ -92,8 +96,8 @@ func (f *GolangFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		ver := strings.TrimPrefix(v.Version, "go")
 		parts := strings.Split(ver, ".")
 		major := 0
-		if len(parts) >= 2 {
-			fmt.Sscanf(parts[1], "%d", &major)
+		if len(parts) >= 1 {
+			fmt.Sscanf(parts[0], "%d", &major)
 		}
 
 		for _, file := range v.Files {
@@ -126,6 +130,10 @@ func (f *GolangFetcher) GetDownloadURL(version string) (string, string, error) {
 		return "", "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("failed to get go download URL: HTTP %d", resp.StatusCode)
+	}
 
 	var raw []goVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {

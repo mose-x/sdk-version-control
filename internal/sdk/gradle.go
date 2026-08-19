@@ -70,6 +70,10 @@ func (f *GradleFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch gradle versions: HTTP %d", resp.StatusCode)
+	}
+
 	var raw []gradleVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("failed to parse Gradle version data: %w", err)
@@ -104,6 +108,10 @@ func (f *GradleFetcher) GetDownloadURL(version string) (string, string, error) {
 		return "", "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("failed to get gradle download URL: HTTP %d", resp.StatusCode)
+	}
 
 	var raw []gradleVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {

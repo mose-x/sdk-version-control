@@ -102,6 +102,10 @@ func (f *PerlFetcher) fetchWindowsVersions() ([]VersionInfo, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch perl versions: HTTP %d", resp.StatusCode)
+	}
+
 	var releases []strawberryRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, fmt.Errorf("failed to parse Perl version data: %w", err)

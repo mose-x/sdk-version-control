@@ -14,6 +14,24 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
+// maxDecompressedSize limits total bytes written during extraction to prevent
+// zip-bomb attacks (10 GB — larger than any legitimate SDK archive).
+const maxDecompressedSize int64 = 10 * 1024 * 1024 * 1024
+
+// limitedCopy copies from src to dst but aborts if the single file exceeds
+// maxDecompressedSize. Returns nil on success, error if oversized or I/O failure.
+func limitedCopy(dst io.Writer, src io.Reader) error {
+	_, err := io.CopyN(dst, src, maxDecompressedSize+1)
+	if err == nil {
+		// CopyN wrote exactly max+1 bytes without hitting EOF — source is too large
+		return fmt.Errorf("decompressed file exceeds size limit (%d bytes)", maxDecompressedSize)
+	}
+	if err != io.EOF {
+		return err
+	}
+	return nil
+}
+
 // Extractor extraction interface
 type Extractor interface {
 	Extract(archivePath, destDir string) error
@@ -91,7 +109,7 @@ func (e *ZipExtractor) Extract(archivePath, destDir string) error {
 			outFile.Close()
 			return err
 		}
-		_, err = io.Copy(outFile, rc)
+		err = limitedCopy(outFile, rc)
 		rc.Close()
 		outFile.Close()
 		if err != nil {
@@ -169,7 +187,7 @@ func (e *SevenZipExtractor) Extract(archivePath, destDir string) error {
 			outFile.Close()
 			return err
 		}
-		_, err = io.Copy(outFile, rc)
+		err = limitedCopy(outFile, rc)
 		rc.Close()
 		outFile.Close()
 		if err != nil {
@@ -214,7 +232,7 @@ func extractTar(tr *tar.Reader, destDir string) error {
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(outFile, tr)
+			err = limitedCopy(outFile, tr)
 			outFile.Close()
 			if err != nil {
 				return err

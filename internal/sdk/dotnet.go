@@ -60,6 +60,10 @@ func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch dotnet versions: HTTP %d", resp.StatusCode)
+	}
+
 	var index dotnetReleaseIndex
 	if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
 		return nil, fmt.Errorf("failed to parse .NET version data: %w", err)

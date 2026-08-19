@@ -72,6 +72,10 @@ func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch Dart version list: %w", err)
 		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to fetch dart versions: HTTP %d", resp.StatusCode)
+		}
 		var result gcsListResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()

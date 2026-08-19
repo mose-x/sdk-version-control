@@ -93,6 +93,10 @@ func (f *JdkFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	}
 	defer releasesResp.Body.Close()
 
+	if releasesResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch jdk versions: HTTP %d", releasesResp.StatusCode)
+	}
+
 	var releases struct {
 		AvailableReleases    []int `json:"available_releases"`
 		AvailableLTSReleases []int `json:"available_lts_releases"`
@@ -163,6 +167,10 @@ func (f *JdkFetcher) GetDownloadURL(version string) (string, string, error) {
 		return "", "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("failed to get jdk download URL: HTTP %d", resp.StatusCode)
+	}
 
 	var assets []adoptiumRelease
 	if err := json.NewDecoder(resp.Body).Decode(&assets); err != nil {

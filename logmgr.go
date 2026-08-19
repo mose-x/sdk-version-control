@@ -9,6 +9,9 @@ func (a *App) GetLogFiles() ([]logger.LogFileInfo, error) {
 }
 
 func (a *App) GetLogContent(filename string) (string, error) {
+	if err := validatePathSegment(filename); err != nil {
+		return "", err
+	}
 	return logger.GetLogContent(filename)
 }
 
@@ -24,6 +27,9 @@ func (a *App) CleanLogs() error {
 }
 
 func (a *App) DeleteLogFile(filename string) error {
+	if err := validatePathSegment(filename); err != nil {
+		return err
+	}
 	logger.Info("Deleting log file: %s", filename)
 	err := logger.DeleteLogFile(filename)
 	if err != nil {

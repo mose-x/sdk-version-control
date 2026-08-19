@@ -73,6 +73,10 @@ func (f *NodejsFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch nodejs versions: HTTP %d", resp.StatusCode)
+	}
+
 	var raw []nodeVersionJSON
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("failed to parse Node.js version data: %w", err)
