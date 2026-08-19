@@ -33,10 +33,11 @@ echo "about.json version bumped to $VERSION"
 # --- Generate Windows resources (icon + manifest) -> resource.syso.
 # go-winres --out resource produces a file named `resource` (no extension) with
 # --no-suffix; rename it to resource.syso so the Go linker embeds it.
+# R3: Remove stale .syso first so the linker always embeds fresh resources.
+rm -f resource.syso
 go-winres make --arch "$ARCH" --out resource --no-suffix
-if [ -e resource ] && [ ! -e resource.syso ]; then
-  mv resource resource.syso
-fi
+# R2: Use mv -f to always replace, no conditional guard that skips on stale presence.
+mv -f resource resource.syso
 
 # --- makensis (NSIS) must be on PATH for `wails build -nsis` to produce the
 # installer. On CI, the build.yml "Setup NSIS" step adds it to GITHUB_PATH

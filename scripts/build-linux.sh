@@ -54,9 +54,8 @@ echo "about.json version bumped to $VERSION"
 wails build -platform "linux/$ARCH" -o SDKVersionControl
 # Wails appends the arch suffix when cross-compiling; normalize to the plain
 # name first, then rename to the final asset name.
-if [ -f "build/bin/SDKVersionControl-$ARCH" ] && [ ! -f "build/bin/SDKVersionControl" ]; then
-  mv "build/bin/SDKVersionControl-$ARCH" "build/bin/SDKVersionControl"
-fi
+# R2: Use mv -f to always replace, no conditional that skips on stale presence.
+mv -f "build/bin/SDKVersionControl-$ARCH" "build/bin/SDKVersionControl"
 ASSET_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}"
 mv "build/bin/SDKVersionControl" "build/bin/${ASSET_NAME}"
 
