@@ -299,7 +299,7 @@ func (m *WindowsPathManager) readPathFromKey(root registry.Key, keyPath string) 
 		if p == "" {
 			continue
 		}
-		isManaged := strings.Contains(p, ".svc")
+		isManaged := strings.Contains(filepath.ToSlash(p), "/.svc/") || strings.HasSuffix(filepath.ToSlash(p), "/.svc")
 		if isManaged {
 			sdkType := detectSdkTypeFromPath(p)
 			entries = append(entries, PathEntry{

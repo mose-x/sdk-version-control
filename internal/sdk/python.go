@@ -129,6 +129,8 @@ func (f *PythonFetcher) platformTarget() string {
 		return "aarch64-apple-darwin"
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
 		return "x86_64-pc-windows-msvc"
+	case runtime.GOOS == "windows" && runtime.GOARCH == "arm64":
+		return "aarch64-pc-windows-msvc"
 	default:
 		return ""
 	}
@@ -137,9 +139,6 @@ func (f *PythonFetcher) platformTarget() string {
 // assetNameSuffix is the suffix appended after the target triple to select
 // the standard install_only build (excludes debug/freethreaded/stripped).
 func (f *PythonFetcher) assetNameSuffix() string {
-	if runtime.GOOS == "windows" {
-		return "-install_only.tar.gz"
-	}
 	return "-install_only.tar.gz"
 }
 

@@ -10,9 +10,9 @@ func TestChinaMirrors(t *testing.T) {
 	tests := []struct {
 		key, want string
 	}{
-		{"storage.googleapis.com", "storage.flutter-io.cn"},
+		{"storage.googleapis.com", "https://storage.flutter-io.cn"},
 		{"dl.google.com", "https://mirrors.tuna.tsinghua.edu.cn"},
-		{"go.dev", "golang.google.cn"},
+		{"go.dev", "https://golang.google.cn"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {

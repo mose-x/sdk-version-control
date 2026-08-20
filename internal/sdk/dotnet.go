@@ -74,7 +74,7 @@ func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		ver := ch.LatestRelease
 		parts := strings.Split(ver, ".")
 		major, _ := strconv.Atoi(parts[0])
-		isLTS := ch.SupportPhase == "lts" || ch.SupportPhase == "maintainance"
+		isLTS := ch.SupportPhase == "lts" || ch.SupportPhase == "maintenance"
 		versions = append(versions, VersionInfo{
 			Version:     ver,
 			Major:       major,
