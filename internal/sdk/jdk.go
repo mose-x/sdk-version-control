@@ -123,6 +123,11 @@ func (f *JdkFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			continue
 		}
 
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			continue
+		}
+
 		var assets []adoptiumRelease
 		if err := json.NewDecoder(resp.Body).Decode(&assets); err != nil {
 			resp.Body.Close()

@@ -47,7 +47,10 @@ func (a *App) MigrateInstallPath(newPath string) error {
 	oldDir := a.cfg.SvcDir()
 	newDir := filepath.Clean(newPath)
 
-	// N2: Reject system directories that would corrupt the OS if overwritten.
+	// N2: Reject system directories and relative paths.
+	if !filepath.IsAbs(newDir) {
+		return fmt.Errorf("install path must be absolute: %s", newDir)
+	}
 	if isSystemPath(newDir) {
 		return fmt.Errorf("cannot migrate to system directory: %s", newDir)
 	}

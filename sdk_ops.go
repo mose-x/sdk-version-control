@@ -213,6 +213,9 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get download URL: %w", err)
 	}
+	if err := validatePathSegment(fileName); err != nil {
+		return fmt.Errorf("invalid download filename: %w", err)
+	}
 	downloadURL = a.applyGithubMirror(downloadURL)
 
 	tmpFile := filepath.Join(a.cfg.TmpDir(), fileName)
@@ -317,15 +320,24 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		}
 	}
 
-	// Atomically replace the old version directory.
-	if err := os.RemoveAll(versionDir); err != nil {
-		os.RemoveAll(tmpVersionDir)
-		return fmt.Errorf("failed to clean old version directory: %w", err)
+	// Atomically replace the old version directory using rename-old-first
+	// pattern: rename old to .old, rename new into place, cleanup .old.
+	// If the second rename fails, restore from .old (prevents data loss).
+	oldVersionDir := versionDir + ".old"
+	os.RemoveAll(oldVersionDir)
+	if _, err := os.Stat(versionDir); err == nil {
+		if renameErr := os.Rename(versionDir, oldVersionDir); renameErr != nil {
+			os.RemoveAll(versionDir)
+		}
 	}
 	if err := os.Rename(tmpVersionDir, versionDir); err != nil {
+		if _, statErr := os.Stat(oldVersionDir); statErr == nil {
+			os.Rename(oldVersionDir, versionDir)
+		}
 		os.RemoveAll(tmpVersionDir)
 		return fmt.Errorf("failed to move extracted files into place: %w", err)
 	}
+	os.RemoveAll(oldVersionDir)
 
 	logger.Info("Extraction completed, configuring environment...")
 	a.emitProgress(sdkType, version, "configuring_path", 0, "Configuring environment...", 0, 0, 0, downloadURL)

@@ -90,7 +90,7 @@ func (s *SettingsManager) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.settingsPath(), data, 0644)
+	return os.WriteFile(s.settingsPath(), data, 0600)
 }
 
 // Get returns current settings
