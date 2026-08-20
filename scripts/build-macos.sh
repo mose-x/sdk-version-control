@@ -29,7 +29,8 @@ APP="build/bin/SDK Version Control.app"
 
 # --- Bump about.json so the binary reports the correct version to CheckUpdate.
 jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
-echo "about.json version bumped to $VERSION"
+jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp && mv wails.json.tmp wails.json
+echo "Version bumped to $VERSION in about.json, wails.json"
 
 # --- Build .app
 # SVC_SKIP_BINDINGS=1 (set by scripts/build-macos-local.sh) passes
