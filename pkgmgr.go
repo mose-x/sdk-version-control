@@ -84,6 +84,7 @@ func parsePipVersion(raw string) string {
 // nodeSupportsCorepack returns true if the Node.js version is >= 16.9.0
 // (corepack was introduced in Node.js 16.9.0). Falls back to false on parse error.
 func nodeSupportsCorepack(version string) bool {
+	version = strings.TrimPrefix(version, "v")
 	parts := strings.Split(version, ".")
 	if len(parts) < 2 {
 		return false

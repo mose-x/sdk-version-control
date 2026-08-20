@@ -38,8 +38,8 @@ func DefaultEndpoints() []EndpointInfo {
 // mirroring the host root.
 func ChinaMirrors() map[string]string {
 	return map[string]string{
-		"storage.googleapis.com": "storage.flutter-io.cn",
+		"storage.googleapis.com": "https://storage.flutter-io.cn",
 		"dl.google.com":          "https://mirrors.tuna.tsinghua.edu.cn",
-		"go.dev":                 "golang.google.cn",
+		"go.dev":                 "https://golang.google.cn",
 	}
 }

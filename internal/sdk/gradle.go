@@ -90,7 +90,7 @@ func (f *GradleFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		versions = append(versions, VersionInfo{
 			Version:     v.Version,
 			Major:       major,
-			DownloadURL: v.DownloadURL,
+			DownloadURL: f.useEndpoint(v.DownloadURL),
 			FileName:    fmt.Sprintf("gradle-%s-bin.zip", v.Version),
 		})
 	}

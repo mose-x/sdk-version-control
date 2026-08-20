@@ -1,6 +1,9 @@
 package sdk
 
 import (
+	"fmt"
+	"io"
+	"net/http"
 	"runtime"
 	"strings"
 	"testing"
@@ -66,6 +69,62 @@ func TestDotnetRID(t *testing.T) {
 			got := dotnetRID(tt.goos, tt.goarch)
 			if got != tt.want {
 				t.Errorf("dotnetRID(%q, %q): expected %q, got %q", tt.goos, tt.goarch, tt.want, got)
+			}
+		})
+	}
+}
+
+// mockDotnetTransport returns a canned JSON body for any request, so the
+// support-phase recognition logic can be tested without real network calls.
+type mockDotnetTransport struct {
+	body string
+}
+
+func (t *mockDotnetTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(t.body)),
+		Header:     make(http.Header),
+	}, nil
+}
+
+// TestDotNetSupportPhaseRecognition verifies that FetchRemoteVersions
+// recognizes the "maintenance" support phase (the correct spelling used by
+// the real .NET release-metadata API) as LTS. This guards against the
+// "maintainance" typo regression (P4 fix): if the comparison string is
+// reverted to the misspelled "maintainance", the maintenance-phase case
+// here will fail.
+func TestDotNetSupportPhaseRecognition(t *testing.T) {
+	tests := []struct {
+		name        string
+		phase       string
+		expectIsLTS bool
+	}{
+		{"lts phase", "lts", true},
+		{"maintenance phase", "maintenance", true},
+		{"typo maintainance not recognized", "maintainance", false},
+		{"go-live phase", "go-live", false},
+		{"eol phase", "eol", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := fmt.Sprintf(
+				`{"releases-index":[{"channel-version":"8.0","latest-release":"8.0.100","support-phase":%q,"releases.json":""}]}`,
+				tt.phase,
+			)
+			f := NewDotNetFetcher(nil, nil)
+			f.SetHTTPClient(&http.Client{Transport: &mockDotnetTransport{body: body}})
+
+			versions, err := f.FetchRemoteVersions()
+			if err != nil {
+				t.Fatalf("FetchRemoteVersions: %v", err)
+			}
+			if len(versions) != 1 {
+				t.Fatalf("expected 1 version, got %d", len(versions))
+			}
+			if versions[0].IsLTS != tt.expectIsLTS {
+				t.Errorf("support-phase %q: IsLTS=%v, want %v",
+					tt.phase, versions[0].IsLTS, tt.expectIsLTS)
 			}
 		})
 	}

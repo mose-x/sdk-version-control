@@ -3,3 +3,15 @@
 # on Git Bash. Force LF in the working tree on all platforms (overrides
 # core.autocrlf) so CI and local runs execute identical bytes.
 *.sh text eol=lf
+
+# Go source files: CRLF breaks gofmt checks on CI (Linux checks out LF, but
+# Windows autocrlf may leave CRLF in the working tree). Force LF everywhere.
+*.go text eol=lf
+
+# YAML config files (CI workflows, compose, etc.): CRLF can break heredoc and
+# here-anchor parsing in some YAML loaders. Force LF for consistency.
+*.yml text eol=lf
+
+# JSON files (config, lockfiles): CRLF is technically valid JSON but causes
+# noisy diffs and can break checksums in content-addressed tooling. Force LF.
+*.json text eol=lf

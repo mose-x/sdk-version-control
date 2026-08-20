@@ -35,6 +35,7 @@ func TestNodeSupportsCorepack(t *testing.T) {
 		{"16.8.0", false},
 		{"16.0.0", false},
 		{"18.0.0", true},
+		{"v18.0.0", true},
 		{"20.10.0", true},
 		{"14.17.0", false},
 		{"", false},
