@@ -12,6 +12,9 @@ import (
 )
 
 func (a *App) GetPackageManagers(sdkType string) []sdk.PackageManagerInfo {
+	if err := validatePathSegment(sdkType); err != nil {
+		return nil
+	}
 	active := a.cfg.GetActiveVersion(sdkType)
 	if active == "" {
 		return nil

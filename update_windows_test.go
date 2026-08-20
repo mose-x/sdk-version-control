@@ -69,6 +69,8 @@ func TestBuildUpdateScript_containsHashAndCertutil(t *testing.T) {
 		{"embeds expected hash", hash},
 		{"invokes certutil", `certutil -hashfile "` + currentExe + `" SHA256`},
 		{"compares actual vs expected", `if /i not "%actual%"=="%expected%"`},
+		{"uses move for replacement", `move /Y "` + newExe + `" "` + currentExe + `"`},
+		{"has copy fallback", `copy /Y "` + newExe + `" "` + currentExe + `"`},
 		{"rolls back to bak", `copy /Y "` + bak + `" "` + currentExe + `"`},
 		{"exits non-zero on mismatch", "exit /b 1"},
 	}

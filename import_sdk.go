@@ -16,12 +16,14 @@ import (
 
 // copyToTargetAtomically copies sourceDir to a temp sibling of targetDir,
 // aligns the import layout, runs the verify callback on the temp dir, then
-// atomically replaces targetDir via Rename. On failure (copy, align, or verify),
-// the old targetDir is preserved because the swap hasn't happened yet.
-// The verify callback may be nil to skip verification.
+// atomically replaces targetDir. Uses rename-old-first pattern: the old
+// targetDir is renamed to .old BEFORE the new tmpDir is renamed into place,
+// so if the second rename fails, the old version is restored from .old.
 func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string, verify func(string) error) error {
 	tmpDir := targetDir + ".new"
+	oldDir := targetDir + ".old"
 	os.RemoveAll(tmpDir)
+	os.RemoveAll(oldDir)
 	if err := pathmgr.CopyDir(sourceDir, tmpDir); err != nil {
 		os.RemoveAll(tmpDir)
 		return fmt.Errorf("failed to copy SDK: %w", err)
@@ -29,22 +31,30 @@ func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string, verif
 	if err := pathmgr.AlignImportLayout(tmpDir, binDirs); err != nil {
 		logger.Warn("Failed to align import layout: %v", err)
 	}
-	// Layer 3: verify the copied content BEFORE swapping — if verification
-	// fails, the old targetDir is still intact (not yet RemoveAll'd).
 	if verify != nil {
 		if err := verify(tmpDir); err != nil {
 			os.RemoveAll(tmpDir)
 			return err
 		}
 	}
-	if err := os.RemoveAll(targetDir); err != nil {
-		os.RemoveAll(tmpDir)
-		return fmt.Errorf("failed to clean target directory: %w", err)
+	// Rename old targetDir to .old (if it exists). This preserves the old
+	// version so it can be restored if the next Rename fails.
+	if _, err := os.Stat(targetDir); err == nil {
+		if renameErr := os.Rename(targetDir, oldDir); renameErr != nil {
+			// Can't rename old — fall back to RemoveAll (old behavior).
+			os.RemoveAll(targetDir)
+		}
 	}
+	// Rename tmpDir into place. If this fails, restore from .old.
 	if err := os.Rename(tmpDir, targetDir); err != nil {
+		if _, statErr := os.Stat(oldDir); statErr == nil {
+			os.Rename(oldDir, targetDir)
+		}
 		os.RemoveAll(tmpDir)
 		return fmt.Errorf("failed to move files into place: %w", err)
 	}
+	// Success — clean up .old.
+	os.RemoveAll(oldDir)
 	return nil
 }
 

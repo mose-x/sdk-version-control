@@ -104,10 +104,14 @@ if errorlevel 1 (
     exit /b 1
 )
 echo Replacing application...
-copy /Y "%s" "%s" >NUL
+move /Y "%s" "%s" >NUL 2>&1
 if errorlevel 1 (
-    echo Update failed!
-    exit /b 1
+    copy /Y "%s" "%s" >NUL
+    if errorlevel 1 (
+        echo Update failed!
+        exit /b 1
+    )
+    del /F /Q "%s" >NUL 2>&1
 )
 echo Verifying integrity...
 set "expected=%s"
@@ -124,7 +128,7 @@ if /i not "%%actual%%"=="%%expected%%" (
 echo Starting new version...
 start "" "%s"
 del "%%~f0"
-`, pid, pid, currentExe, bak, newExe, currentExe, expectedHash, currentExe, bak, currentExe, currentExe)
+`, pid, pid, currentExe, bak, newExe, currentExe, newExe, currentExe, newExe, expectedHash, currentExe, bak, currentExe, currentExe)
 }
 
 // RollbackUpdate restores the .bak binary created by the previous ApplyUpdate.

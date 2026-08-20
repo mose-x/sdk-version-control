@@ -193,6 +193,8 @@ func TestCheckCriticalFiles(t *testing.T) {
 }
 
 func TestIsSystemPath(t *testing.T) {
+	// Relative paths should be rejected by migration (H1 fix), but isSystemPath
+	// itself only checks system dirs — the IsAbs check is separate.
 	if runtime.GOOS == "windows" {
 		systemPaths := []string{`C:\Windows`, `C:\Windows\System32`, `C:\Program Files`, `c:\program files (x86)`, `C:\ProgramData\foo`}
 		for _, p := range systemPaths {
@@ -218,6 +220,27 @@ func TestIsSystemPath(t *testing.T) {
 			if isSystemPath(p) {
 				t.Errorf("isSystemPath(%q) = true; want false", p)
 			}
+		}
+	}
+}
+
+func TestFilePathIsAbs(t *testing.T) {
+	var absPaths, relPaths []string
+	if runtime.GOOS == "windows" {
+		absPaths = []string{`C:\Users\mose\.svc`, `D:\SDKs`, `C:\dev`}
+		relPaths = []string{"foo", `..\bar`, `.\baz`, ""}
+	} else {
+		absPaths = []string{"/usr/local", "/home/user/.svc", "/opt/sdks"}
+		relPaths = []string{"foo", "../bar", "./baz", ""}
+	}
+	for _, p := range absPaths {
+		if !filepath.IsAbs(p) {
+			t.Errorf("filepath.IsAbs(%q) = false; want true", p)
+		}
+	}
+	for _, p := range relPaths {
+		if filepath.IsAbs(p) {
+			t.Errorf("filepath.IsAbs(%q) = true; want false", p)
 		}
 	}
 }
