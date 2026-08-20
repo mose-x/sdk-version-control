@@ -75,8 +75,14 @@ func applyProxy(transport *http.Transport, proxyURL *url.URL) {
 	if proxyURL.Scheme == "socks5" || proxyURL.Scheme == "socks5h" {
 		dialer, err := xproxy.SOCKS5("tcp", proxyURL.Host, nil, xproxy.Direct)
 		if err == nil {
-			transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return dialer.Dial(network, addr)
+			// H6: Use context-aware dialing if available, so that
+			// context cancellation/timeout works through SOCKS5 proxies.
+			if cd, ok := dialer.(xproxy.ContextDialer); ok {
+				transport.DialContext = cd.DialContext
+			} else {
+				transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return dialer.Dial(network, addr)
+				}
 			}
 		}
 	} else {

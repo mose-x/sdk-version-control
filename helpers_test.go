@@ -244,3 +244,34 @@ func TestFilePathIsAbs(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateCheckURL(t *testing.T) {
+	valid := []string{
+		"https://github.com",
+		"http://nodejs.org/dist/index.json",
+		"https://api.adoptium.net",
+	}
+	for _, u := range valid {
+		if err := validateCheckURL(u); err != nil {
+			t.Errorf("validateCheckURL(%q) = %v; want nil", u, err)
+		}
+	}
+	invalid := []struct {
+		url  string
+		desc string
+	}{
+		{"ftp://example.com", "non-http scheme"},
+		{"file:///etc/passwd", "file scheme"},
+		{"http://127.0.0.1", "loopback IPv4"},
+		{"http://localhost:8080", "localhost"},
+		{"http://192.168.1.1", "private 192.168"},
+		{"http://10.0.0.1", "private 10.x"},
+		{"http://172.16.0.1", "private 172.16"},
+		{"://invalid", "malformed URL"},
+	}
+	for _, tt := range invalid {
+		if err := validateCheckURL(tt.url); err == nil {
+			t.Errorf("validateCheckURL(%q) = nil; want error (%s)", tt.url, tt.desc)
+		}
+	}
+}
