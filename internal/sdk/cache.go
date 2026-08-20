@@ -68,6 +68,10 @@ func GetCachedVersions(t SdkType) ([]VersionInfo, bool) {
 
 // loadFromDisk reads the on-disk cache file for t. On success it also stores
 // the entry in memory (so subsequent reads skip the disk) and returns the list.
+// H5: Re-checks memory after acquiring the write lock to prevent TOCTOU:
+// a concurrent SetCachedVersions might have populated the in-memory entry
+// between the RUnlock in GetCachedVersions and the Lock here; in that case
+// the fresher in-memory entry wins over the stale disk data.
 func (c *versionCache) loadFromDisk(t SdkType) ([]VersionInfo, bool) {
 	path := c.cacheFile(t)
 	if path == "" {
@@ -82,6 +86,11 @@ func (c *versionCache) loadFromDisk(t SdkType) ([]VersionInfo, bool) {
 		return nil, false
 	}
 	c.mu.Lock()
+	// Re-check memory: a concurrent SetCachedVersions might have populated it.
+	if memEntry, ok := c.entries[t]; ok {
+		c.mu.Unlock()
+		return copyVersions(memEntry.Versions), true
+	}
 	c.entries[t] = e
 	c.mu.Unlock()
 	return copyVersions(e.Versions), true

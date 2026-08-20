@@ -22,6 +22,10 @@ func (a *App) getProxyConfig() downloader.ProxyConfig {
 }
 
 func (a *App) CheckProxy(targetURL string) error {
+	// H2: Validate URL to prevent SSRF — only http/https, reject loopback/private.
+	if err := validateCheckURL(targetURL); err != nil {
+		return err
+	}
 	proxyCfg := a.getProxyConfig()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 10 * time.Second
@@ -34,6 +38,33 @@ func (a *App) CheckProxy(targetURL string) error {
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// validateCheckURL ensures the target URL is safe for proxy checking:
+// must be http/https, must not resolve to loopback or private IP ranges.
+func validateCheckURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("only http/https URLs are allowed, got scheme: %s", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" ||
+		strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "10.") ||
+		strings.HasPrefix(host, "192.168.") || strings.HasPrefix(host, "172.16.") ||
+		strings.HasPrefix(host, "172.17.") || strings.HasPrefix(host, "172.18.") ||
+		strings.HasPrefix(host, "172.19.") || strings.HasPrefix(host, "172.20.") ||
+		strings.HasPrefix(host, "172.21.") || strings.HasPrefix(host, "172.22.") ||
+		strings.HasPrefix(host, "172.23.") || strings.HasPrefix(host, "172.24.") ||
+		strings.HasPrefix(host, "172.25.") || strings.HasPrefix(host, "172.26.") ||
+		strings.HasPrefix(host, "172.27.") || strings.HasPrefix(host, "172.28.") ||
+		strings.HasPrefix(host, "172.29.") || strings.HasPrefix(host, "172.30.") ||
+		strings.HasPrefix(host, "172.31.") {
+		return fmt.Errorf("loopback/private IP addresses are not allowed: %s", host)
 	}
 	return nil
 }
