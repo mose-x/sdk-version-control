@@ -105,12 +105,20 @@ function App() {
     }
   }, [refreshStatuses])
 
-  // System theme detection
-  const systemDark = useMemo(() => {
+  // System theme detection — reactive: updates when OS dark/light changes
+  const [systemDark, setSystemDark] = useState(() => {
     if (typeof window !== 'undefined' && window.matchMedia) {
       return window.matchMedia('(prefers-color-scheme: dark)').matches
     }
     return true
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
   }, [])
 
   const isDark = themeMode === 'system' ? systemDark : themeMode === 'dark'
