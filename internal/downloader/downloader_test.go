@@ -55,10 +55,21 @@ func TestDownloadSingle_PartRename(t *testing.T) {
 	}
 }
 
-// TestDownloadSingle_ErrorCleansPartFile verifies that .part is cleaned up on error.
+// TestDownloadSingle_ErrorCleansPartFile verifies that .part is cleaned up when
+// the connection breaks mid-download (after .part is created). This tests the
+// actual defer cleanup path, not just a pre-creation HTTP error.
 func TestDownloadSingle_ErrorCleansPartFile(t *testing.T) {
+	payload := make([]byte, 256*1024) // 256KB
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
+		w.WriteHeader(http.StatusOK)
+		// Write partial data then hijack/close to simulate broken connection
+		w.Write(payload[:1024]) // only 1KB of 256KB
+		if hijacker, ok := w.(http.Hijacker); ok {
+			conn, _, _ := hijacker.Hijack()
+			conn.Close()
+		}
 	}))
 	defer srv.Close()
 
@@ -68,7 +79,7 @@ func TestDownloadSingle_ErrorCleansPartFile(t *testing.T) {
 	d := NewDownloader()
 	err := d.Download(context.Background(), srv.URL, destPath, nil, ProxyConfig{Enabled: false}, 1)
 	if err == nil {
-		t.Fatal("expected error for HTTP 500")
+		t.Fatal("expected error for broken connection")
 	}
 
 	if _, err := os.Stat(destPath + ".part"); !os.IsNotExist(err) {
