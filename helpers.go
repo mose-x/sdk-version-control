@@ -49,7 +49,11 @@ func extractVersionFromOutput(cmd string, args []string) string {
 	if fullPath == "" {
 		return ""
 	}
-	c := createCmd(fullPath, args...)
+	// H2: Bound the version-detection command so a hung binary (e.g. waiting
+	// on stdin) doesn't block the UI forever.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	c := createCmdContext(ctx, fullPath, args...)
 	sysPath := sdk.GetSystemPath()
 	if sysPath != "" {
 		c.Env = replacePathEnv(os.Environ(), sysPath)

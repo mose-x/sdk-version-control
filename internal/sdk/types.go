@@ -179,11 +179,6 @@ func SdkDisplayName(t SdkType) string {
 	}
 }
 
-// SdkDirName returns the directory name of the SDK under ~/.svc/
-func SdkDirName(t SdkType) string {
-	return string(t)
-}
-
 // VersionInfo describes an available remote version
 type VersionInfo struct {
 	Version     string `json:"version"`

@@ -45,7 +45,9 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 	// If we deleted the active version, clear the active version config
 	if wasActive {
 		logger.Info("Deleted active version, clearing active version config")
-		a.cfg.ClearActiveVersion(sdkType)
+		if err := a.cfg.ClearActiveVersion(sdkType); err != nil {
+			logger.Error("Failed to clear active version config: %v", err)
+		}
 	}
 
 	// Tear down the shim layer for this SDK type when the last version is

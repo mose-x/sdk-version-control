@@ -118,7 +118,12 @@ func SetCachedVersions(t SdkType, versions []VersionInfo) {
 	// from the previous on-disk cache, which is acceptable.
 	_ = os.MkdirAll(dir, 0755)
 	if data, err := json.Marshal(e); err == nil {
-		_ = os.WriteFile(path, data, 0644)
+		// M3: atomic write via temp file + os.Rename so a partial write
+		// doesn't leave a corrupt cache file on disk.
+		tmpPath := path + ".tmp"
+		if werr := os.WriteFile(tmpPath, data, 0644); werr == nil {
+			_ = os.Rename(tmpPath, path)
+		}
 	}
 }
 

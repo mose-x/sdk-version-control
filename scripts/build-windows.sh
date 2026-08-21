@@ -35,7 +35,10 @@ jq --arg v "$WIN_VER" '.RT_VERSION["#1"]["0000"].fixed.file_version = $v | .RT_V
 echo "Version bumped to $VERSION in about.json, wails.json, winres.json"
 
 # R9: Restore version-bumped files on exit so local builds don't leave the repo dirty.
-trap 'git checkout about.json wails.json 2>/dev/null; git checkout winres/winres.json 2>/dev/null' EXIT
+# Guard with [ -n "$VERSION" ] so the checkout only runs when the script got
+# past the version-bump step (early exit before VERSION is set would otherwise
+# try to restore files that were never modified).
+trap '[ -n "$VERSION" ] && git checkout about.json wails.json 2>/dev/null; git checkout winres/winres.json 2>/dev/null' EXIT
 
 # --- Generate Windows resources (icon + manifest) -> resource.syso.
 # go-winres --out resource produces a file named `resource` (no extension) with

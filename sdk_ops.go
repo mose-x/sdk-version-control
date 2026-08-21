@@ -327,7 +327,11 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	os.RemoveAll(oldVersionDir)
 	if _, err := os.Stat(versionDir); err == nil {
 		if renameErr := os.Rename(versionDir, oldVersionDir); renameErr != nil {
-			os.RemoveAll(versionDir)
+			// H1: Never delete the live version as fallback. Abort so the
+			// existing version is preserved; the caller can retry or free
+			// space instead of losing data.
+			os.RemoveAll(tmpVersionDir)
+			return fmt.Errorf("failed to backup old version for atomic replace: %w", renameErr)
 		}
 	}
 	if err := os.Rename(tmpVersionDir, versionDir); err != nil {
@@ -407,14 +411,18 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 		return fmt.Errorf("version directory does not exist: %s", version)
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
-		logger.Error("Failed to configure PATH for %s %s: %v", sdkTypeStr, version, err)
-		return fmt.Errorf("failed to configure PATH: %w", err)
-	}
-
+	// M8: Set active version BEFORE ConfigureSdk (matching InstallSdk's M13
+	// fix). If SetActiveVersion fails, the config doesn't record this version —
+	// don't configure PATH for an unrecorded version (would leave inconsistent
+	// state on failure).
 	if err := a.cfg.SetActiveVersion(sdkTypeStr, version); err != nil {
 		logger.Error("Failed to save config for %s %s: %v", sdkTypeStr, version, err)
 		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
+		logger.Error("Failed to configure PATH for %s %s: %v", sdkTypeStr, version, err)
+		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	// Refresh .svc.rc so env var lines reflect the newly-switched version.

@@ -55,6 +55,7 @@ import {
   DeleteLogFile,
 } from '../../../wailsjs/go/main/App'
 import { BrowserOpenURL, EventsOn } from '../../../wailsjs/runtime/runtime'
+import { SDK_CATEGORIES } from '../../constants/sdk'
 
 interface AppSettings {
   theme: string
@@ -181,40 +182,40 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   useEffect(() => {
     GetSettings()
       .then((s) => setSettings(s))
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load settings:', e))
     GetAppInfo()
       .then((info) => {
         setAppInfo(info)
         setOriginalVersion(info.version)
       })
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load app info:', e))
     GetDefaultEndpoints()
       .then((de) => setDefaultEndpoints(de || []))
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load default endpoints:', e))
     GetDefaultInstallPath()
       .then((p) => {
         setDefaultInstallPath(p)
         setInstallPathDraft(p)
       })
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load default install path:', e))
     GetInstallPath()
       .then((p) => {
         setInstallPath(p)
         setInstallPathDraft(p)
       })
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load install path:', e))
     GetEndpoints()
       .then((ce) => {
         const endpoints = ce || {}
         setCustomEndpoints(endpoints)
         setDraftEndpoints({ ...endpoints })
       })
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load endpoints:', e))
     loadTmpCacheSize()
     loadLogFiles()
     GetLogDir()
       .then((d: string) => setLogDir(d || ''))
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load log dir:', e))
   }, [])
 
   const loadTmpCacheSize = () => {
@@ -616,11 +617,15 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
         for (const [k, v] of Object.entries(draftEndpoints)) {
           if (v.trim()) cleaned[k] = v.trim()
         }
-        SaveEndpoints(cleaned).then(() => {
-          setCustomEndpoints(cleaned)
-          setDraftEndpoints({ ...cleaned })
-          msgApi.success(t('settings.settingsSaved'))
-        })
+        SaveEndpoints(cleaned)
+          .then(() => {
+            setCustomEndpoints(cleaned)
+            setDraftEndpoints({ ...cleaned })
+            msgApi.success(t('settings.settingsSaved'))
+          })
+          .catch((e: any) =>
+            msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+          )
       },
     })
   }
@@ -640,11 +645,15 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
         for (const [k, v] of Object.entries(newDraft)) {
           if (v.trim()) cleaned[k] = v.trim()
         }
-        SaveEndpoints(cleaned).then(() => {
-          setCustomEndpoints(cleaned)
-          setDraftEndpoints({ ...cleaned })
-          msgApi.success(t('settings.settingsSaved'))
-        })
+        SaveEndpoints(cleaned)
+          .then(() => {
+            setCustomEndpoints(cleaned)
+            setDraftEndpoints({ ...cleaned })
+            msgApi.success(t('settings.settingsSaved'))
+          })
+          .catch((e: any) =>
+            msgApi.error(t('settings.saveFail', { error: e?.message || e })),
+          )
       },
     })
   }
@@ -1039,24 +1048,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
               {t('endpoint.save')}
             </Button>
           </div>
-          {[
-            {
-              key: 'runtime',
-              sdkTypes: [
-                'nodejs',
-                'jdk',
-                'go',
-                'python',
-                'rust',
-                'ruby',
-                'dotnet',
-                'php',
-                'perl',
-              ],
-            },
-            { key: 'build', sdkTypes: ['maven', 'gradle'] },
-            { key: 'mobile', sdkTypes: ['flutter', 'android', 'dart'] },
-          ].map((cat) => {
+          {SDK_CATEGORIES.map((cat) => {
             const catEndpoints = defaultEndpoints.filter((ep) =>
               cat.sdkTypes.includes(ep.sdkType),
             )

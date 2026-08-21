@@ -56,7 +56,7 @@ function App() {
           i18n.changeLanguage(lang)
         }
       })
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load settings:', e))
     GetAppInfo()
       .then((info) => {
         setAppVersion(info.version)
@@ -67,7 +67,7 @@ function App() {
           link.href = `${logoImg}?v=${info.version}`
         }
       })
-      .catch(() => {})
+      .catch((e) => console.error('Failed to load app info:', e))
   }, [])
 
   const refreshStatuses = useCallback(async () => {
@@ -84,13 +84,17 @@ function App() {
   }, [refreshStatuses])
 
   useEffect(() => {
+    // Capture the deferred-refresh timer so it is cleared on unmount instead
+    // of firing a setState against an unmounted component (React warning +
+    // wasted work).
+    let timer: ReturnType<typeof setTimeout> | undefined
     const off = EventsOn('install:progress', (progress: InstallProgress) => {
       setInstallProgressMap((prev) => ({
         ...prev,
         [progress.sdkType]: progress,
       }))
       if (progress.stage === 'done' || progress.stage === 'error') {
-        setTimeout(() => {
+        timer = setTimeout(() => {
           refreshStatuses()
           setInstallProgressMap((prev) => {
             const next = { ...prev }
@@ -102,6 +106,7 @@ function App() {
     })
     return () => {
       off()
+      if (timer) clearTimeout(timer)
     }
   }, [refreshStatuses])
 

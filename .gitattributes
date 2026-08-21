@@ -15,3 +15,11 @@
 # JSON files (config, lockfiles): CRLF is technically valid JSON but causes
 # noisy diffs and can break checksums in content-addressed tooling. Force LF.
 *.json text eol=lf
+
+# Frontend source files: TS/TSX/CSS/MJS. CRLF breaks some tooling (esbuild
+# source maps, eslint parsers) and creates noisy cross-platform diffs. Force LF
+# so CI (Linux) and local (Windows autocrlf) stay byte-identical.
+*.ts text eol=lf
+*.tsx text eol=lf
+*.css text eol=lf
+*.mjs text eol=lf

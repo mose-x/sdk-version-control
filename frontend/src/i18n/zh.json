@@ -12,7 +12,6 @@
     "home": "主页",
     "pathInfo": "PATH 信息",
     "settings": "系统设置",
-    "about": "关于",
     "configuredCount": "{{count}}/{{total}} 已配置",
     "loadingSdk": "正在加载SDK安装情况，请稍后...",
     "importTooltip": "点击一键导入 SVC 系统",
@@ -96,15 +95,12 @@
     "done": "安装配置完成！",
     "error": "下载失败: {{error}}",
     "updateDownloading": "下载中...",
-    "updateDownloadProgress": "下载中 {{downloaded}}MB / {{total}}MB",
     "updateDone": "下载完成",
     "verifying": "验证完整性中..."
   },
   "path": {
     "title": "系统 PATH 配置",
-    "description": "当前 PATH 中已配置的 SDK 目录",
     "managed": "SVC 管理",
-    "external": "外部",
     "system": "系统",
     "import": "一键导入",
     "importing": "导入中...",
@@ -166,10 +162,7 @@
     "downloadThreadsDesc": "多线程分段下载加速，服务器不支持分段时自动回退单线程",
     "storageManagement": "缓存清理",
     "tmpCache": "临时缓存",
-    "versions": "个版本",
     "clean": "清理",
-    "cleanInactive": "清理未激活版本",
-    "cleanInactiveConfirm": "将删除 {{name}} 除活跃版本以外的所有已安装版本",
     "cleanSuccess": "清理完成",
     "proxyCheckSuccess": "{{target}} 连接成功",
     "proxyCheckFail": "{{target}} 连接失败: {{error}}",
@@ -232,8 +225,7 @@
     "totalSdks": "SDK 总数",
     "configured": "已配置",
     "pathOnly": "仅 PATH",
-    "notConfigured": "未配置",
-    "completionRate": "配置完成度"
+    "notConfigured": "未配置"
   },
   "endpoint": {
     "title": "Endpoint",

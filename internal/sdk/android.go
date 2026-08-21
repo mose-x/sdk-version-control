@@ -98,7 +98,10 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		return nil, fmt.Errorf("android repository returned HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// M9: Bound the response read to prevent an oversized/malicious server
+	// from exhausting memory. 100 MB is far larger than any legitimate
+	// repository2-3.xml (~5 MB).
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 100*1024*1024))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read android repository response: %w", err)
 	}

@@ -90,7 +90,15 @@ func (s *SettingsManager) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.settingsPath(), data, 0600)
+	// H5: atomic write via temp file + os.Rename (matching config.go). A
+	// partial write to settings.json (process killed mid-write) would
+	// corrupt the file and break the shim runtime's install-path discovery.
+	path := s.settingsPath()
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // Get returns current settings

@@ -1,10 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Modal, Table, Tag, Button, App, Empty } from 'antd'
-import {
-  ImportOutlined,
-  CheckCircleFilled,
-  FolderOutlined,
-} from '@ant-design/icons'
+import { ImportOutlined, FolderOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import { GetPathEntries, ImportSdk } from '../../../wailsjs/go/main/App'
 import { sdkColors } from '../../constants/sdk'
@@ -123,12 +119,11 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
       key: 'status',
       width: 120,
       align: 'right' as const,
-      render: (managed: boolean, entry: PathEntry) =>
-        managed ? (
-          <Tag icon={<CheckCircleFilled />} color="success">
-            {t('path.managed')}
-          </Tag>
-        ) : entry.sdkType ? (
+      // isManaged is always false here — managed PATH entries are filtered
+      // out in fetchEntries (see `!e.isManaged`) — so only the import-button
+      // / system-tag branches below can ever render.
+      render: (_managed: boolean, entry: PathEntry) =>
+        entry.sdkType ? (
           <Button
             size="small"
             type="primary"

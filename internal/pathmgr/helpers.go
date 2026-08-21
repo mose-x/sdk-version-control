@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -181,19 +180,6 @@ func normalizeJdkRoot(root string) string {
 	return root
 }
 
-// ExtractVersion extracts a pure version number from a directory name
-// e.g. jdk-1.8.412 -> 1.8.412, node-v18.14.0-win-x64 -> 18.14.0, go1.25.11 -> 1.25.11
-func ExtractVersion(dirName string) string {
-	// Match version patterns: digits.digits[.digits][_digits][-rc1 etc.]
-	re := regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?(?:[._]\d+)?(?:[-.](?:rc|alpha|beta)\d*)?)`)
-	match := re.FindString(dirName)
-	if match != "" {
-		// Replace _ with . to normalize the format
-		return strings.ReplaceAll(match, "_", ".")
-	}
-	return dirName
-}
-
 // CopyDir recursively copies a directory
 func CopyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
@@ -223,9 +209,12 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-
+	// M2: Surface Close errors (e.g. disk full during flush) — previously
+	// dropped via defer out.Close(), hiding the real cause of a corrupt copy.
 	_, err = io.Copy(out, in)
+	if cerr := out.Close(); cerr != nil && err == nil {
+		err = cerr
+	}
 	return err
 }
 
