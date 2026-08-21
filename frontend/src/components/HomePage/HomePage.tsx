@@ -155,8 +155,16 @@ const HomePage: React.FC<HomePageProps> = ({
                     }
                   >
                     <div
+                      role="button"
+                      tabIndex={0}
                       className={`home-sdk-chip ${s.configured ? 'configured' : s.pathConfigured ? 'path-only' : ''}`}
                       onClick={() => onSelect(s.sdkType as SdkType)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          onSelect(s.sdkType as SdkType)
+                        }
+                      }}
                     >
                       <div
                         className="home-sdk-dot"

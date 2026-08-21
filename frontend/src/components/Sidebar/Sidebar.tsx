@@ -444,22 +444,17 @@ const Sidebar: React.FC<SidebarProps> = ({
               return (
                 <div
                   key={status.sdkType}
+                  role="button"
+                  tabIndex={0}
                   className={`sdk-item ${selectedSdk === status.sdkType ? 'active' : ''}`}
-                  onClick={() => {
-                    if (!status.configured && status.systemProtected) {
-                      // System Python (e.g. /usr/bin/python3) cannot be
-                      // imported; jump to the detail page so the user can
-                      // install an app-managed version instead.
-                      onSelect(status.sdkType as SdkType)
-                    } else {
-                      // All other states (including pathConfigured) go to
-                      // the detail page. The PATH-import action used to fire
-                      // directly from here, but that stranded users who
-                      // cancelled the confirm modal — they were left on the
-                      // home list with no way to see version details. The
-                      // import action is now a button in the detail page's
-                      // import dropdown, so cancelling just returns to the
-                      // detail page.
+                  // All sidebar entries navigate to the detail page; the
+                  // PATH-import action lives in the detail page's import
+                  // dropdown so cancelling a confirm modal no longer strands
+                  // the user on the home list.
+                  onClick={() => onSelect(status.sdkType as SdkType)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
                       onSelect(status.sdkType as SdkType)
                     }
                   }}

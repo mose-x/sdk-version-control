@@ -12,7 +12,6 @@
     "home": "Home",
     "pathInfo": "PATH Info",
     "settings": "Settings",
-    "about": "About",
     "configuredCount": "{{count}}/{{total}} configured",
     "loadingSdk": "Loading SDK status, please wait...",
     "importTooltip": "Click to import into SVC",
@@ -96,15 +95,12 @@
     "done": "Installation complete!",
     "error": "Download failed: {{error}}",
     "updateDownloading": "Downloading...",
-    "updateDownloadProgress": "Downloading {{downloaded}}MB / {{total}}MB",
     "updateDone": "Download complete",
     "verifying": "Verifying integrity..."
   },
   "path": {
     "title": "System PATH Configuration",
-    "description": "SDK directories currently in PATH",
     "managed": "SVC Managed",
-    "external": "External",
     "system": "System",
     "import": "Import",
     "importing": "Importing...",
@@ -166,10 +162,7 @@
     "downloadThreadsDesc": "Multi-threaded download acceleration. Falls back to single thread if the server does not support range requests",
     "storageManagement": "Cache Cleanup",
     "tmpCache": "Temporary Cache",
-    "versions": "version(s)",
     "clean": "Clean",
-    "cleanInactive": "Clean Inactive",
-    "cleanInactiveConfirm": "This will delete all installed versions of {{name}} except the active one",
     "cleanSuccess": "Cleaned successfully",
     "proxyCheckSuccess": "{{target}} connection successful",
     "proxyCheckFail": "{{target}} connection failed: {{error}}",
@@ -232,8 +225,7 @@
     "totalSdks": "Total SDKs",
     "configured": "Configured",
     "pathOnly": "In PATH Only",
-    "notConfigured": "Not Configured",
-    "completionRate": "Configuration Progress"
+    "notConfigured": "Not Configured"
   },
   "endpoint": {
     "title": "Endpoint",

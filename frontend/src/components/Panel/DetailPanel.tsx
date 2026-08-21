@@ -983,8 +983,12 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                     size="small"
                     icon={<CopyOutlined />}
                     onClick={() => {
-                      navigator.clipboard.writeText(installProgress.downloadUrl)
-                      msgApi.success(t('detail.copiedToClipboard'))
+                      navigator.clipboard
+                        .writeText(installProgress.downloadUrl)
+                        .then(() =>
+                          msgApi.success(t('detail.copiedToClipboard')),
+                        )
+                        .catch(() => {})
                     }}
                     style={{ color: '#aaa', padding: '0 4px' }}
                   />
@@ -997,7 +1001,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                     size="small"
                     danger
                     icon={<CloseCircleFilled />}
-                    onClick={() => CancelInstall(status.sdkType)}
+                    onClick={() =>
+                      CancelInstall(status.sdkType).catch(() => {})
+                    }
                     style={{ padding: '0 4px' }}
                   />
                 </Tooltip>
