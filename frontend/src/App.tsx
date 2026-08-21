@@ -85,29 +85,33 @@ function App() {
   }, [refreshStatuses])
 
   useEffect(() => {
-    // Capture the deferred-refresh timer so it is cleared on unmount instead
-    // of firing a setState against an unmounted component (React warning +
-    // wasted work).
-    let timer: ReturnType<typeof setTimeout> | undefined
+    // M3: Track timers per-sdkType so multiple done events don't overwrite
+    // each other's timer ref, causing a leaked setTimeout.
+    const timers = new Map<string, ReturnType<typeof setTimeout>>()
     const off = EventsOn('install:progress', (progress: InstallProgress) => {
       setInstallProgressMap((prev) => ({
         ...prev,
         [progress.sdkType]: progress,
       }))
       if (progress.stage === 'done' || progress.stage === 'error') {
-        timer = setTimeout(() => {
+        // Clear any existing timer for this SDK before setting a new one
+        const existing = timers.get(progress.sdkType)
+        if (existing) clearTimeout(existing)
+        const timer = setTimeout(() => {
           refreshStatuses()
           setInstallProgressMap((prev) => {
             const next = { ...prev }
             delete next[progress.sdkType]
             return next
           })
+          timers.delete(progress.sdkType)
         }, 2000)
+        timers.set(progress.sdkType, timer)
       }
     })
     return () => {
       off()
-      if (timer) clearTimeout(timer)
+      timers.forEach((timer) => clearTimeout(timer))
     }
   }, [refreshStatuses])
 

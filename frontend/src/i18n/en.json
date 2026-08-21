@@ -69,7 +69,6 @@
     "importPath": "Import from PATH",
     "importSuccess": "Import successful!",
     "importFail": "Import failed: {{error}}",
-    "installingSdk": "Installing {{sdk}} {{version}}",
     "importingSdk": "Importing {{sdk}}",
     "importingDesc": "Configuring system environment variables, please wait...",
     "systemConflictTitle": "System-level Environment Conflict",
@@ -130,7 +129,6 @@
     "installPathResetConfirmDesc": "This will copy all SDK files to {{path}} and update environment variables. The current install directory will be automatically backed up to the desktop before migration.",
     "installPathSuccess": "Install location migrated successfully!",
     "installPathFail": "Migration failed: {{error}}",
-    "installPathBackupHint": "The current install directory will be automatically backed up to the desktop before migration (backup file name format: <original_dir_name>_backup_<timestamp>).",
     "checkUpdate": "Check for Updates",
     "checkUpdateBtn": "Check",
     "rollbackBtn": "Rollback",
@@ -174,7 +172,6 @@
   },
   "logs": {
     "title": "Log Management",
-    "description": "View and manage application log files",
     "logFiles": "Log Files",
     "size": "Size",
     "modified": "Modified",

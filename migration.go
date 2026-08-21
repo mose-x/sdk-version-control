@@ -102,6 +102,7 @@ func (a *App) MigrateInstallPath(newPath string) error {
 	if err := a.shimMgr.EnsureSetup(); err != nil {
 		logger.Error("Shim setup at new location failed, aborting migration: %v", err)
 		os.RemoveAll(newDir)
+		a.cfg.SetSvcDir(oldDir) // revert in-memory cfg so app keeps working until restart
 		return fmt.Errorf("shim setup failed at new location: %w", err)
 	}
 
