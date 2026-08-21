@@ -86,7 +86,7 @@ SRC_ICON="build/desktop-icons/icon-white-bg.png"
 for sz in 16 32 48 64 128 256 512; do
   d="$STAGING/share/icons/hicolor/${sz}x${sz}/apps"
   mkdir -p "$d"
-  python3 -c "from PIL import Image; Image.open('$SRC_ICON').resize(($sz,$sz), Image.Resampling.LANCZOS).save('$d/sdkversioncontrol.png')"
+  python3 -c "from PIL import Image; img=Image.open('$SRC_ICON'); res=getattr(getattr(Image,'Resampling',Image),'LANCZOS',Image.LANCZOS); img.resize(($sz,$sz),res).save('$d/sdkversioncontrol.png')"
 done
 
 fpm -s dir -t deb \
