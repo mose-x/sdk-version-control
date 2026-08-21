@@ -173,13 +173,19 @@ func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, do
 		return fmt.Errorf("download failed, HTTP status code: %d", resp.StatusCode)
 	}
 
-	out, err := os.Create(destPath)
+	// H4: Write to a .part temp file, rename on success, delete on error.
+	// Prevents partial downloads from being mistaken for complete files.
+	partPath := destPath + ".part"
+	out, err := os.Create(partPath)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	// M1: Surface Close errors (e.g. disk full during flush) instead of
-	// dropping them. On early-return paths the original error wins; on the
-	// success path a Close error is returned to the caller.
+	// Clean up .part on any error path; on success the rename consumes it.
+	defer func() {
+		if err != nil {
+			os.Remove(partPath)
+		}
+	}()
 	defer func() {
 		if cerr := out.Close(); cerr != nil && err == nil {
 			err = fmt.Errorf("failed to close file: %w", cerr)
@@ -234,6 +240,10 @@ func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, do
 		}
 	}
 
+	// H4: Atomically rename .part to final destination on success.
+	if err = os.Rename(partPath, destPath); err != nil {
+		return fmt.Errorf("failed to rename download file: %w", err)
+	}
 	return nil
 }
 

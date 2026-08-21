@@ -222,7 +222,7 @@ func (f *RustFetcher) buildFileName(version string) string {
 }
 
 func (f *RustFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Rust))
+	installed, _ := f.cfg.GetInstalledVersions(string(Rust))
 	active := f.cfg.GetActiveVersion(string(Rust))
 	configured := active != ""
 

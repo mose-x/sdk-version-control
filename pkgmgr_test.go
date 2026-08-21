@@ -41,6 +41,12 @@ func TestNodeSupportsCorepack(t *testing.T) {
 		{"", false},
 		{"invalid", false},
 		{"16", false},
+		// M5: single-part major versions > 16 must return true even without a
+		// minor (previously fell through to false because len(parts) < 2).
+		{"18", true},
+		{"v20", true},
+		{"17", true},
+		{"15", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {

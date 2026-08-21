@@ -160,26 +160,6 @@ func DeduplicateEntries(entries []PathEntry) []PathEntry {
 	return result
 }
 
-// normalizeJdkRoot normalizes a JRE path to the JDK root path
-// e.g. jdk-1.8.0/jre -> jdk-1.8.0
-func normalizeJdkRoot(root string) string {
-	// If the root directory name is "jre", check whether the parent directory is the JDK root
-	if strings.ToLower(filepath.Base(root)) == "jre" {
-		parent := filepath.Dir(root)
-		// Check whether the parent directory has bin/javac, confirming it is the JDK root
-		for _, ext := range []string{"", ".exe"} {
-			if _, err := os.Stat(filepath.Join(parent, "bin", "javac"+ext)); err == nil {
-				return parent
-			}
-		}
-		// A release file in the parent also confirms it is the JDK root
-		if _, err := os.Stat(filepath.Join(parent, "release")); err == nil {
-			return parent
-		}
-	}
-	return root
-}
-
 // CopyDir recursively copies a directory
 func CopyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {

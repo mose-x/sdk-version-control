@@ -261,7 +261,7 @@ func (f *PHPFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *PHPFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(PHP))
+	installed, _ := f.cfg.GetInstalledVersions(string(PHP))
 	active := f.cfg.GetActiveVersion(string(PHP))
 	configured := active != ""
 

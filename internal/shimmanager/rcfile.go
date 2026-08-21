@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/shim"
@@ -117,12 +116,4 @@ func (m *Manager) AddShell(shellName string) error {
 // AvailableShells returns the list of shells that can be configured.
 func (m *Manager) AvailableShells() []config.ShellInfo {
 	return config.AvailableShells()
-}
-
-// ensureLeadingNewline ensures content doesn't start without proper spacing
-func ensureLeadingNewline(s string) string {
-	if !strings.HasPrefix(s, "\n") {
-		return "\n" + s
-	}
-	return s
 }

@@ -114,12 +114,24 @@ func criticalFilesFor(t sdk.SdkType) []string {
 		}
 		return []string{"bin/perl"}
 	case sdk.Maven:
+		if runtime.GOOS == "windows" {
+			return []string{"bin/mvn.cmd"}
+		}
 		return []string{"bin/mvn"}
 	case sdk.Gradle:
+		if runtime.GOOS == "windows" {
+			return []string{"bin/gradle.bat"}
+		}
 		return []string{"bin/gradle"}
 	case sdk.Flutter:
+		if runtime.GOOS == "windows" {
+			return []string{"bin/flutter.bat"}
+		}
 		return []string{"bin/flutter"}
 	case sdk.Android:
+		if runtime.GOOS == "windows" {
+			return []string{"cmdline-tools/bin/sdkmanager.bat"}
+		}
 		return []string{"cmdline-tools/bin/sdkmanager"}
 	case sdk.Dart:
 		if runtime.GOOS == "windows" {
@@ -245,15 +257,17 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		return err
 	}
 
+	// H1: Set active version BEFORE ConfigureSdk (matching InstallSdk M13 fix).
+	if err := a.cfg.SetActiveVersion(sdkTypeStr, versionName); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	a.pathMgr.CleanExternalPaths(sdkTypeStr, versionName, sourceDir)
 
-	if err := a.cfg.SetActiveVersion(sdkTypeStr, versionName); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
 	if err := a.shimMgr.RefreshRcFile(); err != nil {
 		logger.Warn("Failed to refresh .svc.rc after import: %v", err)
 	}
@@ -303,15 +317,17 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 		return err
 	}
 
+	// H1: Set active version BEFORE ConfigureSdk (matching InstallSdk M13 fix).
+	if err := a.cfg.SetActiveVersion(sdkType, versionName); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
 	if err := a.pathMgr.ConfigureSdk(sdkType, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	a.pathMgr.CleanExternalPaths(sdkType, versionName, sdkRoot)
 
-	if err := a.cfg.SetActiveVersion(sdkType, versionName); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
 	if err := a.shimMgr.RefreshRcFile(); err != nil {
 		logger.Warn("Failed to refresh .svc.rc after import: %v", err)
 	}
@@ -381,15 +397,17 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 		return err
 	}
 
+	// H1: Set active version BEFORE ConfigureSdk (matching InstallSdk M13 fix).
+	if err := a.cfg.SetActiveVersion(sdkTypeStr, versionName); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
 	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, targetDir, binDirs, f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	a.pathMgr.CleanExternalPaths(sdkTypeStr, versionName, sdkRoot)
 
-	if err := a.cfg.SetActiveVersion(sdkTypeStr, versionName); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
 	if err := a.shimMgr.RefreshRcFile(); err != nil {
 		logger.Warn("Failed to refresh .svc.rc after import: %v", err)
 	}

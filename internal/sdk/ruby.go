@@ -274,7 +274,7 @@ func (f *RubyFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *RubyFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Ruby))
+	installed, _ := f.cfg.GetInstalledVersions(string(Ruby))
 	active := f.cfg.GetActiveVersion(string(Ruby))
 	configured := active != ""
 

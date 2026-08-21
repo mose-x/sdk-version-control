@@ -65,12 +65,17 @@ func extractVersionFromOutput(cmd string, args []string) string {
 	return extractVersionFromString(string(out))
 }
 
+// versionPattern matches a version string like "1.2" or "1.2.3". Hoisted to a
+// package-level var so it is compiled once at init, not recompiled per call
+// (L1). extractVersionFromString is on the hot path (system-detected SDK
+// version scans + every imported SDK directory probe).
+var versionPattern = regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`)
+
 // extractVersionFromString applies the version-extraction regex to a command's
 // raw output. Used by extractVersionFromOutput (system-detected SDKs) and
 // detectVersionFromDir (imported SDKs). Returns "" if no version pattern found.
 func extractVersionFromString(s string) string {
-	re := regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`)
-	return re.FindString(s)
+	return versionPattern.FindString(s)
 }
 
 func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string, error) {

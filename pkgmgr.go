@@ -91,14 +91,17 @@ func parsePipVersion(raw string) string {
 func nodeSupportsCorepack(version string) bool {
 	version = strings.TrimPrefix(version, "v")
 	parts := strings.Split(version, ".")
-	if len(parts) < 2 {
-		return false
-	}
 	major, _ := strconv.Atoi(parts[0])
-	minor, _ := strconv.Atoi(parts[1])
+	// M5: Any major > 16 supports corepack. Checked before the len(parts) < 2
+	// guard so single-part versions like "18" (no minor) still return true
+	// instead of falling through to false.
 	if major > 16 {
 		return true
 	}
+	if len(parts) < 2 {
+		return false
+	}
+	minor, _ := strconv.Atoi(parts[1])
 	if major == 16 && minor >= 9 {
 		return true
 	}

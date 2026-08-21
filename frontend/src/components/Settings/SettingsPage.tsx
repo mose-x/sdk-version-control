@@ -181,12 +181,16 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
 
   useEffect(() => {
     GetSettings()
-      .then((s) => setSettings(s))
+      .then((s) => {
+        if (s) setSettings(s)
+      })
       .catch((e) => console.error('Failed to load settings:', e))
     GetAppInfo()
       .then((info) => {
-        setAppInfo(info)
-        setOriginalVersion(info.version)
+        if (info) {
+          setAppInfo(info)
+          setOriginalVersion(info.version)
+        }
       })
       .catch((e) => console.error('Failed to load app info:', e))
     GetDefaultEndpoints()
@@ -194,14 +198,18 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
       .catch((e) => console.error('Failed to load default endpoints:', e))
     GetDefaultInstallPath()
       .then((p) => {
-        setDefaultInstallPath(p)
-        setInstallPathDraft(p)
+        if (p) {
+          setDefaultInstallPath(p)
+          setInstallPathDraft(p)
+        }
       })
       .catch((e) => console.error('Failed to load default install path:', e))
     GetInstallPath()
       .then((p) => {
-        setInstallPath(p)
-        setInstallPathDraft(p)
+        if (p) {
+          setInstallPath(p)
+          setInstallPathDraft(p)
+        }
       })
       .catch((e) => console.error('Failed to load install path:', e))
     GetEndpoints()
@@ -773,7 +781,14 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
                           : '127.0.0.1:7890'
                       }
                       value={settings.proxy.url}
-                      onChange={(e) => handleProxyUrlChange(e.target.value)}
+                      onChange={(e) =>
+                        // M13: update local state only; persist on blur (see
+                        // onBlur below) to avoid SaveSettings per keystroke.
+                        setSettings({
+                          ...settings,
+                          proxy: { ...settings.proxy, url: e.target.value },
+                        } as any)
+                      }
                       onBlur={(e) =>
                         handleProxyUrlChange(e.target.value.trim())
                       }

@@ -153,7 +153,7 @@ func (f *FlutterFetcher) GetDownloadURL(version string) (string, string, error) 
 }
 
 func (f *FlutterFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Flutter))
+	installed, _ := f.cfg.GetInstalledVersions(string(Flutter))
 	active := f.cfg.GetActiveVersion(string(Flutter))
 	configured := active != ""
 

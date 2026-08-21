@@ -133,7 +133,7 @@ func (f *DotNetFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *DotNetFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(DotNet))
+	installed, _ := f.cfg.GetInstalledVersions(string(DotNet))
 	active := f.cfg.GetActiveVersion(string(DotNet))
 	configured := active != ""
 

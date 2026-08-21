@@ -154,7 +154,7 @@ func (f *DartFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *DartFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Dart))
+	installed, _ := f.cfg.GetInstalledVersions(string(Dart))
 	active := f.cfg.GetActiveVersion(string(Dart))
 	configured := active != ""
 

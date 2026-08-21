@@ -155,7 +155,7 @@ func (f *GolangFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *GolangFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Golang))
+	installed, _ := f.cfg.GetInstalledVersions(string(Golang))
 	active := f.cfg.GetActiveVersion(string(Golang))
 	configured := active != ""
 

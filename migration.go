@@ -125,7 +125,12 @@ func (a *App) MigrateInstallPath(newPath string) error {
 	s := a.settings.Get()
 	s.InstallPath = newDir
 	if err := a.settings.Update(s); err != nil {
-		logger.Error("Failed to save settings: %v", err)
+		// M4: Do NOT RemoveAll the old directory if persisting the new install
+		// path failed. The new path must be recorded in settings.json before
+		// the old dir is deleted; otherwise a restart would fall back to the
+		// old (now-deleted) path and lose the install. Abort here instead.
+		logger.Error("Failed to save new install path, aborting before old dir removal: %v", err)
+		return fmt.Errorf("failed to save new install path: %w", err)
 	}
 
 	logger.Info("Removing old install directory: %s", oldDir)

@@ -61,7 +61,10 @@ func main() {
 	})
 
 	if err != nil {
-		println("Error:", err.Error())
+		// L2: use fmt.Fprintf(os.Stderr, ...) instead of the builtin println,
+		// matching the error-reporting style used elsewhere in this file and
+		// giving a guaranteed, formatted stderr message.
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 	}
 }
 
