@@ -225,10 +225,13 @@ func resolveSvcHome() (string, error) {
 	settingsPath := filepath.Join(defaultDir, "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
+		// L6: Log so users with custom InstallPath know why shims fall back.
+		fmt.Fprintf(os.Stderr, "svc shim: settings.json not found at %s, using default %s\n", settingsPath, defaultDir)
 		return defaultDir, nil
 	}
 	var s settings
 	if err := json.Unmarshal(data, &s); err != nil {
+		fmt.Fprintf(os.Stderr, "svc shim: settings.json parse error: %v, using default %s\n", err, defaultDir)
 		return defaultDir, nil
 	}
 	if s.InstallPath != "" {

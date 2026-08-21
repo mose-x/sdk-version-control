@@ -467,7 +467,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
         return GetSettings()
       })
       .then((s) => {
-        setSettings(s)
+        if (s) setSettings(s)
         msgApi.success(t('settings.githubTokenSaved'))
       })
       .catch((e: any) => {
@@ -492,7 +492,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
             return GetSettings()
           })
           .then((s) => {
-            setSettings(s)
+            if (s) setSettings(s)
             msgApi.success(t('settings.githubTokenCleared'))
           })
           .catch((e: any) => {

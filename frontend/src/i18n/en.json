@@ -100,7 +100,6 @@
   },
   "path": {
     "title": "System PATH Configuration",
-    "managed": "SVC Managed",
     "system": "System",
     "import": "Import",
     "importing": "Importing...",

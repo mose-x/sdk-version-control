@@ -65,6 +65,7 @@ func main() {
 		// matching the error-reporting style used elsewhere in this file and
 		// giving a guaranteed, formatted stderr message.
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 }
 

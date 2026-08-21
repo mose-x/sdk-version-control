@@ -23,3 +23,4 @@
 *.tsx text eol=lf
 *.css text eol=lf
 *.mjs text eol=lf
+*.html text eol=lf
