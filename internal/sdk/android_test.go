@@ -206,6 +206,8 @@ func TestAndroidFetcher_PrefersArchMatchingArchive(t *testing.T) {
 	osKey := "windows"
 	if runtime.GOOS == "linux" {
 		osKey = "linux"
+	} else if runtime.GOOS == "darwin" {
+		osKey = "macosx"
 	}
 	xmlBody := fmt.Sprintf(`<?xml version="1.0"?>
 <sdk-repository>

@@ -63,6 +63,10 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
+      - name: Shell syntax check
+        run: |
+          for f in scripts/*.sh; do bash -n "$f" || exit 1; done
+
   # Tests + build run on all three OSes so Windows-specific code paths
   # (registry PATH, path_windows.go) and macOS get real regression
   # coverage instead of only cross-compiling.
@@ -114,4 +118,5 @@ jobs:
   commit-lint:
     name: commit-lint
     if: github.event_name == 'pull_request'
+    # TODO: pin to @v1.x.x when code-hooks publishes a tag
     uses: mose-x/code-hooks/.github/workflows/commit-lint.yml@main

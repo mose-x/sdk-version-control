@@ -34,6 +34,9 @@ WIN_VER=$(echo "$VERSION" | awk -F. '{printf "%s.%s.%s.0", $1, $2, $3}')
 jq --arg v "$WIN_VER" '.RT_VERSION["#1"]["0000"].fixed.file_version = $v | .RT_VERSION["#1"]["0000"].fixed.product_version = $v | .RT_VERSION["#1"]["0000"].info["0409"].FileVersion = $v | .RT_VERSION["#1"]["0000"].info["0409"].ProductVersion = $v' winres/winres.json > winres/winres.json.tmp && mv winres/winres.json.tmp winres/winres.json
 echo "Version bumped to $VERSION in about.json, wails.json, winres.json"
 
+# R9: Restore version-bumped files on exit so local builds don't leave the repo dirty.
+trap 'git checkout about.json wails.json 2>/dev/null; git checkout winres/winres.json 2>/dev/null' EXIT
+
 # --- Generate Windows resources (icon + manifest) -> resource.syso.
 # go-winres --out resource produces a file named `resource` (no extension) with
 # --no-suffix; rename it to resource.syso so the Go linker embeds it.
@@ -48,7 +51,11 @@ mv -f resource resource.syso
 # (Test-Path + choco fallback). Locally, install NSIS and ensure makensis is on
 # PATH. If makensis is absent, wails skips the installer and the guard below
 # ships the bare .exe (self-update asset) without failing the build.
-command -v makensis >/dev/null 2>&1 && makensis /VERSION || echo "warning: makensis not on PATH; installer will be skipped" >&2
+if command -v makensis >/dev/null 2>&1; then
+  makensis /VERSION
+else
+  echo "warning: makensis not on PATH; installer will be skipped" >&2
+fi
 
 # --- Build the console-subsystem svc-shim binary that the app //go:embeds.
 # This MUST run before `wails build` so the bytes are captured at compile time.
