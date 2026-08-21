@@ -69,7 +69,6 @@
     "importPath": "从 PATH 导入",
     "importSuccess": "导入成功！",
     "importFail": "导入失败: {{error}}",
-    "installingSdk": "正在安装 {{sdk}} {{version}}",
     "importingSdk": "正在导入 {{sdk}}",
     "importingDesc": "正在配置系统环境变量，请稍候...",
     "systemConflictTitle": "系统级环境配置冲突",
@@ -130,7 +129,6 @@
     "installPathResetConfirmDesc": "将把所有 SDK 文件复制到 {{path}}，并更新环境变量。迁移前会自动备份当前安装目录到桌面。",
     "installPathSuccess": "安装位置迁移完成！",
     "installPathFail": "迁移失败: {{error}}",
-    "installPathBackupHint": "迁移前会自动备份当前安装目录到桌面（备份文件命名格式：<原目录名>_backup_<时间戳>）。",
     "checkUpdate": "检查更新",
     "checkUpdateBtn": "检查",
     "rollbackBtn": "回滚",
@@ -174,7 +172,6 @@
   },
   "logs": {
     "title": "日志管理",
-    "description": "查看和管理应用日志文件",
     "logFiles": "日志文件",
     "size": "大小",
     "modified": "修改时间",

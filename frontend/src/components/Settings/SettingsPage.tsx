@@ -1248,7 +1248,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
                 </div>
                 {logFiles.map((file: any, idx: number) => (
                   <div
-                    key={idx}
+                    key={file?.name || idx}
                     style={{
                       display: 'flex',
                       padding: '8px 12px',
