@@ -17,6 +17,11 @@ import (
 // where SVC data should never be placed (would corrupt the OS).
 func isSystemPath(path string) bool {
 	cleaned := strings.ToLower(filepath.Clean(path))
+	// Per-user temp dirs are not system locations: on macOS os.TempDir() is
+	// /var/folders/..., which would otherwise be rejected by the /var root.
+	if tmp := strings.ToLower(filepath.Clean(os.TempDir())); tmp != "" && (cleaned == tmp || strings.HasPrefix(cleaned, tmp+string(os.PathSeparator))) {
+		return false
+	}
 	if runtime.GOOS == "windows" {
 		systemRoots := []string{`c:\windows`, `c:\program files`, `c:\program files (x86)`, `c:\programdata`, `c:\system32`}
 		for _, root := range systemRoots {

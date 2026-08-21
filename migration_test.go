@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -127,5 +128,23 @@ func TestMigrateInstallPath_RejectsNestedTarget(t *testing.T) {
 	// Old directory content must be intact.
 	if _, err := os.Stat(filepath.Join(oldDir, "keep")); err != nil {
 		t.Errorf("old directory content lost: %v", err)
+	}
+}
+
+func TestIsSystemPath_AllowsTempDir(t *testing.T) {
+	// macOS per-user temp lives under /var/folders and must NOT be treated
+	// as a system directory (regression: CI macOS runners failed migration
+	// tests because t.TempDir() matched the /var system root).
+	if isSystemPath(filepath.Join(os.TempDir(), "svc-target")) {
+		t.Errorf("path under os.TempDir() (%s) wrongly flagged as system path", os.TempDir())
+	}
+	if runtime.GOOS == "windows" {
+		if !isSystemPath(`C:\Windows\System32`) {
+			t.Error(`C:\Windows\System32 must be a system path`)
+		}
+	} else {
+		if !isSystemPath("/usr") {
+			t.Error("/usr must be a system path")
+		}
 	}
 }
