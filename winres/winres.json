@@ -11,20 +11,20 @@
     "#1": {
       "0000": {
         "fixed": {
-          "file_version": "1.1.1.1",
-          "product_version": "1.1.1.1"
+          "file_version": "1.1.1.0",
+          "product_version": "1.1.1.0"
         },
         "info": {
           "0409": {
             "Comments": "",
             "CompanyName": "",
             "FileDescription": "SDK Version Control",
-            "FileVersion": "1.1.1.1",
+            "FileVersion": "1.1.1.0",
             "InternalName": "SDKVersionControl",
             "LegalCopyright": "MIT License",
             "OriginalFilename": "SDKVersionControl.exe",
             "ProductName": "SDK Version Control",
-            "ProductVersion": "1.1.1.1"
+            "ProductVersion": "1.1.1.0"
           }
         }
       }
