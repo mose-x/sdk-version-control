@@ -268,3 +268,81 @@ func (s *stubXMLRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 		Body:       io.NopCloser(strings.NewReader(s.body)),
 	}, nil
 }
+
+// TestAndroidCmdlineToolsPrerelease pins the pre-release package predicate:
+// any "-" in the version segment after "cmdline-tools;" (alpha/beta/rc
+// suffixes) marks a non-stable package.
+func TestAndroidCmdlineToolsPrerelease(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"cmdline-tools;14.0", false},
+		{"cmdline-tools;16.0", false},
+		{"cmdline-tools;14.0-alpha01", true},
+		{"cmdline-tools;15.0-beta02", true},
+		{"cmdline-tools;15.0-rc1", true},
+		{"platform-tools", false}, // not a cmdline-tools package
+		{"cmdline-tools", false},  // missing version segment
+		{"cmdline-tools;12345.0-alpha", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := androidCmdlineToolsPrerelease(tt.path); got != tt.want {
+				t.Errorf("androidCmdlineToolsPrerelease(%q) = %v; want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestAndroidFetcher_SkipsPrereleaseCmdlineTools feeds a repository fixture
+// containing alpha/beta/rc cmdline-tools packages next to a stable one and
+// verifies only the stable package ends up in the version list.
+func TestAndroidFetcher_SkipsPrereleaseCmdlineTools(t *testing.T) {
+	osKey := "windows"
+	if runtime.GOOS == "linux" {
+		osKey = "linux"
+	} else if runtime.GOOS == "darwin" {
+		osKey = "macosx"
+	}
+	pkgTemplate := func(path string, major, minor, micro int, urlName string) string {
+		return fmt.Sprintf(`
+  <remotePackage path="%s">
+    <revision><major>%d</major><minor>%d</minor><micro>%d</micro></revision>
+    <archives>
+      <archive>
+        <complete><url>%s</url><size>1</size></complete>
+        <host-os>%s</host-os>
+      </archive>
+    </archives>
+  </remotePackage>`, path, major, minor, micro, urlName, osKey)
+	}
+	xmlBody := `<?xml version="1.0"?>
+<sdk-repository>` +
+		pkgTemplate("cmdline-tools;14.0-alpha01", 14, 0, 0, "cmdline-alpha.zip") +
+		pkgTemplate("cmdline-tools;15.0-beta02", 15, 0, 0, "cmdline-beta.zip") +
+		pkgTemplate("cmdline-tools;15.0-rc1", 15, 0, 0, "cmdline-rc.zip") +
+		pkgTemplate("cmdline-tools;16.0", 16, 0, 0, "cmdline-stable.zip") + `
+</sdk-repository>`
+
+	f := &AndroidFetcher{
+		httpClient: &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: &stubXMLRoundTripper{body: xmlBody},
+		},
+	}
+
+	versions, err := f.FetchRemoteVersions()
+	if err != nil {
+		t.Fatalf("FetchRemoteVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected only the stable package, got %d: %+v", len(versions), versions)
+	}
+	if versions[0].Version != "16.0.0" {
+		t.Errorf("expected version 16.0.0, got %q", versions[0].Version)
+	}
+	if versions[0].FileName != "cmdline-stable.zip" {
+		t.Errorf("expected the stable archive, got %q", versions[0].FileName)
+	}
+}

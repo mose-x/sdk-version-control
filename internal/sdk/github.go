@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -62,9 +63,28 @@ func applyGithubEndpoint(sm *config.SettingsManager, sdkType SdkType, defaultURL
 	if custom == "" {
 		return defaultURL
 	}
-	out := strings.Replace(defaultURL, "https://api.github.com", custom, 1)
-	out = strings.Replace(out, "https://github.com", custom, 1)
-	return out
+	// Mutually exclusive single substitution: a URL starts with exactly one of
+	// the two GitHub hosts. The previous implementation ran two chained
+	// strings.Replace calls and the second one re-scanned the output of the
+	// first; when custom itself contains "github.com" (ghproxy-style mirrors
+	// like "https://ghproxy.com/https://github.com") the freshly inserted
+	// prefix was replaced again, producing a doubled mirror prefix. Replacing
+	// at most once via HasPrefix+TrimPrefix never touches its own output.
+	if strings.HasPrefix(defaultURL, "https://api.github.com") {
+		return custom + strings.TrimPrefix(defaultURL, "https://api.github.com")
+	}
+	if strings.HasPrefix(defaultURL, "https://github.com") {
+		return custom + strings.TrimPrefix(defaultURL, "https://github.com")
+	}
+	return defaultURL
+}
+
+// isGithubAPIHost reports whether host is exactly the real GitHub API host
+// (case-insensitive). Only this host may receive the user's GitHub PAT;
+// mirrors and per-SDK custom endpoints are third parties from the token's
+// point of view and must never see it. Pure so the scoping rule is testable.
+func isGithubAPIHost(host string) bool {
+	return strings.EqualFold(host, "api.github.com")
 }
 
 // fetchGithubReleasesPage fetches one page of GitHub releases from url (which
@@ -99,6 +119,15 @@ func applyGithubEndpoint(sm *config.SettingsManager, sdkType SdkType, defaultURL
 func fetchGithubReleasesPage(sm *config.SettingsManager, client *http.Client, url string, target any) error {
 	token := DecodeGithubToken(sm)
 
+	// isRealGithubAPI is true only when url points at the genuine GitHub API
+	// host. Per-SDK custom endpoints (useEndpoint / applyGithubEndpoint)
+	// rewrite the host for python/ruby/perl/php; such rewritten URLs -- even
+	// ones that still contain "github.com" somewhere in the string (e.g. a
+	// ghproxy-style prefix) -- must neither receive the PAT nor be
+	// double-proxied through a mirror.
+	parsedURL, parseErr := neturl.Parse(url)
+	isRealGithubAPI := parseErr == nil && isGithubAPIHost(parsedURL.Host)
+
 	type candidate struct {
 		url   string
 		label string
@@ -110,14 +139,14 @@ func fetchGithubReleasesPage(sm *config.SettingsManager, client *http.Client, ur
 	}
 	var cands []candidate
 
-	// 1. Direct request (with token when configured). Always tried first so a
-	//    working authenticated path is preferred over any mirror.
-	cands = append(cands, candidate{url, "primary", token != ""})
+	// 1. Direct request (with token when configured AND the host really is
+	//    api.github.com). Always tried first so a working authenticated path
+	//    is preferred over any mirror.
+	cands = append(cands, candidate{url, "primary", token != "" && isRealGithubAPI})
 
 	// Mirrors (steps 2 and 3) only apply when url still points at the real
 	// api.github.com. A per-SDK custom endpoint already rewrote the host, so
 	// prepending a mirror would double-proxy and almost certainly 404.
-	isRealGithubAPI := strings.Contains(url, "api.github.com")
 	if isRealGithubAPI {
 		// 2. mirrors.json easter-egg list (no token).
 		for _, m := range GetGithubMirrors() {

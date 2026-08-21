@@ -29,46 +29,72 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// ApplyUpdate launches a background /bin/sh script that: waits for the
-// current process to exit (by PID, not pgrep -f which matches too wide),
-// atomically renames the running binary to .bak, renames the downloaded
-// payload into place, chmod +x, relaunches, and self-deletes.
+// writeTempScript writes content to a freshly created temp script with an
+// UNPREDICTABLE name and returns the path. os.CreateTemp opens with
+// O_CREATE|O_EXCL (never follows a pre-planted symlink, refuses to overwrite
+// an existing file) and picks a random suffix, closing the two hazards of the
+// old fixed /tmp names (svc_updater.sh / svc_rollback.sh):
 //
-// Rename (mv) is used instead of cp so the replacement is atomic: a failed
-// second step leaves the .bak intact and the current binary untouched,
-// rather than overwriting it halfway and leaving a corrupt executable.
-// A 60s timeout guards against the wait loop hanging forever if the app
-// fails to exit.
-func (a *App) ApplyUpdate() error {
-	currentExe, err := os.Executable()
+//  1. symlink attack — a local attacker pre-creates the fixed path as a
+//     symlink to an arbitrary file; a plain os.WriteFile then follows it and
+//     overwrites the target with the script body;
+//  2. TOCTOU swap — the attacker replaces the script between write and exec,
+//     injecting commands that run with the user's privileges.
+//
+// The file is created 0600 and chmod'd to 0700 so /bin/sh can execute it.
+func writeTempScript(pattern, content string) (string, error) {
+	f, err := os.CreateTemp(os.TempDir(), pattern)
 	if err != nil {
-		return fmt.Errorf("failed to get current program path: %w", err)
+		return "", fmt.Errorf("failed to create temp script: %w", err)
 	}
-
-	newExe := getUpdateFilePath()
-	if _, err := os.Stat(newExe); err != nil {
-		return fmt.Errorf("update file does not exist: %w", err)
+	scriptPath := f.Name()
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		os.Remove(scriptPath)
+		return "", fmt.Errorf("failed to write temp script: %w", err)
 	}
+	if err := f.Close(); err != nil {
+		os.Remove(scriptPath)
+		return "", fmt.Errorf("failed to write temp script: %w", err)
+	}
+	if err := os.Chmod(scriptPath, 0700); err != nil {
+		os.Remove(scriptPath)
+		return "", fmt.Errorf("failed to make temp script executable: %w", err)
+	}
+	return scriptPath, nil
+}
 
-	// Compute the SHA256 of the downloaded update BEFORE writing the script.
-	// DownloadUpdate already verified against the server-published hash;
-	// this pre-copy hash is what the shell script compares the post-copy
-	// bytes against, catching a partial copy or /tmp TOCTOU swap.
-	expectedHash, err := sha256OfFile(newExe)
+// secureUpdatePayload moves the downloaded payload from the fixed, guessable
+// download path to an unpredictable temp name (CreateTemp: O_CREATE|O_EXCL,
+// random suffix) and returns the new path. The fixed /tmp/svc_update_new name
+// could be pre-planted or swapped by a local attacker between the download
+// and the updater script's mv; referencing the unpredictable name in the
+// script removes that window. The rename happens inside the same temp dir,
+// so it is atomic (same filesystem).
+func secureUpdatePayload(fixedPath string) (string, error) {
+	f, err := os.CreateTemp(os.TempDir(), "svc_update_payload_*")
 	if err != nil {
-		return fmt.Errorf("failed to hash update file: %w", err)
+		return "", fmt.Errorf("failed to reserve temp payload name: %w", err)
 	}
+	securePath := f.Name()
+	f.Close()
+	if err := os.Rename(fixedPath, securePath); err != nil {
+		os.Remove(securePath)
+		return "", fmt.Errorf("failed to secure update payload: %w", err)
+	}
+	return securePath, nil
+}
 
-	bak := backupPath(currentExe)
-	scriptPath := filepath.Join(os.TempDir(), "svc_updater.sh")
-	pid := os.Getpid()
-	// All paths are shell-quoted to avoid injection / syntax errors when
-	// the install path contains spaces, $, ", `, etc.
+// buildUnixUpdateScript renders the /bin/sh body for ApplyUpdate. Extracted so
+// the wait/backup/replace/verify/rollback logic can be unit-tested without
+// launching the updater for real (it touches the running binary + quits the
+// app). All paths are shell-quoted by the caller's Sprintf arguments.
+func buildUnixUpdateScript(pid int, currentExe, bak, newExe, expectedHash string) string {
 	exeQ := shellQuote(currentExe)
 	bakQ := shellQuote(bak)
 	newQ := shellQuote(newExe)
 	hashQ := shellQuote(expectedHash)
-	scriptContent := fmt.Sprintf(`#!/bin/sh
+	return fmt.Sprintf(`#!/bin/sh
 expected_hash=%s
 echo "Waiting for application to close..."
 timeout=60
@@ -111,41 +137,14 @@ echo "Starting new version..."
 nohup %s > /dev/null 2>&1 &
 rm -f "$0"
 `, hashQ, pid, exeQ, bakQ, exeQ, bakQ, exeQ, newQ, exeQ, newQ, exeQ, newQ, bakQ, exeQ, bakQ, exeQ, exeQ, exeQ, exeQ, bakQ, exeQ, bakQ, exeQ, exeQ)
-
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
-		return fmt.Errorf("failed to create update script: %w", err)
-	}
-
-	cmd := createCmd("/bin/sh", scriptPath)
-	cmd.Dir = os.TempDir()
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to launch update script: %w", err)
-	}
-
-	wailsRuntime.Quit(a.ctx)
-	return nil
 }
 
-// RollbackUpdate restores the .bak binary created by the previous ApplyUpdate.
-// Fails with a clear message if no backup exists (first install or user deleted it).
-// Like ApplyUpdate, it shells out to a script that runs after the app closes,
-// because the running binary cannot be overwritten on Unix while it's executing
-// (the kernel keeps the inode alive, but copy semantics differ across FSes).
-func (a *App) RollbackUpdate() error {
-	currentExe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get current program path: %w", err)
-	}
-	bak := backupPath(currentExe)
-	if _, err := os.Stat(bak); err != nil {
-		return fmt.Errorf("no backup found at %s: %w", bak, err)
-	}
-
-	scriptPath := filepath.Join(os.TempDir(), "svc_rollback.sh")
-	pid := os.Getpid()
+// buildUnixRollbackScript renders the /bin/sh body for RollbackUpdate.
+// Extracted for the same testability reasons as buildUnixUpdateScript.
+func buildUnixRollbackScript(pid int, bak, currentExe string) string {
 	exeQ := shellQuote(currentExe)
 	bakQ := shellQuote(bak)
-	scriptContent := fmt.Sprintf(`#!/bin/sh
+	return fmt.Sprintf(`#!/bin/sh
 echo "Waiting for application to close..."
 timeout=60
 while kill -0 %d 2>/dev/null; do
@@ -169,14 +168,101 @@ echo "Starting restored version..."
 nohup %s > /dev/null 2>&1 &
 rm -f "$0"
 `, pid, bakQ, exeQ, bakQ, exeQ, bakQ, exeQ, exeQ)
+}
 
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+// ApplyUpdate launches a background /bin/sh script that: waits for the
+// current process to exit (by PID, not pgrep -f which matches too wide),
+// atomically renames the running binary to .bak, renames the downloaded
+// payload into place, chmod +x, relaunches, and self-deletes.
+//
+// Rename (mv) is used instead of cp so the replacement is atomic: a failed
+// second step leaves the .bak intact and the current binary untouched,
+// rather than overwriting it halfway and leaving a corrupt executable.
+// A 60s timeout guards against the wait loop hanging forever if the app
+// fails to exit.
+//
+// Both the script and the payload it references get unpredictable
+// CreateTemp-based names (see writeTempScript / secureUpdatePayload) instead
+// of the old fixed /tmp paths, which were a symlink/TOCTOU hazard.
+func (a *App) ApplyUpdate() error {
+	currentExe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get current program path: %w", err)
+	}
+
+	newExe := getUpdateFilePath()
+	if _, err := os.Stat(newExe); err != nil {
+		return fmt.Errorf("update file does not exist: %w", err)
+	}
+
+	// Compute the SHA256 of the downloaded update BEFORE writing the script.
+	// DownloadUpdate already verified against the server-published hash;
+	// this pre-copy hash is what the shell script compares the post-copy
+	// bytes against, catching a partial copy or /tmp TOCTOU swap.
+	expectedHash, err := sha256OfFile(newExe)
+	if err != nil {
+		return fmt.Errorf("failed to hash update file: %w", err)
+	}
+
+	// Move the payload off the fixed guessable name before the script
+	// references it. On any later failure the payload is restored so the
+	// user can retry ApplyUpdate without re-downloading.
+	securePayload, err := secureUpdatePayload(newExe)
+	if err != nil {
+		return err
+	}
+	restorePayload := func() { os.Rename(securePayload, newExe) }
+
+	bak := backupPath(currentExe)
+	pid := os.Getpid()
+	scriptContent := buildUnixUpdateScript(pid, currentExe, bak, securePayload, expectedHash)
+
+	scriptPath, err := writeTempScript("svc_updater_*.sh", scriptContent)
+	if err != nil {
+		restorePayload()
+		return fmt.Errorf("failed to create update script: %w", err)
+	}
+
+	cmd := createCmd("/bin/sh", scriptPath)
+	cmd.Dir = os.TempDir()
+	if err := cmd.Start(); err != nil {
+		os.Remove(scriptPath)
+		restorePayload()
+		return fmt.Errorf("failed to launch update script: %w", err)
+	}
+
+	wailsRuntime.Quit(a.ctx)
+	return nil
+}
+
+// RollbackUpdate restores the .bak binary created by the previous ApplyUpdate.
+// Fails with a clear message if no backup exists (first install or user deleted it).
+// Like ApplyUpdate, it shells out to a script that runs after the app closes,
+// because the running binary cannot be overwritten on Unix while it's executing
+// (the kernel keeps the inode alive, but copy semantics differ across FSes).
+// The script gets an unpredictable CreateTemp-based name (see writeTempScript).
+func (a *App) RollbackUpdate() error {
+	currentExe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get current program path: %w", err)
+	}
+	bak := backupPath(currentExe)
+	if _, err := os.Stat(bak); err != nil {
+		return fmt.Errorf("no backup found at %s: %w", bak, err)
+	}
+
+	pid := os.Getpid()
+	scriptContent := buildUnixRollbackScript(pid, bak, currentExe)
+
+	scriptPath, err := writeTempScript("svc_rollback_*.sh", scriptContent)
+	if err != nil {
 		return fmt.Errorf("failed to create rollback script: %w", err)
 	}
 
 	cmd := createCmd("/bin/sh", scriptPath)
 	cmd.Dir = os.TempDir()
 	if err := cmd.Start(); err != nil {
+		os.Remove(scriptPath)
 		return fmt.Errorf("failed to launch rollback script: %w", err)
 	}
 

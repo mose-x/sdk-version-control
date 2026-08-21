@@ -60,6 +60,28 @@ func dartArch(goos, goarch string) string {
 	}
 }
 
+// dartOSName maps runtime.GOOS to the Dart SDK archive OS token. Pure for
+// cross-platform testability.
+func dartOSName(goos string) string {
+	switch goos {
+	case "linux":
+		return "linux"
+	case "darwin":
+		return "macos"
+	default:
+		return "windows"
+	}
+}
+
+// dartFileName builds the local download file name for a Dart SDK archive.
+// The version is part of the name: FileName becomes the temp-file name in
+// TmpDir during install, and a version-less name made installs of different
+// versions collide on the same file (and made the download ambiguous in
+// logs). Pure for testability.
+func dartFileName(osName, arch, version string) string {
+	return fmt.Sprintf("dartsdk-%s-%s-%s-release.zip", osName, arch, version)
+}
+
 func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo
 	pageToken := ""
@@ -113,20 +135,14 @@ func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 			}
 			major, _ := strconv.Atoi(vParts[0])
 
-			osName := "windows"
-			if runtime.GOOS == "linux" {
-				osName = "linux"
-			}
-			if runtime.GOOS == "darwin" {
-				osName = "macos"
-			}
+			osName := dartOSName(runtime.GOOS)
 			arch := dartArch(runtime.GOOS, runtime.GOARCH)
 
 			versions = append(versions, VersionInfo{
 				Version:     ver,
 				Major:       major,
 				DownloadURL: f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/dart-archive/channels/stable/release/%s/sdk/dartsdk-%s-%s-release.zip", ver, osName, arch)),
-				FileName:    fmt.Sprintf("dartsdk-%s-%s-release.zip", osName, arch),
+				FileName:    dartFileName(osName, arch, ver),
 			})
 		}
 
@@ -141,16 +157,10 @@ func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 }
 
 func (f *DartFetcher) GetDownloadURL(version string) (string, string, error) {
-	osName := "windows"
-	if runtime.GOOS == "linux" {
-		osName = "linux"
-	}
-	if runtime.GOOS == "darwin" {
-		osName = "macos"
-	}
+	osName := dartOSName(runtime.GOOS)
 	arch := dartArch(runtime.GOOS, runtime.GOARCH)
 	url := f.useEndpoint(fmt.Sprintf("https://storage.googleapis.com/dart-archive/channels/stable/release/%s/sdk/dartsdk-%s-%s-release.zip", version, osName, arch))
-	return url, fmt.Sprintf("dartsdk-%s-%s-release.zip", osName, arch), nil
+	return url, dartFileName(osName, arch, version), nil
 }
 
 func (f *DartFetcher) GetLocalStatus() (*SdkStatus, error) {

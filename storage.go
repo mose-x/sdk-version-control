@@ -160,8 +160,17 @@ func (a *App) CleanTmpCache() error {
 		return fmt.Errorf("failed to read cache directory: %w", err)
 	}
 	logger.Info("Cleaning temporary cache: %d items in %s", len(entries), tmpDir)
+	var firstErr error
 	for _, e := range entries {
-		os.RemoveAll(filepath.Join(tmpDir, e.Name()))
+		if err := os.RemoveAll(filepath.Join(tmpDir, e.Name())); err != nil {
+			logger.Error("Failed to remove cache entry %s: %v", e.Name(), err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	if firstErr != nil {
+		return fmt.Errorf("failed to clean temporary cache: %w", firstErr)
 	}
 	logger.Info("Temporary cache cleaned")
 	return nil

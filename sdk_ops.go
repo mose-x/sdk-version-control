@@ -60,6 +60,14 @@ func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
 			cmd, args := f.VerifyCommand()
 			status.PathVersion = extractVersionFromOutput(cmd, args)
 		}
+		// Filter the transient "<version>.old"/"<version>.new" byproducts of
+		// the rename-old-first atomic replace (left behind briefly by a
+		// crashed install or a slow cleanup): they are not installable
+		// versions and must not appear in the version list shown to the user.
+		// Done here at the display layer because the config-layer enumerator
+		// (config.GetInstalledVersions) is shared with consumers that must
+		// see the raw directory listing.
+		status.InstalledVersions = filterResidualVersionDirs(status.InstalledVersions)
 		statuses = append(statuses, *status)
 	}
 	return statuses
@@ -139,8 +147,15 @@ func (a *App) fetchAndCacheVersions(t sdk.SdkType, f sdk.VersionFetcher) ([]sdk.
 	proxyCfg := a.getProxyConfig()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
+	// Serialize SetHTTPClient + the fetch that must observe it under the
+	// per-SDK lock: registry fetchers are shared singletons holding the
+	// client in a bare field, so a concurrent install of the same SDK would
+	// race this background refresh on that field otherwise.
+	lk := a.fetcherLock(string(t))
+	lk.Lock()
 	f.SetHTTPClient(client)
 	versions, err := f.FetchRemoteVersions()
+	lk.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -207,9 +222,14 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	proxyCfg := a.getProxyConfig()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
+	// Serialize SetHTTPClient + the call that must observe it under the
+	// per-SDK lock (shared fetcher singletons hold the client in a bare
+	// field; the background version refresh would race it otherwise).
+	lk := a.fetcherLock(sdkTypeStr)
+	lk.Lock()
 	f.SetHTTPClient(client)
-
 	downloadURL, fileName, err := f.GetDownloadURL(version)
+	lk.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed to get download URL: %w", err)
 	}
@@ -225,14 +245,30 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	defer os.Remove(tmpFile)
 
 	installCtx, cancel := context.WithCancel(a.ctx)
+	done := make(chan struct{})
 	a.cancelMu.Lock()
+	var prevDone chan struct{}
 	if old, ok := a.cancelFuncs[sdkTypeStr]; ok {
 		old.cancel()
+		prevDone = old.done
 	}
 	myID := a.nextCancelID
 	a.nextCancelID++
-	a.cancelFuncs[sdkTypeStr] = cancelEntry{cancel: cancel, id: myID}
+	a.cancelFuncs[sdkTypeStr] = cancelEntry{cancel: cancel, id: myID, done: done}
 	a.cancelMu.Unlock()
+
+	// Wait (bounded) for the cancelled previous install of the SAME SDK to
+	// fully exit before this install starts downloading. Cancelling the old
+	// context is not enough: its download may still be writing the shared tmp
+	// file (same SDK + version -> same file name), and its deferred cleanup
+	// may delete that file after this install re-creates it. Waiting on done
+	// closes both windows. The timeout bounds the worst case (e.g. an old
+	// install stuck in a phase that does not observe cancellation).
+	if prevDone != nil && !waitForInstallExit(prevDone, installExitWaitTimeout) {
+		logger.Warn("Previous install of %s did not exit within %v after cancel; proceeding anyway",
+			sdkTypeStr, installExitWaitTimeout)
+	}
+
 	defer func() {
 		cancel()
 		a.cancelMu.Lock()
@@ -240,6 +276,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 			delete(a.cancelFuncs, sdkTypeStr)
 		}
 		a.cancelMu.Unlock()
+		close(done)
 	}()
 
 	threads := a.settings.Get().DownloadThreads
@@ -262,7 +299,14 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 
 	// Verify download integrity via SHA256 if the fetcher supports it (M1).
 	if cf, ok := f.(sdk.ChecksumFetcher); ok {
+		// Re-assert the client under the per-SDK lock: FetchChecksum reads
+		// the same bare client field, which a concurrent background refresh
+		// may have swapped since the GetDownloadURL call above.
+		lk := a.fetcherLock(sdkTypeStr)
+		lk.Lock()
+		f.SetHTTPClient(client)
 		expected, err := cf.FetchChecksum(version)
+		lk.Unlock()
 		if err != nil {
 			logger.Warn("Failed to fetch checksum for %s %s: %v (skipping verification)", sdkTypeStr, version, err)
 		} else if expected != "" {
@@ -275,6 +319,15 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		} else {
 			logger.Warn("No checksum available for %s %s, skipping verification", sdkTypeStr, version)
 		}
+	}
+
+	// Observe cancellation between phases: after the download completes the
+	// install context used to be ignored, so a cancel issued during the slow
+	// extract/replace phases had no effect. Check before each expensive phase
+	// and bail out cleanly (deferred cleanup removes tmpFile).
+	if err := installCtx.Err(); err != nil {
+		a.emitProgress(sdkType, version, "error", 0, "Installation cancelled", 0, 0, 0, downloadURL)
+		return fmt.Errorf("installation cancelled: %w", err)
 	}
 
 	logger.Info("Download completed, extracting...")
@@ -320,6 +373,14 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		}
 	}
 
+	// Check cancellation again before the atomic replace: extracting a large
+	// archive can take a long time, and the user may have cancelled during.
+	if err := installCtx.Err(); err != nil {
+		os.RemoveAll(tmpVersionDir)
+		a.emitProgress(sdkType, version, "error", 0, "Installation cancelled", 0, 0, 0, downloadURL)
+		return fmt.Errorf("installation cancelled: %w", err)
+	}
+
 	// Atomically replace the old version directory using rename-old-first
 	// pattern: rename old to .old, rename new into place, cleanup .old.
 	// If the second rename fails, restore from .old (prevents data loss).
@@ -341,7 +402,11 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		os.RemoveAll(tmpVersionDir)
 		return fmt.Errorf("failed to move extracted files into place: %w", err)
 	}
-	os.RemoveAll(oldVersionDir)
+	if err := os.RemoveAll(oldVersionDir); err != nil {
+		// Non-fatal (the new version is already in place), but log it: a
+		// leftover .old directory wastes disk and shows up in dir listings.
+		logger.Warn("Failed to clean up old version directory %s: %v", oldVersionDir, err)
+	}
 
 	logger.Info("Extraction completed, configuring environment...")
 	a.emitProgress(sdkType, version, "configuring_path", 0, "Configuring environment...", 0, 0, 0, downloadURL)
@@ -375,7 +440,12 @@ func (a *App) CancelInstall(sdkType string) {
 	a.cancelMu.Lock()
 	if entry, ok := a.cancelFuncs[sdkType]; ok {
 		entry.cancel()
-		delete(a.cancelFuncs, sdkType)
+		// Do NOT delete the entry: the install goroutine is still winding
+		// down, and a reinstall of the same SDK must still be able to find
+		// entry.done and wait for it to fully exit (otherwise the old
+		// download could keep writing the shared tmp file while the new one
+		// re-creates it). The install's deferred cleanup removes the entry
+		// (id-gated) and closes done.
 	}
 	a.cancelMu.Unlock()
 }
@@ -453,8 +523,14 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 	proxyCfg := a.getProxyConfig()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
+	// Serialize SetHTTPClient + the call that must observe it under the
+	// per-SDK lock (shared fetcher singletons hold the client in a bare
+	// field; the background version refresh would race it otherwise).
+	lk := a.fetcherLock(sdkType)
+	lk.Lock()
 	f.SetHTTPClient(client)
 	url, _, err := f.GetDownloadURL(version)
+	lk.Unlock()
 	if err != nil {
 		return "", err
 	}
@@ -471,4 +547,38 @@ func (a *App) DetectPathVersion(sdkType string) string {
 	}
 	cmd, args := f.VerifyCommand()
 	return extractVersionFromOutput(cmd, args)
+}
+
+// filterResidualVersionDirs drops leftover atomic-replace directories
+// ("<version>.old" / "<version>.new") from an installed-versions list. They
+// are transient byproducts of the rename-old-first replacement (or a crashed
+// install), not installable versions, and must not appear in the version list
+// shown to the user. Pure function so the display-layer filter is testable.
+func filterResidualVersionDirs(versions []string) []string {
+	filtered := make([]string, 0, len(versions))
+	for _, v := range versions {
+		if strings.HasSuffix(v, ".old") || strings.HasSuffix(v, ".new") {
+			continue
+		}
+		filtered = append(filtered, v)
+	}
+	return filtered
+}
+
+// installExitWaitTimeout bounds how long a new InstallSdk waits for the
+// cancelled previous install of the same SDK to fully exit before proceeding.
+const installExitWaitTimeout = 5 * time.Second
+
+// waitForInstallExit blocks until done is closed (the install fully exited)
+// or timeout elapses, reporting whether the install exited in time. Pure
+// logic extracted from InstallSdk's reinstall-race fix for testability.
+func waitForInstallExit(done <-chan struct{}, timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
 }

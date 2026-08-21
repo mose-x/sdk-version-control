@@ -2,10 +2,12 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 
 	"sdk_version_control/internal/logger"
 )
@@ -90,7 +92,21 @@ func (c *Config) load() error {
 		}
 		return err
 	}
-	return json.Unmarshal(data, c.data)
+	if err := json.Unmarshal(data, c.data); err != nil {
+		// A corrupt config.json must not be fatal: NewConfig errors make the
+		// GUI os.Exit(1) with no recovery path. Back the corrupt file up for
+		// manual inspection and fall back to defaults, mirroring the M9
+		// handling in settings.go.
+		backup := filepath.Join(c.svcDir, fmt.Sprintf("config.corrupt-%d.json", time.Now().UnixNano()))
+		if mvErr := os.Rename(path, backup); mvErr != nil {
+			logger.Warn("Failed to back up corrupt config file %s: %v", path, mvErr)
+		} else {
+			logger.Warn("Corrupt config file backed up to %s; using default config", backup)
+		}
+		c.data = &ConfigData{ActiveVersions: make(map[string]string)}
+		return nil
+	}
+	return nil
 }
 
 func (c *Config) save() error {

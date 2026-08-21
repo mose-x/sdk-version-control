@@ -119,4 +119,5 @@ jobs:
     name: commit-lint
     if: github.event_name == 'pull_request'
     # TODO: pin to @v1.x.x when code-hooks publishes a tag
-    uses: mose-x/code-hooks/.github/workflows/commit-lint.yml@main
+    # pinned 2026-08-21 (code-hooks main HEAD; verify before bumping)
+    uses: mose-x/code-hooks/.github/workflows/commit-lint.yml@5640e50ef5d61b70a44560e0abd949fdb0f0820c

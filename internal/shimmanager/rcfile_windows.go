@@ -3,6 +3,7 @@
 package shimmanager
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -62,28 +63,64 @@ func (m *Manager) ensurePathEntry() error {
 	}
 	defer k.Close()
 
-	currentPath, _, err := k.GetStringValue("Path")
+	// Item 2: probe the value type first and NEVER overwrite a PATH that is
+	// not REG_SZ/REG_EXPAND_SZ. The old code treated every GetStringValue
+	// error as "empty PATH" and then wrote REG_SZ, which silently replaced /
+	// downgraded the user's real PATH (the default user PATH is
+	// REG_EXPAND_SZ; downgrading it to REG_SZ stops %VAR% expansion).
+	currentPath, valType, existed, err := readUserPathValue(k)
 	if err != nil {
-		currentPath = ""
+		return err
 	}
 
-	// Check if shims dir is already in PATH
-	for _, p := range strings.Split(currentPath, ";") {
-		p = strings.TrimSpace(p)
-		if strings.EqualFold(filepath.Clean(p), filepath.Clean(shimsDir)) {
-			return nil // Already in PATH
-		}
+	newPath := mergePathEntry(currentPath, shimsDir)
+	if newPath == currentPath {
+		return nil // Already in PATH
 	}
 
-	// Add shims dir to PATH (prepend)
-	newPath := shimsDir + ";" + currentPath
-	if err := k.SetStringValue("Path", newPath); err != nil {
+	if err := writeUserPathValue(k, newPath, valType, existed); err != nil {
 		return fmt.Errorf("failed to set PATH: %w", err)
 	}
 
 	broadcastEnvChange()
 	logger.Info("Added shims directory to user PATH: %s", shimsDir)
 	return nil
+}
+
+// readUserPathValue reads the user PATH value together with its registry
+// type. Returns existed=false (empty PATH, no error) when the value does
+// not exist — a legitimate state on fresh profiles. Any other read problem
+// (access denied, unsupported type such as REG_MULTI_SZ/REG_DWORD) is an
+// error: callers must abort instead of overwriting a value they could not
+// understand.
+func readUserPathValue(k registry.Key) (val string, valType uint32, existed bool, err error) {
+	// GetValue with a nil buffer only queries size + type.
+	_, valType, err = k.GetValue("Path", nil)
+	if errors.Is(err, registry.ErrNotExist) {
+		return "", 0, false, nil
+	}
+	if err != nil {
+		return "", 0, false, fmt.Errorf("failed to probe user PATH type: %w", err)
+	}
+	if valType != registry.SZ && valType != registry.EXPAND_SZ {
+		return "", 0, false, fmt.Errorf("user PATH has unsupported registry value type %d; refusing to modify it", valType)
+	}
+	val, _, err = k.GetStringValue("Path")
+	if err != nil {
+		return "", 0, false, fmt.Errorf("failed to read user PATH: %w", err)
+	}
+	return val, valType, true, nil
+}
+
+// writeUserPathValue writes the user PATH preserving the value type: keep
+// REG_EXPAND_SZ when the original value was REG_EXPAND_SZ or when the new
+// value contains %VAR% references, otherwise write REG_SZ. Writing REG_SZ
+// over an ExpandString silently breaks %VAR% expansion in PATH entries.
+func writeUserPathValue(k registry.Key, val string, origType uint32, existed bool) error {
+	if (existed && origType == registry.EXPAND_SZ) || strings.Contains(val, "%") {
+		return k.SetExpandStringValue("Path", val)
+	}
+	return k.SetStringValue("Path", val)
 }
 
 // SetEnvVars writes environment variables (JAVA_HOME, GOROOT, etc.) to the registry.
@@ -134,6 +171,11 @@ func (m *Manager) applyEnvVarsToSystem(envVars []envVarEntry) {
 	}
 }
 
+// writeFishEnvFile is a no-op on Windows: env.sh.fish is a Unix-shell
+// concept, and on Windows PATH/env vars are managed via the registry.
+// Exists only to mirror the Unix contract for updateRcFile. Item 6.
+func (m *Manager) writeFishEnvFile(envVars []envVarEntry) {}
+
 // removeEnvVarsFromSystem deletes env vars from the registry when an SDK is
 // removed, so a leftover JAVA_HOME doesn't point at a now-uninstalled JDK.
 func (m *Manager) removeEnvVarsFromSystem(keys []string) {
@@ -177,25 +219,23 @@ func (m *Manager) removeAllSourceLines() error {
 	}
 	defer k.Close()
 
-	currentPath, _, err := k.GetStringValue("Path")
+	// Item 2: same type-safety rules as ensurePathEntry. A missing value is a
+	// clean no-op; an unsupported type or read error must abort rather than
+	// be clobbered by a REG_SZ write.
+	currentPath, valType, existed, err := readUserPathValue(k)
 	if err != nil {
+		return err
+	}
+	if !existed {
 		return nil
 	}
 
-	var filtered []string
-	for _, p := range strings.Split(currentPath, ";") {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		if strings.EqualFold(filepath.Clean(p), filepath.Clean(shimsDir)) {
-			continue
-		}
-		filtered = append(filtered, p)
+	newPath := filterPathEntry(currentPath, shimsDir)
+	if newPath == currentPath {
+		return nil // shims dir not present; nothing to change
 	}
 
-	newPath := strings.Join(filtered, ";")
-	if err := k.SetStringValue("Path", newPath); err != nil {
+	if err := writeUserPathValue(k, newPath, valType, existed); err != nil {
 		return err
 	}
 

@@ -1,4 +1,5 @@
 {
+  "deprecated_notice": "DEPRECATED: the in-app updater (update.go) no longer consumes this manifest. It discovers release assets via the GitHub Releases API (/releases/latest) and verifies downloads against the sha256sums.txt release asset. This file is kept only as a historical schema reference.",
   "version": "1.0.0",
   "changelog": "## 1.0.0\n- First official release\n- Multi-SDK management with cross-platform support (macOS/Windows/Linux, amd64/arm64)\n- Multi-bin directory support (e.g. Rust cargo/bin + rustc/bin)\n- Path migration, version switching, shim mechanism",
   "downloads": {

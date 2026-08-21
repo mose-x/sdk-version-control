@@ -104,7 +104,41 @@ func sliceContains(s []string, v string) bool {
 	return false
 }
 
-// DetectSdkRoot walks up from the bin directory to find the SDK root
+// hasPathPrefix reports whether p equals dir or lies inside dir. Unlike
+// strings.HasPrefix(p, dir), it requires a path separator at the boundary so
+// /a/b does not match /a/bc (item 4). An empty dir matches nothing: the old
+// strings.HasPrefix(p, "") matched EVERY path and would have filtered the
+// whole PATH if ever fed an empty dir.
+func hasPathPrefix(p, dir string) bool {
+	if dir == "" {
+		return false
+	}
+	if p == dir {
+		return true
+	}
+	return strings.HasPrefix(p, dir+string(os.PathSeparator))
+}
+
+// hasSvcSegment reports whether p contains ".svc" as a COMPLETE path
+// segment, e.g. /home/u/.svc/shims or C:\Users\u\.svc\shims. It replaces
+// unanchored strings.Contains(p, ".svc") checks, which also matched
+// unrelated paths like /home/u/.svcx or /opt/my.svc.d (item 12).
+func hasSvcSegment(p string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(p), "/") {
+		if seg == ".svc" {
+			return true
+		}
+	}
+	return false
+}
+
+// DetectSdkRoot walks up from the bin directory to find the SDK root.
+// For SDK types with a known layout signature (go/jdk/nodejs) the candidate
+// is validated and "" is returned when validation FAILS — item 11 previously
+// returned the unvalidated candidate, letting a wrong/incomplete directory
+// be treated as the SDK root. For SDK types without a validation rule the
+// candidate is returned as-is (there is nothing to check against; returning
+// "" would break those imports).
 func DetectSdkRoot(binDir string, sdkType string) string {
 	binDir = filepath.Clean(binDir)
 	candidate := binDir
@@ -118,10 +152,12 @@ func DetectSdkRoot(binDir string, sdkType string) string {
 		if _, err := os.Stat(filepath.Join(candidate, "bin")); err == nil {
 			return candidate
 		}
+		return "" // validation failed
 	case "jdk":
 		if _, err := os.Stat(filepath.Join(candidate, "release")); err == nil {
 			return candidate
 		}
+		return "" // validation failed
 	case "nodejs":
 		// Node.js root contains the node executable
 		for _, ext := range []string{"", ".exe"} {
@@ -132,7 +168,9 @@ func DetectSdkRoot(binDir string, sdkType string) string {
 				return candidate
 			}
 		}
+		return "" // validation failed
 	}
+	// No validation rule for this SDK type: return the candidate unchanged.
 	return candidate
 }
 
@@ -198,7 +236,11 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	return err
 }
 
-// GetDesktopDir returns the current user's desktop directory (cross-platform)
+// GetDesktopDir returns the current user's desktop directory (cross-platform).
+// If no Desktop directory exists it falls back to the home directory WITHOUT
+// creating one — item 13 previously created ~/Desktop as a side effect, which
+// surprises users on machines that intentionally have no Desktop (servers,
+// headless boxes, custom layouts).
 func GetDesktopDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -210,14 +252,7 @@ func GetDesktopDir() (string, error) {
 		return desktop, nil
 	}
 
-	// On macOS the desktop is ~/Desktop; if it does not exist, fall back to <home>/Desktop
-	if _, err := os.Stat(desktop); os.IsNotExist(err) {
-		// Try to create the desktop directory if the user does not have one
-		if err := os.MkdirAll(desktop, 0755); err == nil {
-			return desktop, nil
-		}
-	}
-
+	// No usable Desktop: fall back to home. Do not create the directory.
 	return home, nil
 }
 

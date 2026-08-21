@@ -12,6 +12,39 @@ import (
 	"sdk_version_control/internal/logger"
 )
 
+// shellSingleQuote wraps s in single quotes for POSIX shells; an embedded
+// single quote is escaped the standard POSIX way (end the quoted run, add a
+// backslash-escaped quote, reopen quoting). Unlike fmt %q (double quotes), a
+// single-quoted value is fully inert when the rc file is sourced: $, `, and
+// \ are NOT re-expanded, so a tampered env-var value cannot execute
+// commands. Item 8.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// fishEscape escapes s for use as an UNQUOTED fish word by backslash-
+// escaping shell metacharacters and whitespace. Fish has no $VAR expansion
+// inside the values we write, but it does split on unescaped whitespace and
+// interpret ;|&<>()$ etc., so those must be escaped rather than wrapping
+// the whole value in double quotes (fish double quotes still expand $ and
+// command substitutions). Item 6.
+func fishEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '/' || r == '.' || r == '_' || r == '-' || r == ':' || r == '+' || r == '@':
+			// Path-safe punctuation that needs no escaping.
+			b.WriteRune(r)
+		default:
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // generateRcContent generates the .svc.rc shell script content (Unix).
 func (m *Manager) generateRcContent(envVars []envVarEntry) string {
 	svcHome := m.cfg.SvcDir()
@@ -23,11 +56,14 @@ func (m *Manager) generateRcContent(envVars []envVarEntry) string {
 	lines = append(lines, "# Do not move this file; SVC reads it from this exact location.")
 	lines = append(lines, "")
 
-	// Use SVC_HOME variable so migration only needs updating one line
+	// Use SVC_HOME variable so migration only needs updating one line.
+	// The default form keeps "$HOME/.svc" double-quoted on purpose so $HOME
+	// expands; a custom (absolute) svcHome is single-quoted because it is a
+	// literal path that must stay inert.
 	if svcHome == filepath.Join(home, ".svc") {
 		lines = append(lines, `export SVC_HOME="$HOME/.svc"`)
 	} else {
-		lines = append(lines, fmt.Sprintf("export SVC_HOME=%q", svcHome))
+		lines = append(lines, fmt.Sprintf("export SVC_HOME=%s", shellSingleQuote(svcHome)))
 	}
 	lines = append(lines, `export PATH="$SVC_HOME/shims:$PATH"`)
 
@@ -35,15 +71,10 @@ func (m *Manager) generateRcContent(envVars []envVarEntry) string {
 		lines = append(lines, "")
 		lines = append(lines, "# SDK environment variables (updated on version switch)")
 		for _, e := range envVars {
-			// Use $SVC_HOME prefix where possible for portability
-			val := e.Value
-			if strings.HasPrefix(val, svcHome) {
-				rel, err := filepath.Rel(svcHome, val)
-				if err == nil {
-					val = fmt.Sprintf("$SVC_HOME/%s", rel)
-				}
-			}
-			lines = append(lines, fmt.Sprintf("export %s=%q", e.Key, val))
+			// Item 8: absolute value, single-quoted. (The previous version
+			// rewrote values as "$SVC_HOME/..." and used %q; a $ reference
+			// cannot survive single-quoting, and %q leaves $/` expandable.)
+			lines = append(lines, fmt.Sprintf("export %s=%s", e.Key, shellSingleQuote(e.Value)))
 		}
 	}
 
@@ -151,24 +182,56 @@ func (m *Manager) removeAllSourceLines() error {
 	return nil
 }
 
+// generateFishEnvContent builds the env.sh.fish content: the shims dir
+// prepended to PATH plus ALL SDK env vars (JAVA_HOME, GOROOT, ...). Fish
+// values are escaped with fishEscape; PATH keeps the trailing $PATH list so
+// the existing PATH is preserved. Item 6.
+func (m *Manager) generateFishEnvContent(envVars []envVarEntry) string {
+	var lines []string
+	lines = append(lines, "# SVC Environment Configuration (fish) - Auto-generated, do not edit manually")
+	lines = append(lines, fmt.Sprintf("set -gx PATH %s $PATH", fishEscape(m.cfg.ShimsDir())))
+	for _, e := range envVars {
+		lines = append(lines, fmt.Sprintf("set -gx %s %s", e.Key, fishEscape(e.Value)))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// writeFishEnvFile regenerates env.sh.fish from the given env vars so fish
+// users get both PATH and SDK env vars, kept in sync on every version
+// switch (updateRcFile). No-op on Windows (see rcfile_windows.go).
+func (m *Manager) writeFishEnvFile(envVars []envVarEntry) {
+	fishRc := filepath.Join(m.cfg.SvcDir(), "env.sh.fish")
+	if err := os.WriteFile(fishRc, []byte(m.generateFishEnvContent(envVars)), 0644); err != nil {
+		logger.Warn("Failed to write fish env file: %v", err)
+	}
+}
+
 // addSourceLine adds the SVC source line to a specific shell config file.
 func (m *Manager) addSourceLine(shellName string) error {
 	rcPath := m.cfg.RcFilePath()
 
 	switch shellName {
 	case "fish":
+		// Write the full fish env file (PATH + SDK env vars), not just PATH.
+		m.writeFishEnvFile(m.collectEnvVars())
 		fishRc := filepath.Join(m.cfg.SvcDir(), "env.sh.fish")
-		_ = os.WriteFile(fishRc, []byte(fmt.Sprintf("set -gx PATH %s $PATH\n", filepath.Join(m.cfg.SvcDir(), "shims"))), 0644)
-		fishSourceLine := fmt.Sprintf("test -f %s; and source %s", fishRc, fishRc)
+		// Item 6: double-quote the paths so a space in the SVC dir doesn't
+		// break the test/source line.
+		fishSourceLine := fmt.Sprintf(`test -f "%s"; and source "%s"`, fishRc, fishRc)
+		fishLegacyLine := fmt.Sprintf(`test -f %s; and source %s`, fishRc, fishRc)
 		fishFile := filepath.Join(m.cfg.HomeDir(), ".config", "fish", "conf.d", "svc.fish")
-		return appendLineIfMissing(fishFile, fishSourceLine, fishRc)
+		upgradeLegacySourceLine(fishFile, fishLegacyLine, fishSourceLine)
+		return appendLineIfMissing(fishFile, fishSourceLine, fishSourceLine)
 
 	case "zsh", "bash", "bash_profile", "profile", "zshenv":
 		// Find the file path
 		for _, shell := range config.AvailableShells() {
 			if shell.Name == shellName {
-				sourceLine := fmt.Sprintf(`[[ -f %s ]] && source %s`, rcPath, rcPath)
-				return appendLineIfMissing(shell.FullPath, sourceLine, rcPath)
+				// Item 6: double-quote the paths (spaces in home dir).
+				sourceLine := fmt.Sprintf(`[[ -f "%s" ]] && source "%s"`, rcPath, rcPath)
+				legacyLine := fmt.Sprintf(`[[ -f %s ]] && source %s`, rcPath, rcPath)
+				upgradeLegacySourceLine(shell.FullPath, legacyLine, sourceLine)
+				return appendLineIfMissing(shell.FullPath, sourceLine, sourceLine)
 			}
 		}
 		return fmt.Errorf("unknown shell: %s", shellName)
@@ -179,6 +242,22 @@ func (m *Manager) addSourceLine(shellName string) error {
 	}
 
 	return fmt.Errorf("unknown shell: %s", shellName)
+}
+
+// upgradeLegacySourceLine removes a legacy (unquoted) source line left by
+// pre-quote-fix installs when the new quoted line is not present yet.
+// Without this, the legacy line blocks the quoted replacement forever
+// (appendLineIfMissing dedupes on substring) and paths containing spaces
+// stay broken. Best-effort: any read/remove failure is non-fatal.
+func upgradeLegacySourceLine(filePath, legacyLine, newLine string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return
+	}
+	txt := string(data)
+	if strings.Contains(txt, legacyLine) && !strings.Contains(txt, newLine) {
+		_ = removeSourceLineFromFile(filePath, legacyLine)
+	}
 }
 
 // appendLineIfMissing appends a line to a file if it doesn't already contain the check string.
@@ -247,6 +326,9 @@ func removeSourceLineFromFile(filePath, checkStr string) error {
 }
 
 // backupFile copies the file to a .svc.bak sibling before modifying it.
+// Item 9: a previous .svc.bak is first rotated to .svc.bak.1 (one generation
+// kept) instead of being silently overwritten — otherwise the second edit
+// destroys the only backup of the original file.
 // Non-fatal: if the backup fails (e.g. permissions), the modification still
 // proceeds — the backup is defense-in-depth, not a gate.
 func backupFile(filePath string) {
@@ -254,5 +336,10 @@ func backupFile(filePath string) {
 	if err != nil {
 		return
 	}
-	os.WriteFile(filePath+".svc.bak", data, 0644)
+	bak := filePath + ".svc.bak"
+	if _, err := os.Stat(bak); err == nil {
+		// Best effort; if the rotation fails the fresh backup still lands.
+		os.Rename(bak, bak+".1")
+	}
+	os.WriteFile(bak, data, 0644)
 }

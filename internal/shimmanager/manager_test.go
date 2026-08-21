@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"sdk_version_control/internal/config"
@@ -263,5 +264,98 @@ func TestFilesEqual(t *testing.T) {
 	// Missing file -> false (read error is treated as not-equal).
 	if filesEqual(filepath.Join(dir, "nope.bin"), content) {
 		t.Error("filesEqual(missing, content) = true; want false (read error)")
+	}
+}
+
+// --- mergeEnvVarKeys (item 5: union of caller + shims.json env keys) ---
+
+func TestMergeEnvVarKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b map[string]string
+		want []string
+	}{
+		{"both nil", nil, nil, []string{}},
+		{"a only", map[string]string{"JAVA_HOME": ""}, nil, []string{"JAVA_HOME"}},
+		{"b only", nil, map[string]string{"GOROOT": ""}, []string{"GOROOT"}},
+		{
+			"union sorted",
+			map[string]string{"JAVA_HOME": "", "PATH_X": ""},
+			map[string]string{"GOROOT": "", "JAVA_HOME": "jre"},
+			[]string{"GOROOT", "JAVA_HOME", "PATH_X"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeEnvVarKeys(tc.a, tc.b)
+			if len(got) != len(tc.want) {
+				t.Fatalf("mergeEnvVarKeys = %v; want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("mergeEnvVarKeys = %v; want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// TestRemoveSdk_removesStoredEnvVars pins item 5 end-to-end: even when the
+// caller passes NO extra env vars, the keys recorded in shims.json for the
+// SDK type must be collected for OS-level removal. On Unix
+// removeEnvVarsFromSystem is a no-op, so this test verifies the observable
+// behaviour available everywhere: RemoveSdk succeeds and drops the config
+// entry; the key-union logic itself is pinned by TestMergeEnvVarKeys.
+func TestRemoveSdk_removesStoredEnvVars(t *testing.T) {
+	m := newTestManager(t)
+	seed := shim.ShimConfig{
+		SdkTypes: map[string]shim.SdkShimEntry{
+			"jdk": {BinDirs: []string{"bin"}, EnvVars: map[string]string{"JAVA_HOME": ""}},
+		},
+		Commands: map[string]string{"java": "jdk"},
+	}
+	if err := m.saveShimConfig(m.cfg.ShimsConfigPath(), seed); err != nil {
+		t.Fatal(err)
+	}
+	// Caller passes nil extraEnvVars — the stored JAVA_HOME must still be
+	// part of the removal key set (union), and the call must succeed.
+	if err := m.RemoveSdk("jdk", nil); err != nil {
+		t.Fatalf("RemoveSdk with nil extraEnvVars failed: %v", err)
+	}
+	loaded, _ := m.loadShimConfig()
+	if _, ok := loaded.SdkTypes["jdk"]; ok {
+		t.Error(`SdkTypes["jdk"] still present after RemoveSdk`)
+	}
+}
+
+// --- .cmd wrapper content (item 1 follow-up: %* is the correct form) ---
+
+// TestCreateShimFor_cmdWrapperUsesPercentStar pins the Windows .cmd wrapper
+// template: it must forward arguments with %* (the standard form). "%*"
+// would collapse ALL arguments into a single quoted argument and break
+// multi-arg invocations; a missing/quoted %* either drops args or lets
+// cmd.exe re-interpret specials. The argument-level protection happens in
+// the shim runtime (internal/shim escapeCmdArg), not here.
+func TestCreateShimFor_cmdWrapperUsesPercentStar(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip(".cmd wrappers are Windows-only")
+	}
+	m := newTestManager(t)
+	if err := m.createShimFor("npm", ".cmd"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(m.cfg.ShimsDir(), "npm.cmd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, " %*") {
+		t.Errorf("wrapper does not forward args with %%*: %q", content)
+	}
+	if strings.Contains(content, `"%*"`) {
+		t.Errorf(`wrapper uses "%%*" which merges all args into one: %q`, content)
+	}
+	if !strings.Contains(content, "svc-shim.exe") || !strings.Contains(content, "npm") {
+		t.Errorf("wrapper missing delegation to svc-shim.exe with the command name: %q", content)
 	}
 }

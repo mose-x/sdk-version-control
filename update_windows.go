@@ -71,6 +71,13 @@ func (a *App) ApplyUpdate() error {
 // hash-verify + rollback logic can be unit-tested without launching the
 // updater for real (it touches the running exe + quits the app).
 //
+// The wait loop uses `findstr /C:" <pid> "` (in-line literal match with
+// surrounding spaces), NOT `findstr /B`: tasklist /NH lines start with the
+// image name, so a beginning-of-line (/B) anchor on the PID never matches and
+// the loop would be dead code, letting the script overwrite the still-running
+// exe. The space-delimited form cannot false-match PIDs like 42421 or 14242
+// for target 4242 because the PID column is always space-padded.
+//
 // certutil -hashfile prints:
 //
 //	SHA256 hash of <file>:
@@ -87,7 +94,7 @@ func buildUpdateScript(pid int, currentExe, bak, newExe, expectedHash string) st
 echo Waiting for application to close...
 set /a timeout=60
 :waitloop
-tasklist /FI "PID eq %d" /NH 2>NUL | findstr /B /C:"%d " >NUL
+tasklist /FI "PID eq %d" /NH 2>NUL | findstr /C:" %d " >NUL
 if not errorlevel 1 (
     timeout /t 1 /nobreak >NUL
     set /a timeout-=1
@@ -147,11 +154,38 @@ func (a *App) RollbackUpdate() error {
 
 	scriptPath := filepath.Join(os.TempDir(), "svc_rollback.bat")
 	pid := os.Getpid()
-	scriptContent := fmt.Sprintf(`@echo off
+	scriptContent := buildRollbackScript(pid, bak, currentExe)
+
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0644); err != nil {
+		return fmt.Errorf("failed to create rollback script: %w", err)
+	}
+
+	cmd := createCmd("cmd", "/C", scriptPath)
+	cmd.Dir = os.TempDir()
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to launch rollback script: %w", err)
+	}
+
+	wailsRuntime.Quit(a.ctx)
+	return nil
+}
+
+// buildRollbackScript renders the .bat body for RollbackUpdate. Extracted so
+// the wait-loop + restore logic can be unit-tested without launching the
+// rollback for real.
+//
+// The wait loop uses `findstr /C:" <pid> "` (in-line literal match with
+// surrounding spaces), NOT `findstr /B`: tasklist /NH lines start with the
+// image name, so a beginning-of-line (/B) anchor on the PID never matches and
+// the loop would be dead code, letting the script overwrite the still-running
+// exe. The space-delimited form cannot false-match PIDs like 42421 or 14242
+// for target 4242 because the PID column is always space-padded.
+func buildRollbackScript(pid int, bak, currentExe string) string {
+	return fmt.Sprintf(`@echo off
 echo Waiting for application to close...
 set /a timeout=60
 :waitloop
-tasklist /FI "PID eq %d" /NH 2>NUL | findstr /B /C:"%d " >NUL
+tasklist /FI "PID eq %d" /NH 2>NUL | findstr /C:" %d " >NUL
 if not errorlevel 1 (
     timeout /t 1 /nobreak >NUL
     set /a timeout-=1
@@ -171,17 +205,4 @@ echo Starting restored version...
 start "" "%s"
 del "%%~f0"
 `, pid, pid, bak, currentExe, currentExe)
-
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0644); err != nil {
-		return fmt.Errorf("failed to create rollback script: %w", err)
-	}
-
-	cmd := createCmd("cmd", "/C", scriptPath)
-	cmd.Dir = os.TempDir()
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to launch rollback script: %w", err)
-	}
-
-	wailsRuntime.Quit(a.ctx)
-	return nil
 }

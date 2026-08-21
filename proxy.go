@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,9 +31,15 @@ func (a *App) CheckProxy(targetURL string) error {
 	proxyCfg := a.getProxyConfig()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 10 * time.Second
+	// Re-validate every redirect hop: the initial URL may pass validation,
+	// but a 3xx chain could otherwise land on an internal address unchecked.
+	client.CheckRedirect = checkRedirectPolicy
 
 	resp, err := client.Get(targetURL)
 	if err != nil {
+		if resp != nil {
+			resp.Body.Close()
+		}
 		return fmt.Errorf("connection failed: %w", err)
 	}
 	resp.Body.Close()
@@ -43,8 +50,20 @@ func (a *App) CheckProxy(targetURL string) error {
 	return nil
 }
 
+// checkRedirectPolicy is the http.Client.CheckRedirect hook used by
+// CheckProxy. Every hop is re-validated so a redirect cannot escape the SSRF
+// constraints enforced on the initial URL. The 10-hop cap replicates the
+// net/http default policy, which is not applied when a custom CheckRedirect
+// is set.
+func checkRedirectPolicy(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return validateCheckURL(req.URL.String())
+}
+
 // validateCheckURL ensures the target URL is safe for proxy checking:
-// must be http/https, must not resolve to loopback or private IP ranges.
+// must be http/https, must not target loopback/private/link-local addresses.
 func validateCheckURL(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -54,6 +73,7 @@ func validateCheckURL(rawURL string) error {
 		return fmt.Errorf("only http/https URLs are allowed, got scheme: %s", u.Scheme)
 	}
 	host := u.Hostname()
+	// Fast path: common loopback/private hosts by string match.
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" ||
 		strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "10.") ||
 		strings.HasPrefix(host, "192.168.") || strings.HasPrefix(host, "172.16.") ||
@@ -66,6 +86,15 @@ func validateCheckURL(rawURL string) error {
 		strings.HasPrefix(host, "172.29.") || strings.HasPrefix(host, "172.30.") ||
 		strings.HasPrefix(host, "172.31.") {
 		return fmt.Errorf("loopback/private IP addresses are not allowed: %s", host)
+	}
+	// Thorough check for IP literals: covers ranges the string blacklist
+	// misses (0.0.0.0, 169.254.0.0/16, IPv6 fc00::/7 and fe80::/10,
+	// IPv4-mapped IPv6 like ::ffff:127.0.0.1). Non-IP hostnames parse to nil
+	// and are allowed here.
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return fmt.Errorf("loopback/private IP addresses are not allowed: %s", host)
+		}
 	}
 	return nil
 }
@@ -137,23 +166,16 @@ func validatePathSegment(segment string) error {
 	return nil
 }
 
+// buildProxyTransport builds the transport for non-download HTTP calls
+// (the update checker). It delegates to downloader.ApplyProxyConfig, the same
+// single implementation used by downloader.BuildClient, so the two cannot
+// drift. (Previously this had its own logic: bare "host:port" custom proxies
+// failed url.Parse and were silently dropped, and system mode used
+// http.ProxyFromEnvironment instead of the platform applySystemProxy.)
 func (a *App) buildProxyTransport() *http.Transport {
 	transport := &http.Transport{}
-	s := a.settings.Get()
-	if s.Proxy.Enabled {
-		switch s.Proxy.Mode {
-		case "system":
-			transport.Proxy = http.ProxyFromEnvironment
-		case "custom":
-			if s.Proxy.URL != "" {
-				proxyURL, err := url.Parse(s.Proxy.URL)
-				if err == nil {
-					transport.Proxy = http.ProxyURL(proxyURL)
-				} else {
-					logger.Warn("Invalid proxy URL %q: %v — proxy will not be applied", s.Proxy.URL, err)
-				}
-			}
-		}
+	if err := downloader.ApplyProxyConfig(transport, a.getProxyConfig()); err != nil {
+		logger.Warn("Invalid proxy configuration %q: %v — proxy will not be applied", a.settings.Get().Proxy.URL, err)
 	}
 	return transport
 }

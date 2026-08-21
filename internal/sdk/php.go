@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"sdk_version_control/internal/config"
@@ -76,20 +77,23 @@ func (f *PHPFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *PHPFetcher) VerifyCommand() (string, []string)  { return "php", []string{"--version"} }
 
 // phpArchWarned guards warnPHPRunningOnWindowsArm64 so the warning is logged
-// only once per process.
-var phpArchWarned bool
+// only once per process. Atomic because GetDownloadURL/FetchRemoteVersions
+// can run concurrently (a bare bool would be a data race).
+var phpArchWarned atomic.Bool
 
 // warnPHPRunningOnWindowsArm64 logs a one-time warning when PHP is being
 // fetched on Windows arm64. windows.php.net only publishes x64 builds (the
 // version-listing regex matches "-x64.zip"), so on Windows arm64 the x64
 // build is installed and runs via Windows-on-Arm x64 emulation.
 func warnPHPRunningOnWindowsArm64() {
-	if phpArchWarned {
+	if phpArchWarned.Load() {
 		return
 	}
 	if runtime.GOOS == "windows" && runtime.GOARCH == "arm64" {
-		logger.Warn("PHP does not publish native Windows arm64 builds; the x64 build will be installed and runs via Windows-on-Arm emulation")
-		phpArchWarned = true
+		// CAS so concurrent callers log the warning exactly once.
+		if phpArchWarned.CompareAndSwap(false, true) {
+			logger.Warn("PHP does not publish native Windows arm64 builds; the x64 build will be installed and runs via Windows-on-Arm emulation")
+		}
 	}
 }
 

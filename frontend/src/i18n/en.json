@@ -61,7 +61,6 @@
     "reinstallConfirmDesc": "This will re-download and overwrite the current installation",
     "copyDownloadUrl": "Copy Download URL",
     "cancelInstall": "Cancel Download",
-    "cancelFailed": "Cancel failed: {{error}}",
     "copiedToClipboard": "Copied to clipboard",
     "copyUrlFail": "Failed to get download URL",
     "importConfig": "Import",

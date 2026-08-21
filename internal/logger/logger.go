@@ -28,6 +28,11 @@ type Logger struct {
 var instance *Logger
 var once sync.Once
 
+// initMu guards re-initialization of the singleton. Init is guarded by
+// sync.Once, which cannot be reset; Reinit needs to replace the singleton
+// (after an install-path migration), so it serializes on this mutex instead.
+var initMu sync.Mutex
+
 func Init(logDir string) {
 	once.Do(func() {
 		instance = &Logger{
@@ -36,6 +41,41 @@ func Init(logDir string) {
 		instance.ensureLogDir()
 		instance.rotateFile()
 	})
+}
+
+// Reinit re-initializes the logger at a new base directory (e.g. after the
+// install-path migration moves the logs directory). It closes the current
+// log file, swaps the package singleton to a fresh Logger rooted at
+// <logDir>/logs, and opens a new log file. Returns an error if the new log
+// file could not be opened.
+//
+// Concurrency: the swap is serialized on initMu, and the old file is closed
+// under the old instance's own mutex, so an in-flight write on the old
+// instance either completes before the close or observes file == nil and
+// returns without writing.
+func Reinit(logDir string) error {
+	initMu.Lock()
+	defer initMu.Unlock()
+
+	if l := instance; l != nil {
+		l.mu.Lock()
+		if l.file != nil {
+			l.file.Close()
+			l.file = nil
+			l.currentDate = ""
+		}
+		l.mu.Unlock()
+	}
+
+	instance = &Logger{
+		logDir: filepath.Join(logDir, logsDirName),
+	}
+	instance.ensureLogDir()
+	instance.rotateFile()
+	if instance.file == nil {
+		return fmt.Errorf("failed to open log file in %s", instance.logDir)
+	}
+	return nil
 }
 
 func Get() *Logger {

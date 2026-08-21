@@ -9,6 +9,12 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# Serialize builds for the same ref (e.g. a deleted + re-pushed tag) so two
+# release pipelines cannot interleave on the same ref. No cancel-in-progress:
+# aborting a release build mid-way is worse than letting it finish first.
+concurrency:
+  group: build-${{ github.ref }}
+
 jobs:
   # ====== Windows ======
   build-windows:

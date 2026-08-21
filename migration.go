@@ -17,6 +17,11 @@ import (
 // where SVC data should never be placed (would corrupt the OS).
 func isSystemPath(path string) bool {
 	cleaned := strings.ToLower(filepath.Clean(path))
+	// Per-user temp dirs are not system locations: on macOS os.TempDir() is
+	// /var/folders/..., which would otherwise be rejected by the /var root.
+	if tmp := strings.ToLower(filepath.Clean(os.TempDir())); tmp != "" && (cleaned == tmp || strings.HasPrefix(cleaned, tmp+string(os.PathSeparator))) {
+		return false
+	}
 	if runtime.GOOS == "windows" {
 		systemRoots := []string{`c:\windows`, `c:\program files`, `c:\program files (x86)`, `c:\programdata`, `c:\system32`}
 		for _, root := range systemRoots {
@@ -33,6 +38,44 @@ func isSystemPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// validateMigrationPaths checks that a migration from oldDir to newDir is
+// safe before any filesystem mutation happens. It is a pure function (only
+// reads via os.Stat) so it can be unit-tested without an App.
+//
+// Rules:
+//  1. newDir must not already exist — as ANY type. Rejecting only
+//     directories is unsafe: if newDir is an existing regular file, CopyDir
+//     fails and the M10 cleanup (os.RemoveAll(newDir)) would delete the
+//     user's pre-existing file.
+//  2. Neither path may be nested inside the other. If newDir is inside
+//     oldDir, the final os.RemoveAll(oldDir) would delete the freshly
+//     migrated data (silent data loss); if oldDir is inside newDir the copy
+//     would recurse into itself.
+func validateMigrationPaths(oldDir, newDir string) error {
+	oldDir = filepath.Clean(oldDir)
+	newDir = filepath.Clean(newDir)
+
+	if _, err := os.Stat(newDir); err == nil {
+		return fmt.Errorf("target already exists: %s", newDir)
+	}
+
+	// Ancestor check. Windows paths are case-insensitive, so compare
+	// lower-cased there (matching isSystemPath above).
+	oldCmp, newCmp := oldDir, newDir
+	if runtime.GOOS == "windows" {
+		oldCmp = strings.ToLower(oldCmp)
+		newCmp = strings.ToLower(newCmp)
+	}
+	sep := string(filepath.Separator)
+	if newCmp == oldCmp || strings.HasPrefix(newCmp, oldCmp+sep) {
+		return fmt.Errorf("target is nested inside source directory: %s", newDir)
+	}
+	if strings.HasPrefix(oldCmp, newCmp+sep) {
+		return fmt.Errorf("source is nested inside target directory: %s", newDir)
+	}
+	return nil
 }
 
 func (a *App) GetDefaultInstallPath() string {
@@ -62,9 +105,11 @@ func (a *App) MigrateInstallPath(newPath string) error {
 		return nil
 	}
 
-	if info, err := os.Stat(newDir); err == nil && info.IsDir() {
-		logger.Error("Target directory already exists: %s", newDir)
-		return fmt.Errorf("target directory already exists: %s", newDir)
+	// Reject an existing target (file OR directory) and nested source/target
+	// paths before touching anything: see validateMigrationPaths.
+	if err := validateMigrationPaths(oldDir, newDir); err != nil {
+		logger.Error("Migration target rejected: %v", err)
+		return err
 	}
 
 	// Backup old directory to desktop, failure does not block migration (only logs warning)
@@ -132,8 +177,29 @@ func (a *App) MigrateInstallPath(newPath string) error {
 		// path failed. The new path must be recorded in settings.json before
 		// the old dir is deleted; otherwise a restart would fall back to the
 		// old (now-deleted) path and lose the install. Abort here instead.
-		logger.Error("Failed to save new install path, aborting before old dir removal: %v", err)
+		logger.Error("Failed to save new install path: %v", err)
+		// Roll back in-memory state: cfg already points at newDir and
+		// EnsureSetup above has already rewritten PATH / .svc.rc for the new
+		// location. Restore cfg first, then re-run shim setup at the old
+		// location so PATH / .svc.rc point back at the surviving install
+		// (mirrors the rollback in the EnsureSetup failure branch above).
+		a.cfg.SetSvcDir(oldDir)
+		if rbErr := a.shimMgr.EnsureSetup(); rbErr != nil {
+			logger.Error("Failed to restore shim setup at old directory %s: %v", oldDir, rbErr)
+		}
+		// Clean up the copied-but-unpersisted newDir so a retry is not
+		// blocked by the "target already exists" guard (oldDir is intact).
+		if rmErr := os.RemoveAll(newDir); rmErr != nil {
+			logger.Warn("Failed to remove unpersisted migration target %s: %v", newDir, rmErr)
+		}
 		return fmt.Errorf("failed to save new install path: %w", err)
+	}
+
+	// Re-point the logger at the new install directory BEFORE deleting the
+	// old one: the active log file and logDir still live under oldDir, which
+	// os.RemoveAll is about to remove.
+	if err := logger.Reinit(newDir); err != nil {
+		logger.Warn("Failed to reinitialize logger at %s: %v", newDir, err)
 	}
 
 	logger.Info("Removing old install directory: %s", oldDir)

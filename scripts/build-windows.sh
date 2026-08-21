@@ -34,11 +34,15 @@ WIN_VER=$(echo "$VERSION" | awk -F. '{printf "%s.%s.%s.0", $1, $2, $3}')
 jq --arg v "$WIN_VER" '.RT_VERSION["#1"]["0000"].fixed.file_version = $v | .RT_VERSION["#1"]["0000"].fixed.product_version = $v | .RT_VERSION["#1"]["0000"].info["0409"].FileVersion = $v | .RT_VERSION["#1"]["0000"].info["0409"].ProductVersion = $v' winres/winres.json > winres/winres.json.tmp && mv winres/winres.json.tmp winres/winres.json
 echo "Version bumped to $VERSION in about.json, wails.json, winres.json"
 
-# R9: Restore version-bumped files on exit so local builds don't leave the repo dirty.
+# R9: Restore exactly the files this script modifies so local builds don't leave
+# tracked files dirty: about.json/wails.json/winres.json (version bumps) and
+# internal/shimmanager/svc-shim.windows.exe (committed placeholder overwritten
+# by the real shim build below; never committed). Do NOT restore any other
+# path, so unrelated uncommitted changes are never discarded.
 # Guard with [ -n "$VERSION" ] so the checkout only runs when the script got
 # past the version-bump step (early exit before VERSION is set would otherwise
 # try to restore files that were never modified).
-trap '[ -n "$VERSION" ] && git checkout about.json wails.json 2>/dev/null; git checkout winres/winres.json 2>/dev/null' EXIT
+trap '[ -n "$VERSION" ] && git checkout about.json wails.json winres/winres.json internal/shimmanager/svc-shim.windows.exe 2>/dev/null' EXIT
 
 # --- Generate Windows resources (icon + manifest) -> resource.syso.
 # go-winres --out resource produces a file named `resource` (no extension) with
@@ -73,11 +77,9 @@ ls -la internal/shimmanager/svc-shim.windows.exe
 # self-update asset (ApplyUpdate swaps just the executable).
 wails build -nsis -nopackage -platform "windows/$ARCH" -o SDKVersionControl.exe
 
-# Wails appends the arch suffix when cross-compiling; normalize to the plain
-# name first, then rename to the final asset name so amd64/arm64 don't clobber.
-if [ -f "build/bin/SDKVersionControl-$ARCH.exe" ] && [ ! -f "build/bin/SDKVersionControl.exe" ]; then
-  mv "build/bin/SDKVersionControl-$ARCH.exe" "build/bin/SDKVersionControl.exe"
-fi
+# -o sets the exact output name (wails does NOT append an arch suffix when
+# -o is given), so build/bin/SDKVersionControl.exe is ready to rename as-is;
+# each CI job starts from a fresh checkout, so no stale-file risk.
 ASSET_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}.exe"
 mv "build/bin/SDKVersionControl.exe" "build/bin/${ASSET_NAME}"
 

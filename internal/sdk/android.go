@@ -87,6 +87,19 @@ func androidHostArchKey(goarch string) string {
 	return ""
 }
 
+// androidCmdlineToolsPrerelease reports whether a "cmdline-tools;<ver>"
+// package path names a pre-release build. Pre-release packages carry a
+// suffix in the version segment (e.g. "cmdline-tools;14.0-alpha01",
+// "...;15.0-rc1"); any "-" after the prefix marks a non-stable build. Pure
+// so the filter is testable without XML fixtures.
+func androidCmdlineToolsPrerelease(path string) bool {
+	ver, ok := strings.CutPrefix(path, "cmdline-tools;")
+	if !ok {
+		return false
+	}
+	return strings.Contains(ver, "-")
+}
+
 func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	resp, err := f.httpClient.Get(f.useEndpoint("https://dl.google.com/android/repository/repository2-3.xml"))
 	if err != nil {
@@ -127,6 +140,12 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo
 	for _, pkg := range repo.Packages {
 		if !strings.HasPrefix(pkg.Path, "cmdline-tools;") {
+			continue
+		}
+		// Skip pre-release packages ("cmdline-tools;14.0-alpha01",
+		// "...-beta02", "...-rc1"): only stable cmdline-tools builds should
+		// be offered for install.
+		if androidCmdlineToolsPrerelease(pkg.Path) {
 			continue
 		}
 		ver := fmt.Sprintf("%d.%d.%d", pkg.Revision.Major, pkg.Revision.Minor, pkg.Revision.Micro)

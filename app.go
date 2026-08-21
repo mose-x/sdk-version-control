@@ -24,9 +24,16 @@ var aboutJSON []byte
 // cancelEntry pairs a cancel func with a monotonic install ID so the deferred
 // cleanup in InstallSdk only deletes the map entry when it still belongs to
 // THIS install (not a newer concurrent install of the same SDK type).
+//
+// done is closed by the owning install's deferred cleanup when it has FULLY
+// exited. A newer InstallSdk for the same SDK cancels the old entry and then
+// waits (bounded) on done: without that wait the old download goroutine could
+// still be writing the shared tmp download file (or its deferred cleanup
+// could delete it) after the new install has re-created the same file.
 type cancelEntry struct {
 	cancel context.CancelFunc
 	id     uint64
+	done   chan struct{}
 }
 
 // App struct - Wails bound core structure
@@ -42,6 +49,32 @@ type App struct {
 	cancelMu     sync.Mutex
 	cancelFuncs  map[string]cancelEntry
 	nextCancelID uint64
+
+	// fetcherMu guards fetcherLocks (NOT the fetchers themselves). The
+	// registry hands out shared fetcher singletons whose HTTP client is a
+	// bare field set via SetHTTPClient; the per-SDK mutexes returned by
+	// fetcherLock serialize "SetHTTPClient + the calls that must observe it"
+	// (FetchRemoteVersions / GetDownloadURL / FetchChecksum) so a background
+	// version refresh and an install of the same SDK cannot race on it.
+	fetcherMu    sync.Mutex
+	fetcherLocks map[string]*sync.Mutex
+}
+
+// fetcherLock returns the per-SDK mutex used to serialize SetHTTPClient and
+// the HTTP calls that depend on it. Lazily initialized so tests can use a
+// bare &App{}.
+func (a *App) fetcherLock(key string) *sync.Mutex {
+	a.fetcherMu.Lock()
+	defer a.fetcherMu.Unlock()
+	if a.fetcherLocks == nil {
+		a.fetcherLocks = make(map[string]*sync.Mutex)
+	}
+	m, ok := a.fetcherLocks[key]
+	if !ok {
+		m = &sync.Mutex{}
+		a.fetcherLocks[key] = m
+	}
+	return m
 }
 
 // NewApp creates an App instance
