@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Radio,
   Divider,
@@ -67,6 +67,12 @@ interface AppSettings {
     url: string
     protocol: string
   }
+  // Mirrored from the backend config. Single-field handlers send the whole
+  // settings object to SaveSettings, so this snapshot must keep the current
+  // endpoints/installPath or a later save (e.g. theme change) would clobber
+  // values that SaveEndpoints/MigrateInstallPath changed in the meantime.
+  endpoints: Record<string, string>
+  installPath: string
   githubMirror: string
   githubToken: string
   downloadThreads: number
@@ -111,6 +117,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
     theme: 'dark',
     language: 'zh',
     proxy: { enabled: false, mode: 'system', url: '', protocol: 'http' },
+    endpoints: {},
+    installPath: '',
     githubMirror: '',
     githubToken: '',
     downloadThreads: 4,
@@ -245,14 +253,22 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
       })
   }
 
+  // Monotonic request sequence: when the user switches log files quickly, a
+  // slow response for an earlier file must not overwrite the content of the
+  // file currently being viewed.
+  const logRequestSeq = useRef(0)
+
   const handleViewLog = async (filename: string) => {
+    const seq = ++logRequestSeq.current
     setCurrentLogFile(filename)
     setLogContent('')
     setLogModalOpen(true)
     try {
       const content = await GetLogContent(filename)
+      if (seq !== logRequestSeq.current) return // superseded by a newer view
       setLogContent(content || '')
     } catch (e: any) {
+      if (seq !== logRequestSeq.current) return
       msgApi.error(e?.message || e)
     }
   }
@@ -508,6 +524,11 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   const handleCheckUpdate = async () => {
     setChecking(true)
     setUpdateInfo(null)
+    // Reset download state from any previous check/download cycle, so a
+    // completed download doesn't keep showing "update ready" on a re-check.
+    setDownloading(false)
+    setDownloadProgress(null)
+    setDownloadDone(false)
     try {
       const info = await CheckUpdate()
       if (info.hasUpdate) {
@@ -558,6 +579,9 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
         try {
           await MigrateInstallPath(newPath)
           setInstallPath(newPath)
+          // Keep the settings snapshot in sync (see AppSettings comment):
+          // whole-object SaveSettings must not revert the migration.
+          setSettings((prev) => ({ ...prev, installPath: newPath }))
           msgApi.success(t('settings.installPathSuccess'))
         } catch (e: any) {
           msgApi.error(
@@ -584,6 +608,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
           await MigrateInstallPath(defaultInstallPath)
           setInstallPath(defaultInstallPath)
           setInstallPathDraft(defaultInstallPath)
+          // Keep the settings snapshot in sync (see handleSaveInstallPath).
+          setSettings((prev) => ({ ...prev, installPath: defaultInstallPath }))
           msgApi.success(t('settings.installPathSuccess'))
         } catch (e: any) {
           msgApi.error(
@@ -620,6 +646,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
           .then(() => {
             setCustomEndpoints(cleaned)
             setDraftEndpoints({ ...cleaned })
+            // Keep the settings snapshot in sync: single-field handlers send
+            // the whole object to SaveSettings and would otherwise resurrect
+            // stale endpoints.
+            setSettings((prev) => ({ ...prev, endpoints: { ...cleaned } }))
             msgApi.success(t('settings.settingsSaved'))
           })
           .catch((e: any) =>
@@ -648,6 +678,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
           .then(() => {
             setCustomEndpoints(cleaned)
             setDraftEndpoints({ ...cleaned })
+            // Keep the settings snapshot in sync (see handleSaveEndpoints).
+            setSettings((prev) => ({ ...prev, endpoints: { ...cleaned } }))
             msgApi.success(t('settings.settingsSaved'))
           })
           .catch((e: any) =>
@@ -894,7 +926,9 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
                     style={{
                       flex: 1,
                       fontFamily: 'monospace',
-                      color: settings.githubToken ? '#333' : '#bbb',
+                      color: settings.githubToken
+                        ? 'var(--ant-color-text)'
+                        : '#bbb',
                     }}
                   >
                     {settings.githubToken || t('settings.githubTokenNotSet')}

@@ -32,11 +32,13 @@ jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.js
 jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp && mv wails.json.tmp wails.json
 echo "Version bumped to $VERSION in about.json, wails.json"
 
-# R9: Restore version-bumped files on exit so local builds don't leave the repo dirty.
+# R9: Restore exactly the files this script bumped (about.json, wails.json only
+# -- winres/winres.json is Windows-specific and never touched here, so
+# restoring it would silently discard unrelated uncommitted changes).
 # Guard with [ -n "$VERSION" ] so the checkout only runs when the script got
 # past the version-bump step (early exit before VERSION is set would otherwise
 # try to restore files that were never modified).
-trap '[ -n "$VERSION" ] && git checkout about.json wails.json 2>/dev/null; git checkout winres/winres.json 2>/dev/null' EXIT
+trap '[ -n "$VERSION" ] && git checkout about.json wails.json 2>/dev/null' EXIT
 
 # --- Build .app
 # SVC_SKIP_BINDINGS=1 (set by scripts/build-macos-local.sh) passes

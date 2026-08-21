@@ -54,12 +54,17 @@ import { formatBytes } from '../../utils/format'
 
 interface DetailPanelProps {
   status: SdkStatus | undefined
+  // True when the App-level progress map shows an in-flight install for this
+  // SDK. Local `installing` state is lost when the panel remounts (keyed by
+  // sdkType), so this prop is the authoritative guard against double starts.
+  isDownloading: boolean
   installProgress: InstallProgress | null
   onRefresh: () => void
 }
 
 const DetailPanel: React.FC<DetailPanelProps> = ({
   status,
+  isDownloading,
   installProgress,
   onRefresh,
 }) => {
@@ -137,7 +142,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
         if (!stale?.()) setLoading(false)
       }
     },
-    [status, t],
+    // Depend only on sdkType: App re-creates the status object on every
+    // refresh, and the only field consumed here is status.sdkType.
+    [status?.sdkType],
   )
 
   const fetchPackageManagers = useCallback(
@@ -151,7 +158,8 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
         if (!stale?.()) setPackageManagers([])
       }
     },
-    [status],
+    // Depend only on sdkType (see fetchVersions comment).
+    [status?.sdkType],
   )
 
   useEffect(() => {
@@ -166,7 +174,13 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
     return () => {
       stale = true
     }
-  }, [status, fetchVersions, fetchPackageManagers])
+    // Key on sdkType only: `status` gets a fresh object identity on every
+    // App refresh, which used to re-trigger this effect each refresh —
+    // re-fetching versions and wiping the user's search text. The panel is
+    // already keyed by sdkType in App, and both callbacks are keyed the same
+    // way, so sdkType is the only real dependency here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.sdkType])
 
   // Track the currently-selected SDK type in a ref so the event listener (which
   // is registered ONCE, see below) always reads the latest value instead of a
@@ -259,10 +273,40 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
     return () => {
       stale = true
     }
-  }, [status])
+    // Key on sdkType only: `status` gets a fresh object identity on every
+    // App refresh, which previously re-ran the check and re-popped the
+    // conflict warning modal on each refresh. The panel is keyed by sdkType
+    // in App, so one check per SDK selection is the intended behavior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.sdkType])
 
-  const handleInstall = async (version: string) => {
+  // Shared install flow without any confirm modal, so both entry points
+  // (fresh install / reinstall) can wrap it in exactly one confirm dialog.
+  const doInstall = (version: string) => {
     if (!status) return
+    const sdkType = status.sdkType
+    setInstalling(true)
+    InstallSdk(sdkType, version)
+      .then(() => {
+        msgApi.success(
+          t('detail.installSuccess', { sdk: status.displayName, version }),
+        )
+        onRefresh()
+        fetchPackageManagers()
+      })
+      .catch((e: any) => {
+        msgApi.error(t('detail.installFail', { error: e?.message || e }))
+      })
+      .finally(() => {
+        setInstalling(false)
+      })
+  }
+
+  const handleInstall = (version: string) => {
+    if (!status) return
+    // App-level progress already in flight for this SDK (local `installing`
+    // state may have been lost to a key-based remount) — block duplicates.
+    if (isDownloading) return
     modal.confirm({
       title: t('detail.confirmInstallSdk', {
         sdk: status.displayName,
@@ -272,35 +316,19 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
       okText: t('app.confirm'),
       cancelText: t('app.cancel'),
       maskClosable: false,
-      onOk: () => {
-        const sdkType = status.sdkType
-        setInstalling(true)
-        InstallSdk(sdkType, version)
-          .then(() => {
-            msgApi.success(
-              t('detail.installSuccess', { sdk: status.displayName, version }),
-            )
-            onRefresh()
-            fetchPackageManagers()
-          })
-          .catch((e: any) => {
-            msgApi.error(t('detail.installFail', { error: e?.message || e }))
-          })
-          .finally(() => {
-            setInstalling(false)
-          })
-      },
+      onOk: () => doInstall(version),
     })
   }
 
   const handleReinstall = (version: string) => {
     if (!status) return
+    if (isDownloading) return
     modal.confirm({
       title: t('detail.reinstallConfirm', { version }),
       content: t('detail.reinstallConfirmDesc'),
       okText: t('app.confirm'),
       cancelText: t('app.cancel'),
-      onOk: () => handleInstall(version),
+      onOk: () => doInstall(version),
     })
   }
 
@@ -586,6 +614,10 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
       v.version.includes(searchText) || String(v.major).includes(searchText),
   )
 
+  // "Latest" must be derived from the UNFILTERED list: using the filtered
+  // index === 0 mislabels whatever row happens to match a search first.
+  const latestVersion = versions.length > 0 ? versions[0].version : ''
+
   const installedSet = new Set(status.installedVersions || [])
   const currentVersion = status.currentVersion || ''
 
@@ -837,17 +869,18 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
           </div>
         ) : (
           <div className="version-list" style={{ paddingBottom: 20 }}>
-            {filteredVersions.map((v, index) => {
+            {filteredVersions.map((v) => {
               const isInstalled = installedSet.has(v.version)
               const isCurrentConfig = v.version === currentVersion
+              const isLatest = v.version === latestVersion
               return (
                 <div
                   key={v.version}
-                  className={`version-row ${index === 0 ? 'latest' : ''} ${isInstalled ? 'installed' : ''} ${isCurrentConfig ? 'current-config' : ''}`}
+                  className={`version-row ${isLatest ? 'latest' : ''} ${isInstalled ? 'installed' : ''} ${isCurrentConfig ? 'current-config' : ''}`}
                 >
                   <span className="version-number">
                     {v.version}
-                    {index === 0 && (
+                    {isLatest && (
                       <Tag color="blue" style={{ marginLeft: 8 }}>
                         {t('detail.latest')}
                       </Tag>
@@ -877,7 +910,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                           installing && installProgress?.version === v.version
                         }
                         onClick={() => handleReinstall(v.version)}
-                        disabled={installing}
+                        disabled={installing || isDownloading}
                       >
                         <span className="reinstall-text">
                           {t('detail.installed')}
@@ -890,14 +923,14 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                   ) : (
                     <Button
                       className="install-btn"
-                      type={index === 0 ? 'primary' : 'default'}
+                      type={isLatest ? 'primary' : 'default'}
                       size="small"
                       icon={<DownloadOutlined />}
                       loading={
                         installing && installProgress?.version === v.version
                       }
                       onClick={() => handleInstall(v.version)}
-                      disabled={installing}
+                      disabled={installing || isDownloading}
                     >
                       {t('detail.install')}
                     </Button>
@@ -990,15 +1023,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                     size="small"
                     danger
                     icon={<CloseCircleFilled />}
-                    onClick={() =>
-                      CancelInstall(status.sdkType).catch((e: any) =>
-                        msgApi.error(
-                          t('detail.cancelFailed', {
-                            error: e?.message || e,
-                          }),
-                        ),
-                      )
-                    }
+                    // CancelInstall maps to a Go method with no return value;
+                    // the promise never rejects, so there is nothing to catch.
+                    onClick={() => CancelInstall(status.sdkType)}
                     style={{ padding: '0 4px' }}
                   />
                 </Tooltip>

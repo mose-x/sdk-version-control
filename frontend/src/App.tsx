@@ -103,6 +103,12 @@ function App() {
         const timer = setTimeout(() => {
           refreshStatuses()
           setInstallProgressMap((prev) => {
+            const cur = prev[progress.sdkType]
+            // A new install for the same SDK may have started within the 2s
+            // window; its entry is no longer done/error and must be kept.
+            if (cur && cur.stage !== 'done' && cur.stage !== 'error') {
+              return prev
+            }
             const next = { ...prev }
             delete next[progress.sdkType]
             return next
@@ -213,6 +219,11 @@ function App() {
               <DetailPanel
                 key={selectedSdk}
                 status={currentStatus}
+                isDownloading={
+                  currentStatus
+                    ? downloadingSdks.has(currentStatus.sdkType)
+                    : false
+                }
                 installProgress={
                   currentStatus
                     ? installProgressMap[currentStatus.sdkType] || null
