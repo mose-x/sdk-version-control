@@ -1,10 +1,10 @@
 package shimmanager
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"sdk_version_control/internal/config"
@@ -328,34 +328,103 @@ func TestRemoveSdk_removesStoredEnvVars(t *testing.T) {
 	}
 }
 
-// --- .cmd wrapper content (item 1 follow-up: %* is the correct form) ---
+// --- .cmd/.bat shim strategy: .exe hardlink instead of batch wrapper ---
 
-// TestCreateShimFor_cmdWrapperUsesPercentStar pins the Windows .cmd wrapper
-// template: it must forward arguments with %* (the standard form). "%*"
-// would collapse ALL arguments into a single quoted argument and break
-// multi-arg invocations; a missing/quoted %* either drops args or lets
-// cmd.exe re-interpret specials. The argument-level protection happens in
-// the shim runtime (internal/shim escapeCmdArg), not here.
-func TestCreateShimFor_cmdWrapperUsesPercentStar(t *testing.T) {
+// TestShimExtFor pins the extension mapping: .cmd/.bat targets get a .exe
+// shim. A batch wrapper's %* expansion re-parses arguments (a `^&` that
+// survived the caller's parse gets split on the wrapper's second parse);
+// the .exe shim receives argv intact and the final .cmd invocation is
+// escaped by internal/shim's cmd-safe logic.
+func TestShimExtFor(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{".cmd", ".exe"},
+		{".bat", ".exe"},
+		{".exe", ".exe"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := shimExtFor(tt.in); got != tt.want {
+			t.Errorf("shimExtFor(%q) = %q; want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// TestCreateShimFor_cmdTargetGetsExeShim verifies that a .cmd-target command
+// is shimmed as <cmd>.exe (hardlink to svc-shim) and that a legacy .cmd
+// wrapper from an older version is purged, never regenerated.
+func TestCreateShimFor_cmdTargetGetsExeShim(t *testing.T) {
 	if runtime.GOOS != "windows" {
-		t.Skip(".cmd wrappers are Windows-only")
+		t.Skip(".cmd targets are Windows-only")
 	}
 	m := newTestManager(t)
+	// Legacy wrapper left by an older app version.
+	legacy := filepath.Join(m.cfg.ShimsDir(), "npm.cmd")
+	if err := os.WriteFile(legacy, []byte("@echo off\r\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := m.createShimFor("npm", ".cmd"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(m.cfg.ShimsDir(), "npm.cmd"))
-	if err != nil {
-		t.Fatal(err)
+
+	exeShim := filepath.Join(m.cfg.ShimsDir(), "npm.exe")
+	if _, err := os.Stat(exeShim); err != nil {
+		t.Errorf("expected npm.exe shim: %v", err)
 	}
-	content := string(data)
-	if !strings.Contains(content, " %*") {
-		t.Errorf("wrapper does not forward args with %%*: %q", content)
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Error("legacy npm.cmd wrapper was not purged")
 	}
-	if strings.Contains(content, `"%*"`) {
-		t.Errorf(`wrapper uses "%%*" which merges all args into one: %q`, content)
+	if _, err := os.Stat(filepath.Join(m.cfg.ShimsDir(), "npm.cmd")); !os.IsNotExist(err) {
+		t.Error("no .cmd wrapper must be generated")
 	}
-	if !strings.Contains(content, "svc-shim.exe") || !strings.Contains(content, "npm") {
-		t.Errorf("wrapper missing delegation to svc-shim.exe with the command name: %q", content)
+}
+
+func TestReplaceShimBinary(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "svc-shim")
+
+	writeBytes := func(content string) func(dst string) error {
+		return func(dst string) error { return os.WriteFile(dst, []byte(content), 0755) }
+	}
+
+	// Fresh install.
+	if err := replaceShimBinary(target, writeBytes("v1")); err != nil {
+		t.Fatalf("fresh install: %v", err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "v1" {
+		t.Fatalf("content = %q, want v1", b)
+	}
+	if _, err := os.Stat(target + ".new"); !os.IsNotExist(err) {
+		t.Error(".new temp file left behind")
+	}
+
+	// Replace existing content.
+	if err := replaceShimBinary(target, writeBytes("v2")); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "v2" {
+		t.Fatalf("content = %q, want v2", b)
+	}
+
+	// Stale .new from an interrupted run is cleaned up.
+	os.WriteFile(target+".new", []byte("stale"), 0755)
+	if err := replaceShimBinary(target, writeBytes("v3")); err != nil {
+		t.Fatalf("replace with stale tmp: %v", err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "v3" {
+		t.Fatalf("content = %q, want v3", b)
+	}
+
+	// writeNew failure: error returned, temp removed, target untouched.
+	failErr := fmt.Errorf("write exploded")
+	err := replaceShimBinary(target, func(dst string) error { return failErr })
+	if err == nil {
+		t.Fatal("expected writeNew error to propagate")
+	}
+	if _, statErr := os.Stat(target + ".new"); !os.IsNotExist(statErr) {
+		t.Error(".new temp file left behind after write failure")
+	}
+	if b, _ := os.ReadFile(target); string(b) != "v3" {
+		t.Fatalf("target modified despite write failure: %q", b)
 	}
 }

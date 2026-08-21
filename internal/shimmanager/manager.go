@@ -166,16 +166,15 @@ func (m *Manager) ensureShimBinary() error {
 	}
 
 	logger.Info("Shim binary is outdated, updating...")
-	os.Remove(shimPath)
 
-	if useEmbedded {
-		if err := os.WriteFile(shimPath, embeddedShimBinary, 0755); err != nil {
-			return fmt.Errorf("failed to write embedded shim binary: %w", err)
+	writeNew := func(dst string) error {
+		if useEmbedded {
+			return os.WriteFile(dst, embeddedShimBinary, 0755)
 		}
-	} else {
-		if err := copyFile(appPath, shimPath, 0755); err != nil {
-			return fmt.Errorf("failed to copy shim binary: %w", err)
-		}
+		return copyFile(appPath, dst, 0755)
+	}
+	if err := replaceShimBinary(shimPath, writeNew); err != nil {
+		return fmt.Errorf("failed to update shim binary: %w", err)
 	}
 
 	logger.Info("Shim binary installed at: %s", shimPath)
@@ -189,9 +188,54 @@ func (m *Manager) ensureShimBinary() error {
 	return nil
 }
 
+// replaceShimBinary atomically replaces the shim binary at shimPath using
+// the content produced by writeNew. The naive Remove+WriteFile it replaces
+// failed on Windows whenever a shim process was running: svc-shim.exe is
+// write-locked by the OS while executing, so both Remove and WriteFile fail
+// with a sharing violation and EnsureSetup aborted the whole SDK operation.
+//
+// Strategy:
+//  1. Write the new binary to shimPath+".new" (stale leftovers from an
+//     interrupted run are removed first).
+//  2. Rename over the target. This always works on Unix (rename(2) replaces
+//     atomically, even of a running binary) and on Windows while the shim
+//     is not running.
+//  3. Windows fallback when step 2 hits a sharing violation: a RUNNING exe
+//     cannot be deleted or overwritten, but it CAN be renamed. Rename the
+//     live binary to shimPath+".old" (best-effort cleanup of any previous
+//     leftover first), move the new file into place, then remove the .old
+//     file if nothing still holds it.
+func replaceShimBinary(shimPath string, writeNew func(dst string) error) error {
+	tmpPath := shimPath + ".new"
+	os.Remove(tmpPath) // stale from an interrupted previous run
+	if err := writeNew(tmpPath); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+
+	if err := os.Rename(tmpPath, shimPath); err == nil {
+		return nil
+	}
+
+	// Locked target (Windows running exe). Rename it away, then install.
+	oldPath := shimPath + ".old"
+	os.Remove(oldPath) // works once the previous shim process has exited
+	if err := os.Rename(shimPath, oldPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("shim binary is locked and could not be moved aside: %w", err)
+	}
+	if err := os.Rename(tmpPath, shimPath); err != nil {
+		// Try to restore the old binary so the shim keeps working.
+		os.Rename(oldPath, shimPath)
+		return err
+	}
+	os.Remove(oldPath) // best-effort; stays until the running shim exits
+	return nil
+}
+
 // rebuildCommandShims recreates the shim file for every command registered in
 // shims.json. The command→sdkType mapping and binDirs are preserved; only the
-// on-disk shim file (hardlink to svc-shim, or .cmd/.bat wrapper) is rebuilt.
+// on-disk shim file (hardlink to svc-shim) is rebuilt.
 func (m *Manager) rebuildCommandShims() {
 	cfg, _ := m.loadShimConfig()
 	if len(cfg.Commands) == 0 {
@@ -203,14 +247,12 @@ func (m *Manager) rebuildCommandShims() {
 	// files for commands already registered in shims.json.
 	rebuilt := 0
 	for cmd := range cfg.Commands {
-		// classifyExecutable needs the on-disk filename; reconstruct the
-		// extension the original shim used. .exe hardlink on Windows, no
-		// extension on Unix. .cmd/.bat wrappers are Windows-only and are
-		// recreated below by re-deriving the extension from any existing
-		// variant.
+		// Reconstruct the extension of any existing shim variant. Normally
+		// .exe on Windows / no extension on Unix; legacy installs may still
+		// have .cmd/.bat batch wrappers, which createShimFor migrates to
+		// .exe (see shimExtFor).
 		ext := ""
 		if runtime.GOOS == "windows" {
-			// Prefer .exe; fall back to .cmd/.bat if that's what existed.
 			for _, candidate := range []string{".exe", ".cmd", ".bat"} {
 				if _, err := os.Stat(filepath.Join(m.cfg.ShimsDir(), cmd+candidate)); err == nil {
 					ext = candidate
@@ -428,17 +470,28 @@ func classifyExecutable(name string) (cmdName, ext string, ok bool) {
 	return name, "", true
 }
 
-// createShimFor creates a shim for a command.
-//   - "" or ".exe" (Unix, or Windows .exe): hardlink to the base shim binary.
-//     On Unix, if the base shim is itself a symlink (rare), resolve it first
-//     so the hardlink points at the real file, not a possibly-stale symlink
-//     node. This matters when SDKs ship commands as symlinks (pip -> pip3);
-//     a hardlink to a symlink survives the link being retargeted only if the
-//     hardlink is to the symlink itself, but resolving avoids edge cases.
-//   - ".cmd"/".bat" (Windows): write a wrapper batch script that delegates to
-//     svc-shim.exe with the command name as argv[1], so the shim runtime can
-//     route it to the active SDK version. A hardlink cannot be used here
-//     because cmd.exe would try to interpret the PE binary as a batch script.
+// shimExtFor returns the on-disk extension for a shim file. .cmd/.bat
+// targets also get a .exe shim (a hardlink to svc-shim.exe): naming the
+// shim itself .cmd would make cmd.exe interpret the PE bytes as a batch
+// script, and a batch wrapper's %* expansion RE-PARSES arguments -- a `^&`
+// that correctly survived the caller's first parse gets split into two
+// commands on the wrapper's second parse. The .exe shim receives argv
+// intact (hardlink/argv[0] mode) and forwards through exec_windows'
+// cmd-safe escaping when the real target is a .cmd/.bat. Pure for
+// testability.
+func shimExtFor(ext string) string {
+	if ext == ".cmd" || ext == ".bat" {
+		return ".exe"
+	}
+	return ext
+}
+
+// createShimFor creates a shim for a command as a hardlink to the base shim
+// binary (falling back to a copy). On Unix, if the base shim is itself a
+// symlink (rare), resolve it first so the hardlink points at the real file,
+// not a possibly-stale symlink node. This matters when SDKs ship commands as
+// symlinks (pip -> pip3). The shim is always named <cmd><shimExtFor(ext)>:
+// .cmd/.bat targets get a .exe shim too (see shimExtFor).
 func (m *Manager) createShimFor(cmdName, ext string) error {
 	// M8: Validate cmdName before any path construction to prevent path
 	// traversal via tampered shims.json. Only alphanumeric + hyphen allowed.
@@ -447,36 +500,29 @@ func (m *Manager) createShimFor(cmdName, ext string) error {
 			return fmt.Errorf("refusing to create shim for unsafe command name: %s", cmdName)
 		}
 	}
+	ext = shimExtFor(ext)
 	// Purge ALL variants of cmdName first. The previous code only removed
 	// the target variant (os.Remove(cmdName+ext)); switching extensions
-	// (e.g. a .cmd wrapper existed and now we create .exe, or vice versa)
-	// left the old variant on disk as a stale, conflicting shim. removeShim
-	// already does multi-variant removal on Windows (bare+.exe+.cmd+.bat)
-	// and bare-only on Unix, so reuse it.
+	// (e.g. a legacy .cmd wrapper existed and now we create .exe, or vice
+	// versa) left the old variant on disk as a stale, conflicting shim.
+	// removeShim already does multi-variant removal on Windows
+	// (bare+.exe+.cmd+.bat) and bare-only on Unix, so reuse it.
 	m.removeShim(cmdName)
 
-	if ext == "" || ext == ".exe" {
-		shimPath := m.getShimBinaryPath()
-		linkPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
-		// Resolve symlinks on Unix so the hardlink targets the real file.
-		// On Windows os.Stat already follows; SymlinkTarget is not needed.
-		target := shimPath
-		if runtime.GOOS != "windows" {
-			if resolved, err := filepath.EvalSymlinks(shimPath); err == nil {
-				target = resolved
-			}
+	shimPath := m.getShimBinaryPath()
+	linkPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
+	// Resolve symlinks on Unix so the hardlink targets the real file.
+	// On Windows os.Stat already follows; SymlinkTarget is not needed.
+	target := shimPath
+	if runtime.GOOS != "windows" {
+		if resolved, err := filepath.EvalSymlinks(shimPath); err == nil {
+			target = resolved
 		}
-		if err := os.Link(target, linkPath); err == nil {
-			return nil
-		}
-		return copyFile(target, linkPath, 0755)
 	}
-
-	// Windows .cmd / .bat wrapper. %~dp0 resolves to the shims directory.
-	// cmdName validation is already done at the top of createShimFor.
-	wrapperPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
-	content := fmt.Sprintf("@echo off\r\n\"%%~dp0svc-shim.exe\" %s %%*\r\n", cmdName)
-	return os.WriteFile(wrapperPath, []byte(content), 0644)
+	if err := os.Link(target, linkPath); err == nil {
+		return nil
+	}
+	return copyFile(target, linkPath, 0755)
 }
 
 // removeShim removes a shim and any platform-specific variants for the command.

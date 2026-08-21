@@ -193,10 +193,6 @@ func TestDotNetFetchRemoteVersionsLatestSDK(t *testing.T) {
 
 	tr := &dotnetRoutingTransport{bodies: map[string]string{
 		indexURL: indexBody,
-		"https://example.test/11.0/releases.json": `{"channel-version":"11.0","latest-sdk":"11.0.100-preview.7.26381.103"}`,
-		"https://example.test/10.0/releases.json": `{"channel-version":"10.0","latest-sdk":"10.0.400"}`,
-		"https://example.test/9.0/releases.json":  `{"channel-version":"9.0","latest-sdk":"9.0.317"}`,
-		"https://example.test/8.0/releases.json":  `{"channel-version":"8.0","latest-sdk":""}`,
 	}}
 	f := NewDotNetFetcher(nil, nil)
 	f.SetHTTPClient(&http.Client{Transport: tr})
@@ -206,9 +202,15 @@ func TestDotNetFetchRemoteVersionsLatestSDK(t *testing.T) {
 		t.Fatalf("FetchRemoteVersions: %v", err)
 	}
 
+	// Version discovery must need exactly ONE request: the index carries
+	// latest-sdk per channel (no per-channel releases.json fan-out).
+	if len(tr.requested) != 1 {
+		t.Errorf("expected exactly 1 HTTP request, got %d: %v", len(tr.requested), tr.requested)
+	}
+
 	// Expect exactly the two stable channels with a usable latest-sdk:
 	// 11.0 skipped (preview SDK), 8.0 skipped (empty latest-sdk),
-	// 7.5 skipped (no releases.json link).
+	// 7.5 skipped (no latest-sdk field).
 	if len(versions) != 2 {
 		t.Fatalf("expected 2 versions, got %d: %+v", len(versions), versions)
 	}
@@ -241,8 +243,8 @@ func TestDotNetFetchRemoteVersionsLatestSDK(t *testing.T) {
 		t.Errorf("Major fields wrong: %d, %d", versions[0].Major, versions[1].Major)
 	}
 
-	// The preview channel's releases.json was fetched but its result dropped;
-	// the runtime versions (10.0.11/9.0.19) must never appear in the list.
+	// Preview/empty channels are skipped from the index alone; the runtime
+	// versions (10.0.11/9.0.19) must never appear in the list.
 	for _, v := range versions {
 		if v.Version == "10.0.11" || v.Version == "9.0.19" || strings.Contains(v.Version, "preview") {
 			t.Errorf("runtime/preview version leaked into the list: %q", v.Version)
@@ -259,7 +261,6 @@ func TestDotNetFetchRemoteVersionsAllChannelsSkipped(t *testing.T) {
 	]}`
 	tr := &dotnetRoutingTransport{bodies: map[string]string{
 		indexURL: indexBody,
-		"https://example.test/11.0/releases.json": `{"latest-sdk":"11.0.100-preview.7.26381.103"}`,
 	}}
 	f := NewDotNetFetcher(nil, nil)
 	f.SetHTTPClient(&http.Client{Transport: tr})
