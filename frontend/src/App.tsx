@@ -38,7 +38,7 @@ function App() {
     }
     return set
   }, [installProgressMap])
-  const [themeMode, setThemeMode] = useState<string>('system')
+  const [themeMode, setThemeMode] = useState<string>('dark')
   const [language, setLanguage] = useState<string>('zh')
   const [showSettings, setShowSettings] = useState(false)
   const [showPathModal, setShowPathModal] = useState(false)
@@ -74,7 +74,10 @@ function App() {
   const refreshStatuses = useCallback(async () => {
     try {
       const statuses = await GetAllSdkStatus()
-      setSdkStatuses(statuses || [])
+      // Cast from Wails-generated sdk.SdkStatus (sdkType: string) to the
+      // frontend SdkStatus (sdkType: SdkType) — the runtime values always
+      // carry valid SdkType strings; the Wails models just aren't narrowed.
+      setSdkStatuses((statuses || []) as SdkStatus[])
     } catch (e) {
       console.error('Failed to get SDK status:', e)
     }

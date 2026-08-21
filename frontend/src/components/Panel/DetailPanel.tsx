@@ -50,6 +50,7 @@ import {
   CancelInstall,
 } from '../../../wailsjs/go/main/App'
 import { EventsOn } from '../../../wailsjs/runtime/runtime'
+import { formatBytes } from '../../utils/format'
 
 interface DetailPanelProps {
   status: SdkStatus | undefined
@@ -78,18 +79,6 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
   const { message: msgApi } = App.useApp()
   const { t } = useTranslation()
   const [modal, modalContextHolder] = Modal.useModal()
-
-  const formatBytes = (bytes: number): string => {
-    if (bytes <= 0) return '0 B'
-    const units = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    const idx = Math.min(i, units.length - 1)
-    return (
-      (bytes / Math.pow(1024, idx)).toFixed(idx === 0 ? 0 : 1) +
-      ' ' +
-      units[idx]
-    )
-  }
 
   const translateProgress = (progress: InstallProgress): string => {
     switch (progress.stage) {
@@ -1002,7 +991,13 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                     danger
                     icon={<CloseCircleFilled />}
                     onClick={() =>
-                      CancelInstall(status.sdkType).catch(() => {})
+                      CancelInstall(status.sdkType).catch((e: any) =>
+                        msgApi.error(
+                          t('detail.cancelFailed', {
+                            error: e?.message || e,
+                          }),
+                        ),
+                      )
                     }
                     style={{ padding: '0 4px' }}
                   />

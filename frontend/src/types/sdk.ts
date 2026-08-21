@@ -22,7 +22,7 @@ export interface PackageManagerInfo {
 }
 
 export interface SdkStatus {
-  sdkType: string
+  sdkType: SdkType
   displayName: string
   configured: boolean
   pathConfigured: boolean // In PATH but not in .svc
@@ -45,7 +45,7 @@ export interface VersionInfo {
 }
 
 export interface InstallProgress {
-  sdkType: string
+  sdkType: SdkType
   version: string
   stage:
     | 'downloading'

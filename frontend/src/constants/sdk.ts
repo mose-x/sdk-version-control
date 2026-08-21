@@ -23,6 +23,26 @@ export const sdkColors: Record<string, string> = {
   dart: '#0175C2',
 }
 
+// Human-readable display names for each SDK type. Kept in sync with the
+// sdkColors keys above — both maps cover all 14 SDKs. Consumers (PathModal,
+// Sidebar, etc.) should use this instead of maintaining local name maps.
+export const sdkDisplayNames: Record<string, string> = {
+  nodejs: 'Node.js',
+  jdk: 'JDK',
+  go: 'Go',
+  python: 'Python',
+  rust: 'Rust',
+  ruby: 'Ruby',
+  dotnet: '.NET',
+  php: 'PHP',
+  perl: 'Perl',
+  maven: 'Maven',
+  gradle: 'Gradle',
+  flutter: 'Flutter',
+  android: 'Android',
+  dart: 'Dart',
+}
+
 export interface SdkCategory {
   key: string
   sdkTypes: string[]
