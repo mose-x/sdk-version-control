@@ -180,16 +180,11 @@ func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, do
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	// Clean up .part on any error path; on success the rename consumes it.
+	// C1+H1 fix: always close out and try to remove .part on exit.
+	// On success, rename consumes .part so Remove is a no-op.
 	defer func() {
-		if err != nil {
-			os.Remove(partPath)
-		}
-	}()
-	defer func() {
-		if cerr := out.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("failed to close file: %w", cerr)
-		}
+		out.Close()
+		os.Remove(partPath)
 	}()
 
 	totalBytes := resp.ContentLength
@@ -240,8 +235,10 @@ func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, do
 		}
 	}
 
-	// H4: Atomically rename .part to final destination on success.
-	if err = os.Rename(partPath, destPath); err != nil {
+	// H4: Close out before rename (Windows: can't rename open file),
+	// then atomically rename .part to final destination.
+	out.Close()
+	if err := os.Rename(partPath, destPath); err != nil {
 		return fmt.Errorf("failed to rename download file: %w", err)
 	}
 	return nil
