@@ -274,16 +274,23 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 		return fmt.Errorf("fallback: file too small for multi-thread")
 	}
 
-	// Create output file and pre-allocate size
-	out, err := os.Create(destPath)
+	// M1: Write to .part temp file, rename on success (same as downloadSingle).
+	partPath := destPath + ".part"
+	os.Remove(partPath) // clear stale .part from previous failed attempt
+	out, err := os.Create(partPath)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	if err := out.Truncate(totalBytes); err != nil {
+	// Clean up .part on any error path.
+	defer func() {
 		out.Close()
+		if err != nil {
+			os.Remove(partPath)
+		}
+	}()
+	if err := out.Truncate(totalBytes); err != nil {
 		return fmt.Errorf("failed to pre-allocate file: %w", err)
 	}
-	out.Close()
 
 	// Calculate segments
 	chunkSize := totalBytes / int64(threads)
@@ -407,5 +414,9 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 	}
 
 	logger.Info("Multi-thread download completed: %s (%d threads, %d bytes)", filepath.Base(destPath), threads, totalBytes)
+	// M1: Atomically rename .part to final destination on success.
+	if err = os.Rename(partPath, destPath); err != nil {
+		return fmt.Errorf("failed to rename download file: %w", err)
+	}
 	return nil
 }
