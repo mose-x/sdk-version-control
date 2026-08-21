@@ -3,13 +3,11 @@ package sdk
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"sdk_version_control/internal/config"
@@ -50,20 +48,14 @@ type dotnetReleaseIndex struct {
 	ReleasesIndex []dotnetIndexChannel `json:"releases-index"`
 }
 
-// dotnetIndexChannel is one channel entry of releases-index.json. Only the
-// per-channel releases.json link is needed for SDK version discovery: the
-// index's own latest-release field is a RUNTIME version (e.g. "10.0.11"),
-// and building SDK download URLs from it produced 404s for every channel.
+// dotnetIndexChannel is one channel entry of releases-index.json. The index
+// carries latest-sdk (the newest SDK version of the channel, e.g.
+// "10.0.400") directly, so a single request is enough for version discovery.
+// The index's latest-release field is a RUNTIME version (e.g. "10.0.11");
+// building SDK download URLs from it produces 404s.
 type dotnetIndexChannel struct {
 	ChannelVersion string `json:"channel-version"`
-	ReleasesJSON   string `json:"releases.json"`
-}
-
-// dotnetChannelFile is the subset of a per-channel releases.json we consume.
-// latest-sdk is the newest SDK version of the channel (e.g. "10.0.400") and
-// is the correct version for SDK download URLs.
-type dotnetChannelFile struct {
-	LatestSDK string `json:"latest-sdk"`
+	LatestSDK      string `json:"latest-sdk"`
 }
 
 // dotnetChannelMajor parses the major version number from a channel-version
@@ -114,74 +106,28 @@ func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		return nil, fmt.Errorf("failed to parse .NET version data: %w", err)
 	}
 
-	// Resolve each channel's latest SDK from its own releases.json (linked in
-	// the index). Fetches run with bounded concurrency; a failing/unreachable
-	// channel is skipped rather than failing the whole list.
-	results := make([]VersionInfo, len(index.ReleasesIndex))
-	found := make([]bool, len(index.ReleasesIndex))
-	sem := make(chan struct{}, 4)
-	var wg sync.WaitGroup
-	for i, ch := range index.ReleasesIndex {
-		if ch.ReleasesJSON == "" {
+	// The index carries latest-sdk per channel, so version discovery needs
+	// exactly this one request. Channels without an SDK release yet (empty
+	// latest-sdk) and pre-release SDKs (preview/rc) are skipped.
+	var versions []VersionInfo
+	for _, ch := range index.ReleasesIndex {
+		sdk := strings.TrimSpace(ch.LatestSDK)
+		if sdk == "" || dotnetIsPrereleaseSDK(sdk) {
 			continue
 		}
-		wg.Add(1)
-		go func(i int, ch dotnetIndexChannel) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			results[i], found[i] = f.fetchChannelLatestSDK(ch)
-		}(i, ch)
-	}
-	wg.Wait()
-
-	var versions []VersionInfo
-	for i := range index.ReleasesIndex {
-		if found[i] {
-			versions = append(versions, results[i])
-		}
+		versions = append(versions, VersionInfo{
+			Version:     sdk,
+			Major:       dotnetChannelMajor(ch.ChannelVersion),
+			IsLTS:       dotnetIsLTS(ch.ChannelVersion),
+			DownloadURL: f.buildURL(sdk),
+			FileName:    f.buildFileName(sdk),
+		})
 	}
 	if len(versions) == 0 {
 		return nil, fmt.Errorf("no .NET SDK versions found in release metadata")
 	}
 	sort.Slice(versions, func(i, j int) bool { return CompareVersions(versions[i].Version, versions[j].Version) > 0 })
 	return versions, nil
-}
-
-// fetchChannelLatestSDK fetches one channel's releases.json and converts its
-// latest-sdk field into a VersionInfo. Returns ok=false (channel skipped)
-// when the fetch fails, latest-sdk is empty (channel has no SDK release
-// yet), or the latest SDK is a pre-release (preview/rc) -- pre-release
-// archives must not be offered as install targets.
-func (f *DotNetFetcher) fetchChannelLatestSDK(ch dotnetIndexChannel) (VersionInfo, bool) {
-	resp, err := f.httpClient.Get(ch.ReleasesJSON)
-	if err != nil {
-		return VersionInfo{}, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return VersionInfo{}, false
-	}
-	// Bound the read: channel files are at most ~1 MB; mirrors may misbehave.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
-	if err != nil {
-		return VersionInfo{}, false
-	}
-	var file dotnetChannelFile
-	if err := json.Unmarshal(body, &file); err != nil {
-		return VersionInfo{}, false
-	}
-	sdk := strings.TrimSpace(file.LatestSDK)
-	if sdk == "" || dotnetIsPrereleaseSDK(sdk) {
-		return VersionInfo{}, false
-	}
-	return VersionInfo{
-		Version:     sdk,
-		Major:       dotnetChannelMajor(ch.ChannelVersion),
-		IsLTS:       dotnetIsLTS(ch.ChannelVersion),
-		DownloadURL: f.buildURL(sdk),
-		FileName:    f.buildFileName(sdk),
-	}, true
 }
 
 // dotnetRID maps a (goos, goarch) pair to the .NET Runtime ID (RID) used in

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,9 +24,14 @@ type Logger struct {
 	logDir      string
 	file        *os.File
 	currentDate string
+	// closed marks a superseded instance (after Reinit). A write that
+	// captured the old instance before the swap must not reopen its log
+	// file via rotateFile -- that would resurrect a file inside a
+	// directory the migration is about to delete.
+	closed bool
 }
 
-var instance *Logger
+var instancePtr atomic.Pointer[Logger]
 var once sync.Once
 
 // initMu guards re-initialization of the singleton. Init is guarded by
@@ -35,51 +41,56 @@ var initMu sync.Mutex
 
 func Init(logDir string) {
 	once.Do(func() {
-		instance = &Logger{
+		l := &Logger{
 			logDir: filepath.Join(logDir, logsDirName),
 		}
-		instance.ensureLogDir()
-		instance.rotateFile()
+		l.ensureLogDir()
+		l.rotateFile()
+		instancePtr.Store(l)
 	})
 }
 
 // Reinit re-initializes the logger at a new base directory (e.g. after the
-// install-path migration moves the logs directory). It closes the current
-// log file, swaps the package singleton to a fresh Logger rooted at
-// <logDir>/logs, and opens a new log file. Returns an error if the new log
-// file could not be opened.
-//
-// Concurrency: the swap is serialized on initMu, and the old file is closed
-// under the old instance's own mutex, so an in-flight write on the old
-// instance either completes before the close or observes file == nil and
-// returns without writing.
+// install-path migration moves the logs directory). It opens the new log
+// file FIRST, then marks the old instance closed and atomically publishes
+// the new one. Build-then-publish means the new instance is fully
+// initialized before any goroutine can observe it, and the old instance
+// can never reopen its file afterwards (closed flag). Returns an error if
+// the new log file could not be opened (the swap still happens: the old
+// directory may be deleted right after).
 func Reinit(logDir string) error {
 	initMu.Lock()
 	defer initMu.Unlock()
 
-	if l := instance; l != nil {
-		l.mu.Lock()
-		if l.file != nil {
-			l.file.Close()
-			l.file = nil
-			l.currentDate = ""
-		}
-		l.mu.Unlock()
-	}
-
-	instance = &Logger{
+	nl := &Logger{
 		logDir: filepath.Join(logDir, logsDirName),
 	}
-	instance.ensureLogDir()
-	instance.rotateFile()
-	if instance.file == nil {
-		return fmt.Errorf("failed to open log file in %s", instance.logDir)
+	nl.mu.Lock()
+	nl.ensureLogDir()
+	nl.rotateFile()
+	opened := nl.file != nil
+	nl.mu.Unlock()
+
+	if old := instancePtr.Load(); old != nil {
+		old.mu.Lock()
+		old.closed = true
+		if old.file != nil {
+			old.file.Close()
+			old.file = nil
+			old.currentDate = ""
+		}
+		old.mu.Unlock()
+	}
+
+	instancePtr.Store(nl)
+	if !opened {
+		return fmt.Errorf("failed to open log file in %s", nl.logDir)
 	}
 	return nil
 }
 
 func Get() *Logger {
-	return instance
+	return instancePtr.Load()
 }
 
 func (l *Logger) ensureLogDir() {
@@ -110,12 +121,18 @@ func (l *Logger) rotateFile() {
 }
 
 func (l *Logger) write(level LogLevel, format string, args ...interface{}) {
-	if l == nil || l.file == nil {
+	if l == nil {
 		return
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	// Superseded instances must stay dead: rotateFile would otherwise
+	// reopen the log file in the (about-to-be-deleted) old directory.
+	if l.closed {
+		return
+	}
 
 	l.rotateFile()
 	if l.file == nil {

@@ -77,6 +77,84 @@ func TestInitAndReinit_WritesToNewDir(t *testing.T) {
 	}
 }
 
+// TestReinit_OldInstanceStaysDead verifies that a write captured the old
+// instance before Reinit cannot reopen the old log file (rotateFile on a
+// closed instance must be a no-op) -- otherwise the migration's
+// RemoveAll(oldDir) fails on Windows due to the resurrected handle.
+func TestReinit_OldInstanceStaysDead(t *testing.T) {
+	baseA := t.TempDir()
+	baseB := t.TempDir()
+	closeSingleton(t)
+
+	if err := Reinit(baseA); err != nil {
+		t.Fatalf("Reinit(baseA): %v", err)
+	}
+	old := Get()
+	Info("old-instance marker")
+	oldLog := todayLogFile(filepath.Join(baseA, logsDirName))
+	before, err := os.ReadFile(oldLog)
+	if err != nil {
+		t.Fatalf("expected old log file to exist: %v", err)
+	}
+
+	if err := Reinit(baseB); err != nil {
+		t.Fatalf("Reinit(baseB): %v", err)
+	}
+	// Simulate a writer that captured the old instance before the swap.
+	old.write(LevelInfo, "attempted resurrection")
+
+	after, err := os.ReadFile(oldLog)
+	if err != nil {
+		t.Fatalf("old log file disappeared: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("old log file changed after Reinit (resurrected write):\n%q", string(after))
+	}
+	if strings.Contains(string(after), "attempted resurrection") {
+		t.Error("superseded instance wrote to the old log file")
+	}
+	if got, want := LogDir(), filepath.Join(baseB, logsDirName); got != want {
+		t.Errorf("LogDir = %q, want %q", got, want)
+	}
+}
+
+// TestReinit_ConcurrentWrites is a smoke test: writers hammering the logger
+// while Reinit swaps the singleton must not panic or deadlock.
+func TestReinit_ConcurrentWrites(t *testing.T) {
+	baseA := t.TempDir()
+	baseB := t.TempDir()
+	closeSingleton(t)
+	if err := Reinit(baseA); err != nil {
+		t.Fatalf("Reinit(baseA): %v", err)
+	}
+
+	done := make(chan struct{})
+	for i := 0; i < 4; i++ {
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					Info("concurrent write")
+				}
+			}
+		}()
+	}
+	for i := 0; i < 5; i++ {
+		if i%2 == 0 {
+			Reinit(baseB)
+		} else {
+			Reinit(baseA)
+		}
+	}
+	close(done)
+	Info("final marker")
+	if Get() == nil {
+		t.Fatal("singleton nil after concurrent Reinit")
+	}
+}
+
 // TestReinit_Error verifies Reinit reports failure when the new log file
 // cannot be opened (the logs dir cannot be created under a device file).
 // Runs last in this file: it leaves the singleton with a nil file handle,
