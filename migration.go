@@ -100,7 +100,9 @@ func (a *App) MigrateInstallPath(newPath string) error {
 	// Re-run shim setup at the new location: recreates the shims dir, refreshes
 	// the shim binary, and regenerates .svc.rc with the new SVC_HOME.
 	if err := a.shimMgr.EnsureSetup(); err != nil {
-		logger.Warn("Shim setup at new location failed: %v", err)
+		logger.Error("Shim setup at new location failed, aborting migration: %v", err)
+		os.RemoveAll(newDir)
+		return fmt.Errorf("shim setup failed at new location: %w", err)
 	}
 
 	// Re-create shims for every active SDK at the new install path.
