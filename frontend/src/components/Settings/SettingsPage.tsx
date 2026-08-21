@@ -56,6 +56,7 @@ import {
 } from '../../../wailsjs/go/main/App'
 import { BrowserOpenURL, EventsOn } from '../../../wailsjs/runtime/runtime'
 import { SDK_CATEGORIES } from '../../constants/sdk'
+import { formatBytes } from '../../utils/format'
 
 interface AppSettings {
   theme: string
@@ -336,16 +337,6 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
     } finally {
       setCleaning(false)
     }
-  }
-
-  const formatBytes = (bytes: number): string => {
-    if (bytes <= 0) return '0 B'
-    const units = ['B', 'KB', 'MB', 'GB']
-    const i = Math.min(
-      Math.floor(Math.log(bytes) / Math.log(1024)),
-      units.length - 1,
-    )
-    return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i]
   }
 
   const handleThemeChange = (theme: string) => {

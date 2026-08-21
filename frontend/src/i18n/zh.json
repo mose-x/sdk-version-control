@@ -61,6 +61,7 @@
     "reinstallConfirmDesc": "将重新下载并覆盖当前安装目录中的文件",
     "copyDownloadUrl": "复制下载链接",
     "cancelInstall": "取消下载",
+    "cancelFailed": "取消失败: {{error}}",
     "copiedToClipboard": "已复制到剪贴板",
     "copyUrlFail": "获取下载链接失败",
     "importConfig": "导入配置",

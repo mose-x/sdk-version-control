@@ -3,7 +3,7 @@ import { Modal, Table, Tag, Button, App, Empty } from 'antd'
 import { ImportOutlined, FolderOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import { GetPathEntries, ImportSdk } from '../../../wailsjs/go/main/App'
-import { sdkColors } from '../../constants/sdk'
+import { sdkColors, sdkDisplayNames } from '../../constants/sdk'
 
 interface PathEntry {
   path: string
@@ -15,15 +15,6 @@ interface PathModalProps {
   open: boolean
   onClose: () => void
   onRefresh: () => void
-}
-
-const sdkNames: Record<string, string> = {
-  nodejs: 'Node.js',
-  jdk: 'JDK',
-  go: 'Go',
-  maven: 'Maven',
-  python: 'Python',
-  gradle: 'Gradle',
 }
 
 const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
@@ -56,7 +47,7 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
 
   const handleImport = (entry: PathEntry) => {
     if (!entry.sdkType) return
-    const sdkName = sdkNames[entry.sdkType] || entry.sdkType
+    const sdkName = sdkDisplayNames[entry.sdkType] || entry.sdkType
     const ref = modal.confirm({
       title: t('path.importConfirm', { sdk: sdkName }),
       content: t('path.importConfirmDesc', { path: entry.path }),
@@ -96,7 +87,9 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
       width: 100,
       render: (type: string) =>
         type ? (
-          <Tag color={sdkColors[type] || '#666'}>{sdkNames[type] || type}</Tag>
+          <Tag color={sdkColors[type] || '#666'}>
+            {sdkDisplayNames[type] || type}
+          </Tag>
         ) : (
           <Tag>{t('path.noSdkDetected')}</Tag>
         ),
