@@ -59,6 +59,7 @@ function App() {
       .catch((e) => console.error('Failed to load settings:', e))
     GetAppInfo()
       .then((info) => {
+        if (!info) return
         setAppVersion(info.version)
         const link = document.querySelector(
           "link[rel='icon']",
