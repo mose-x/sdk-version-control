@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -104,4 +106,163 @@ func TestAndroidFetcher_GetDownloadURL_noFallback(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to fetch Android cmdline-tools versions") {
 		t.Errorf("expected error to mention the fetch failure, got: %v", err)
 	}
+}
+
+// TestAndroidHostArchKey pins the runtime.GOARCH -> host-arch mapping used
+// to filter Android repository archives by CPU architecture (E3). The
+// mapping is pure logic so every (goarch, want) pair is exercised regardless
+// of the host's real arch.
+func TestAndroidHostArchKey(t *testing.T) {
+	tests := []struct {
+		goarch string
+		want   string
+	}{
+		{"arm64", "aarch64"},
+		{"amd64", "x64"},
+		{"386", ""},  // unsupported — caller falls back to legacy match
+		{"mips", ""}, // unsupported
+		{"", ""},     // unknown
+	}
+	for _, tt := range tests {
+		t.Run(tt.goarch, func(t *testing.T) {
+			got := androidHostArchKey(tt.goarch)
+			if got != tt.want {
+				t.Errorf("androidHostArchKey(%q) = %q; want %q", tt.goarch, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestAndroidXMLHostArchParsing verifies the host-arch XML field is parsed
+// from the repository XML and that the (host-os, host-arch) pair is exposed
+// on each archive entry (E3).
+func TestAndroidXMLHostArchParsing(t *testing.T) {
+	xmlData := []byte(`<?xml version="1.0"?>
+<sdk-repository>
+  <remotePackage path="cmdline-tools;22.0">
+    <revision>
+      <major>22</major>
+      <minor>0</minor>
+      <micro>0</micro>
+    </revision>
+    <archives>
+      <archive>
+        <complete>
+          <url>commandlinetools-linux-15859902_latest.zip</url>
+          <size>155000000</size>
+        </complete>
+        <host-os>linux</host-os>
+        <host-arch>aarch64</host-arch>
+      </archive>
+      <archive>
+        <complete>
+          <url>commandlinetools-linux-15859902_x64.zip</url>
+          <size>155000000</size>
+        </complete>
+        <host-os>linux</host-os>
+        <host-arch>x64</host-arch>
+      </archive>
+      <archive>
+        <complete>
+          <url>commandlinetools-win-15859902_legacy.zip</url>
+          <size>155000000</size>
+        </complete>
+        <host-os>windows</host-os>
+      </archive>
+    </archives>
+  </remotePackage>
+</sdk-repository>`)
+
+	var repo androidRepository
+	if err := xml.Unmarshal(xmlData, &repo); err != nil {
+		t.Fatalf("failed to parse XML: %v", err)
+	}
+	if len(repo.Packages) != 1 || len(repo.Packages[0].Archives.Archive) != 3 {
+		t.Fatalf("expected 1 package with 3 archives, got %+v", repo)
+	}
+	got := repo.Packages[0].Archives.Archive
+	// linux aarch64
+	if got[0].HostArch != "aarch64" {
+		t.Errorf("archive[0] HostArch: want aarch64, got %q", got[0].HostArch)
+	}
+	// linux x64
+	if got[1].HostArch != "x64" {
+		t.Errorf("archive[1] HostArch: want x64, got %q", got[1].HostArch)
+	}
+	// windows legacy (no host-arch element)
+	if got[2].HostArch != "" {
+		t.Errorf("archive[2] HostArch: want empty (legacy), got %q", got[2].HostArch)
+	}
+}
+
+// TestAndroidFetcher_PrefersArchMatchingArchive uses a stub RoundTripper that
+// serves a fixed repository XML (with both an aarch64 and an x64 linux
+// archive) for any request, then verifies the fetcher selects the archive
+// matching the runtime GOARCH. Uses a RoundTripper (not a real listener)
+// because the fetcher hardcodes https://dl.google.com URLs and a plain HTTP
+// test server would fail the TLS handshake.
+func TestAndroidFetcher_PrefersArchMatchingArchive(t *testing.T) {
+	// Use the current platform's OS key so the fetcher matches archives.
+	osKey := "windows"
+	if runtime.GOOS == "linux" {
+		osKey = "linux"
+	}
+	xmlBody := fmt.Sprintf(`<?xml version="1.0"?>
+<sdk-repository>
+  <remotePackage path="cmdline-tools;22.0">
+    <revision><major>22</major><minor>0</minor><micro>0</micro></revision>
+    <archives>
+      <archive>
+        <complete><url>cmdline-aarch64.zip</url><size>1</size></complete>
+        <host-os>%s</host-os>
+        <host-arch>aarch64</host-arch>
+      </archive>
+      <archive>
+        <complete><url>cmdline-x64.zip</url><size>1</size></complete>
+        <host-os>%s</host-os>
+        <host-arch>x64</host-arch>
+      </archive>
+    </archives>
+  </remotePackage>
+</sdk-repository>`, osKey, osKey)
+
+	f := &AndroidFetcher{
+		httpClient: &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: &stubXMLRoundTripper{body: xmlBody},
+		},
+	}
+
+	versions, err := f.FetchRemoteVersions()
+	if err != nil {
+		t.Fatalf("FetchRemoteVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected 1 version, got %d: %+v", len(versions), versions)
+	}
+	want := androidHostArchKey(runtime.GOARCH)
+	// On an unknown arch the fetcher falls back to whichever appears first;
+	// skip the strict URL check in that case.
+	if want == "" {
+		return
+	}
+	gotName := versions[0].FileName
+	wantName := "cmdline-" + map[string]string{"aarch64": "aarch64", "x64": "x64"}[want] + ".zip"
+	if gotName != wantName {
+		t.Errorf("FetchRemoteVersions selected %q on GOARCH=%s; want %q (matching host-arch %s)", gotName, runtime.GOARCH, wantName, want)
+	}
+}
+
+// stubXMLRoundTripper is a RoundTripper that returns a fixed XML body for any
+// request. Used by tests that need to feed the fetcher a synthetic XML payload
+// without standing up a real HTTP(S) server (the fetcher hardcodes https URLs
+// so a plain-HTTP test server would fail the TLS handshake).
+type stubXMLRoundTripper struct{ body string }
+
+func (s *stubXMLRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/xml"}},
+		Body:       io.NopCloser(strings.NewReader(s.body)),
+	}, nil
 }

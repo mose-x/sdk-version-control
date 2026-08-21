@@ -19,7 +19,7 @@ type envVarEntry struct {
 // collectEnvVars reads shims.json and config.json to build the list of
 // environment variables that should appear in .svc.rc.
 func (m *Manager) collectEnvVars() []envVarEntry {
-	cfg := m.loadShimConfig()
+	cfg, _ := m.loadShimConfig()
 	svcHome := m.cfg.SvcDir()
 
 	var entries []envVarEntry
@@ -94,7 +94,8 @@ func (m *Manager) GetRcFileContent() (string, error) {
 
 // GetShimConfig returns the current shims.json config (for display in UI).
 func (m *Manager) GetShimConfig() shim.ShimConfig {
-	return m.loadShimConfig()
+	cfg, _ := m.loadShimConfig()
+	return cfg
 }
 
 // GetConfiguredShells returns the list of shell config files that contain

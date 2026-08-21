@@ -87,7 +87,7 @@ func buildUpdateScript(pid int, currentExe, bak, newExe, expectedHash string) st
 echo Waiting for application to close...
 set /a timeout=60
 :waitloop
-tasklist /FI "PID eq %d" 2>NUL | find "%d" >NUL
+tasklist /FI "PID eq %d" /NH 2>NUL | findstr /B /C:"%d " >NUL
 if not errorlevel 1 (
     timeout /t 1 /nobreak >NUL
     set /a timeout-=1
@@ -151,7 +151,7 @@ func (a *App) RollbackUpdate() error {
 echo Waiting for application to close...
 set /a timeout=60
 :waitloop
-tasklist /FI "PID eq %d" 2>NUL | find "%d" >NUL
+tasklist /FI "PID eq %d" /NH 2>NUL | findstr /B /C:"%d " >NUL
 if not errorlevel 1 (
     timeout /t 1 /nobreak >NUL
     set /a timeout-=1

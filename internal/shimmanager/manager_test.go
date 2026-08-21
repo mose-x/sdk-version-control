@@ -91,7 +91,7 @@ func TestEnsurePython3Shim_addsAliasAndCreatesShim(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.ensurePython3Shim()
-	loaded := m.loadShimConfig()
+	loaded, _ := m.loadShimConfig()
 	if got := loaded.Commands["python3"]; got != "python" {
 		t.Fatalf(`shims.json Commands["python3"] = %q; want "python"`, got)
 	}
@@ -152,7 +152,7 @@ func TestRemoveSdk_cleansPython3(t *testing.T) {
 			t.Errorf("%s%s still exists after RemoveSdk; want removed", name, shimExt())
 		}
 	}
-	loaded := m.loadShimConfig()
+	loaded, _ := m.loadShimConfig()
 	if _, ok := loaded.Commands["python"]; ok {
 		t.Error(`shims.json Commands["python"] still present after RemoveSdk`)
 	}

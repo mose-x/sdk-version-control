@@ -66,7 +66,13 @@ func BuildClient(proxy ProxyConfig) *http.Client {
 
 	return &http.Client{
 		Transport: transport,
-		Timeout:   5 * time.Minute,
+		// M9: No global client timeout. The 5min default was too short for
+		// large SDK archives (JDK, Android cmdline-tools ~150MB+) and aborted
+		// legitimate downloads mid-flight. Per-call timeouts are set by
+		// callers: 30s for API/version-list fetches (sdk_ops.go), 10s for the
+		// proxy check (proxy.go). For file downloads, the caller's context
+		// cancellation (InstallSdk installCtx) is the timeout authority.
+		Timeout: 0,
 	}
 }
 
@@ -90,19 +96,32 @@ func applyProxy(transport *http.Transport, proxyURL *url.URL) {
 	}
 }
 
-// hasScheme checks whether a string contains a URL scheme (e.g. http://, socks5://)
-// Strictly per RFC 3986: the first character of a scheme must be a letter, followed by letters, digits, +, -, .
+// hasScheme reports whether s carries an RFC 3986 URL scheme prefix (e.g.
+// "http://", "socks5://"). It requires the "://" separator so a bare
+// "host:port" (e.g. "localhost:7890") is NOT misclassified as scheme="localhost"
+// — which previously skipped auto-prepending "http://" and produced a proxy
+// URL the net/http transport would reject.
 func hasScheme(s string) bool {
-	for i := 0; i < len(s); i++ {
+	idx := strings.Index(s, "://")
+	if idx <= 0 {
+		return false
+	}
+	// Validate the prefix before "://" is a valid RFC 3986 scheme:
+	// letter, followed by letters, digits, '+', '-' or '.'.
+	for i := 0; i < idx; i++ {
 		c := s[i]
-		if c == ':' && i > 0 {
-			return true
+		if i == 0 {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+				return false
+			}
+			continue
 		}
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (i > 0 && ((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'))) {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.') {
 			return false
 		}
 	}
-	return false
+	return true
 }
 
 const minMultiThreadSize = 5 * 1024 * 1024 // files smaller than 5MB are not split

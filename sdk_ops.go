@@ -341,12 +341,16 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 
 	logger.Info("Extraction completed, configuring environment...")
 	a.emitProgress(sdkType, version, "configuring_path", 0, "Configuring environment...", 0, 0, 0, downloadURL)
-	if err := a.pathMgr.ConfigureSdk(string(sdkType), versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
-		return fmt.Errorf("failed to configure PATH: %w", err)
-	}
 
+	// M13: Set active version BEFORE ConfigureSdk. If SetActiveVersion fails,
+	// the config doesn't record this version — don't configure PATH for an
+	// unrecorded version (would leave inconsistent state on failure).
 	if err := a.cfg.SetActiveVersion(string(sdkType), version); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	if err := a.pathMgr.ConfigureSdk(string(sdkType), versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
+		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	// Refresh .svc.rc so env var lines (JAVA_HOME, GOROOT, etc.) reflect the

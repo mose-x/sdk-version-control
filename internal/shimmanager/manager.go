@@ -58,7 +58,7 @@ func (m *Manager) EnsureSetup() error {
 // python.exe (no python3.exe); without this alias `python3` resolves to the
 // Windows Store stub.
 func (m *Manager) ensurePython3Shim() {
-	cfg := m.loadShimConfig()
+	cfg, _ := m.loadShimConfig()
 	if !m.ensurePython3Alias(&cfg) {
 		return
 	}
@@ -176,7 +176,7 @@ func (m *Manager) ensureShimBinary() error {
 // shims.json. The command→sdkType mapping and binDirs are preserved; only the
 // on-disk shim file (hardlink to svc-shim, or .cmd/.bat wrapper) is rebuilt.
 func (m *Manager) rebuildCommandShims() {
-	cfg := m.loadShimConfig()
+	cfg, _ := m.loadShimConfig()
 	if len(cfg.Commands) == 0 {
 		return
 	}
@@ -398,6 +398,13 @@ func classifyExecutable(name string) (cmdName, ext string, ok bool) {
 //     route it to the active SDK version. A hardlink cannot be used here
 //     because cmd.exe would try to interpret the PE binary as a batch script.
 func (m *Manager) createShimFor(cmdName, ext string) error {
+	// M8: Validate cmdName before any path construction to prevent path
+	// traversal via tampered shims.json. Only alphanumeric + hyphen allowed.
+	for _, c := range cmdName {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+			return fmt.Errorf("refusing to create shim for unsafe command name: %s", cmdName)
+		}
+	}
 	// Purge ALL variants of cmdName first. The previous code only removed
 	// the target variant (os.Remove(cmdName+ext)); switching extensions
 	// (e.g. a .cmd wrapper existed and now we create .exe, or vice versa)
@@ -424,14 +431,7 @@ func (m *Manager) createShimFor(cmdName, ext string) error {
 	}
 
 	// Windows .cmd / .bat wrapper. %~dp0 resolves to the shims directory.
-	// Validate cmdName to prevent batch injection: only alphanumeric + hyphen
-	// are allowed (all SDK command names are simple identifiers like "go",
-	// "node", "python3", "rustc").
-	for _, c := range cmdName {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
-			return fmt.Errorf("refusing to create shim for unsafe command name: %s", cmdName)
-		}
-	}
+	// cmdName validation is already done at the top of createShimFor.
 	wrapperPath := filepath.Join(m.cfg.ShimsDir(), cmdName+ext)
 	content := fmt.Sprintf("@echo off\r\n\"%%~dp0svc-shim.exe\" %s %%*\r\n", cmdName)
 	return os.WriteFile(wrapperPath, []byte(content), 0644)
@@ -460,7 +460,7 @@ func (m *Manager) getShimBinaryPath() string {
 // updateShimConfig updates shims.json with the SDK type config and its commands.
 func (m *Manager) updateShimConfig(sdkType string, binDirs []string, envVars map[string]string, commands []string) error {
 	cfgPath := m.cfg.ShimsConfigPath()
-	cfg := m.loadShimConfig()
+	cfg, _ := m.loadShimConfig()
 
 	if cfg.Commands == nil {
 		cfg.Commands = make(map[string]string)
@@ -498,7 +498,7 @@ func (m *Manager) updateShimConfig(sdkType string, binDirs []string, envVars map
 // removeSdkFromConfig removes an SDK type and its commands from shims.json.
 func (m *Manager) removeSdkFromConfig(sdkType string) error {
 	cfgPath := m.cfg.ShimsConfigPath()
-	cfg := m.loadShimConfig()
+	cfg, _ := m.loadShimConfig()
 
 	for cmd, st := range cfg.Commands {
 		if st == sdkType {
@@ -512,7 +512,7 @@ func (m *Manager) removeSdkFromConfig(sdkType string) error {
 
 // getCommandsForSdkType returns all command names registered for a given SDK type.
 func (m *Manager) getCommandsForSdkType(sdkType string) ([]string, error) {
-	cfg := m.loadShimConfig()
+	cfg, _ := m.loadShimConfig()
 	var commands []string
 	for cmd, st := range cfg.Commands {
 		if st == sdkType {
@@ -522,18 +522,25 @@ func (m *Manager) getCommandsForSdkType(sdkType string) ([]string, error) {
 	return commands, nil
 }
 
-// loadShimConfig reads shims.json, returning an empty config if not found.
-func (m *Manager) loadShimConfig() shim.ShimConfig {
+// loadShimConfig reads shims.json. On file-not-found it returns an empty config
+// with a nil error (first install, no config yet). On JSON unmarshal failure
+// it returns the error so the caller can abort WITHOUT overwriting the
+// (corrupt) file with an empty config — silently returning an empty config
+// previously wiped valid config on save (M7).
+func (m *Manager) loadShimConfig() (shim.ShimConfig, error) {
 	cfgPath := m.cfg.ShimsConfigPath()
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
-		return shim.ShimConfig{}
+		if os.IsNotExist(err) {
+			return shim.ShimConfig{}, nil
+		}
+		return shim.ShimConfig{}, err
 	}
 	var cfg shim.ShimConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return shim.ShimConfig{}
+		return shim.ShimConfig{}, fmt.Errorf("failed to parse %s: %w", cfgPath, err)
 	}
-	return cfg
+	return cfg, nil
 }
 
 // saveShimConfig writes shims.json atomically (temp file + rename).

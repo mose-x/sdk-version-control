@@ -21,7 +21,10 @@ func IsShimMode() bool {
 	if err != nil {
 		return false
 	}
-	_, ok := cfg.Commands[inv.Command]
+	// O12: on Windows command names are case-insensitive (cmd.exe / batch
+	// are case-insensitive; a hardlink to NODE.exe is the same as node.exe).
+	// lookupCommand does a case-insensitive scan on Windows, exact on Unix.
+	_, ok := lookupCommand(cfg.Commands, inv.Command)
 	return ok
 }
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/bodgit/sevenzip"
 	"github.com/ulikunitz/xz"
@@ -18,12 +19,29 @@ import (
 // zip-bomb attacks (10 GB — larger than any legitimate SDK archive).
 const maxDecompressedSize int64 = 10 * 1024 * 1024 * 1024
 
-// limitedCopy copies from src to dst but aborts if the single file exceeds
-// maxDecompressedSize. Returns nil on success, error if oversized or I/O failure.
+// totalExtracted tracks the cumulative decompressed byte count across all
+// files in a single Extract call. Reset to 0 at the start of every Extract
+// invocation. Accessed atomically because limitedCopy may be called in a tight
+// loop; in practice Extract is serial (one call per InstallSdk/import), so
+// concurrent Extract calls do not race on this counter.
+var totalExtracted int64
+
+// limitedCopy copies from src to dst but aborts if the cumulative decompressed
+// byte count (across all files in this Extract call) exceeds
+// maxDecompressedSize. This catches zip-bombs spread across many small files
+// that each individually fit under the per-file limit. Returns nil on success,
+// error if oversized or I/O failure.
 func limitedCopy(dst io.Writer, src io.Reader) error {
-	_, err := io.CopyN(dst, src, maxDecompressedSize+1)
+	n, err := io.CopyN(dst, src, maxDecompressedSize+1)
+	// Accumulate into the per-Extraction cumulative counter and reject if
+	// the running total now exceeds the limit.
+	newTotal := atomic.AddInt64(&totalExtracted, n)
+	if newTotal > maxDecompressedSize {
+		return fmt.Errorf("cumulative decompressed size exceeds limit (%d bytes)", maxDecompressedSize)
+	}
 	if err == nil {
-		// CopyN wrote exactly max+1 bytes without hitting EOF — source is too large
+		// CopyN wrote exactly max+1 bytes without hitting EOF — single
+		// file alone is already too large.
 		return fmt.Errorf("decompressed file exceeds size limit (%d bytes)", maxDecompressedSize)
 	}
 	if err != io.EOF {
@@ -82,6 +100,7 @@ func StripTopDir(destDir string) error {
 type ZipExtractor struct{}
 
 func (e *ZipExtractor) Extract(archivePath, destDir string) error {
+	atomic.StoreInt64(&totalExtracted, 0)
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open zip file: %w", err)
@@ -111,7 +130,11 @@ func (e *ZipExtractor) Extract(archivePath, destDir string) error {
 		}
 		err = limitedCopy(outFile, rc)
 		rc.Close()
-		outFile.Close()
+		// Surface Close errors (e.g. disk full during flush) — previously
+		// dropped, hiding the real cause of a corrupt partial extraction.
+		if cerr := outFile.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
 		if err != nil {
 			return err
 		}
@@ -123,6 +146,7 @@ func (e *ZipExtractor) Extract(archivePath, destDir string) error {
 type TarGzExtractor struct{}
 
 func (e *TarGzExtractor) Extract(archivePath, destDir string) error {
+	atomic.StoreInt64(&totalExtracted, 0)
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return err
@@ -142,6 +166,7 @@ func (e *TarGzExtractor) Extract(archivePath, destDir string) error {
 type TarXzExtractor struct{}
 
 func (e *TarXzExtractor) Extract(archivePath, destDir string) error {
+	atomic.StoreInt64(&totalExtracted, 0)
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return err
@@ -160,6 +185,7 @@ func (e *TarXzExtractor) Extract(archivePath, destDir string) error {
 type SevenZipExtractor struct{}
 
 func (e *SevenZipExtractor) Extract(archivePath, destDir string) error {
+	atomic.StoreInt64(&totalExtracted, 0)
 	r, err := sevenzip.OpenReader(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open 7z file: %w", err)
@@ -189,7 +215,10 @@ func (e *SevenZipExtractor) Extract(archivePath, destDir string) error {
 		}
 		err = limitedCopy(outFile, rc)
 		rc.Close()
-		outFile.Close()
+		// Surface Close errors (e.g. disk full during flush).
+		if cerr := outFile.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
 		if err != nil {
 			return err
 		}
@@ -233,7 +262,10 @@ func extractTar(tr *tar.Reader, destDir string) error {
 				return err
 			}
 			err = limitedCopy(outFile, tr)
-			outFile.Close()
+			// Surface Close errors (e.g. disk full during flush).
+			if cerr := outFile.Close(); cerr != nil && err == nil {
+				err = cerr
+			}
 			if err != nil {
 				return err
 			}
