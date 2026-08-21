@@ -113,7 +113,8 @@
     "importSuccess": "Import successful!",
     "importFail": "Import failed: {{error}}",
     "noSdkDetected": "Unknown",
-    "emptyPath": "No SDK-related paths found in PATH"
+    "emptyPath": "No SDK-related paths found in PATH",
+    "sdkColumn": "SDK"
   },
   "settings": {
     "title": "Settings",
@@ -174,7 +175,10 @@
     "proxyCheckFail": "{{target}} connection failed: {{error}}",
     "proxyUrlRequired": "Please enter a proxy address first, otherwise the target will be reached directly",
     "proxyCheckBaidu": "Baidu",
-    "proxyCheckGoogle": "Google"
+    "proxyCheckGoogle": "Google",
+    "loading": "Loading...",
+    "filename": "Filename",
+    "noContent": "No content"
   },
   "logs": {
     "title": "Log Management",

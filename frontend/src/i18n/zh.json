@@ -113,7 +113,8 @@
     "importSuccess": "导入成功！",
     "importFail": "导入失败: {{error}}",
     "noSdkDetected": "未识别",
-    "emptyPath": "PATH 中没有找到 SDK 相关路径"
+    "emptyPath": "PATH 中没有找到 SDK 相关路径",
+    "sdkColumn": "SDK"
   },
   "settings": {
     "title": "系统设置",
@@ -174,7 +175,10 @@
     "proxyCheckFail": "{{target}} 连接失败: {{error}}",
     "proxyUrlRequired": "请先填写代理地址，否则将直连目标站点",
     "proxyCheckBaidu": "百度",
-    "proxyCheckGoogle": "Google"
+    "proxyCheckGoogle": "Google",
+    "loading": "加载中...",
+    "filename": "文件名",
+    "noContent": "无内容"
   },
   "logs": {
     "title": "日志管理",

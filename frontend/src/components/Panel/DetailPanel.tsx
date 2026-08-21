@@ -78,7 +78,6 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
   const { message: msgApi } = App.useApp()
   const { t } = useTranslation()
   const [modal, modalContextHolder] = Modal.useModal()
-  const modalRef = useRef<any>(null)
 
   const formatBytes = (bytes: number): string => {
     if (bytes <= 0) return '0 B'
@@ -273,41 +272,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
     }
   }, [status])
 
-  useEffect(() => {
-    if (installProgress && modalRef.current) {
-      modalRef.current.update({
-        content: (
-          <div style={{ textAlign: 'center', padding: '10px 0' }}>
-            <Progress
-              percent={installProgress.percent}
-              status={
-                installProgress.stage === 'error'
-                  ? 'exception'
-                  : installProgress.stage === 'done'
-                    ? 'success'
-                    : 'active'
-              }
-            />
-            <p style={{ margin: '8px 0 0', color: '#888' }}>
-              {translateProgress(installProgress)}
-            </p>
-            {installProgress.stage === 'downloading' &&
-              installProgress.speedBytesPerSec > 0 && (
-                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#aaa' }}>
-                  {formatBytes(installProgress.speedBytesPerSec)}/s
-                  {installProgress.totalBytes > 0 &&
-                    ` · ${formatBytes(installProgress.downloadedBytes)} / ${formatBytes(installProgress.totalBytes)}`}
-                </p>
-              )}
-          </div>
-        ),
-      })
-    }
-  }, [installProgress])
-
   const handleInstall = async (version: string) => {
     if (!status) return
-    const ref = modal.confirm({
+    modal.confirm({
       title: t('detail.confirmInstallSdk', {
         sdk: status.displayName,
         version,
@@ -335,17 +302,11 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
           })
       },
     })
-    modalRef.current = ref
-    try {
-      await ref
-    } finally {
-      modalRef.current = null
-    }
   }
 
   const handleReinstall = (version: string) => {
     if (!status) return
-    Modal.confirm({
+    modal.confirm({
       title: t('detail.reinstallConfirm', { version }),
       content: t('detail.reinstallConfirmDesc'),
       okText: t('app.confirm'),
@@ -357,7 +318,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
   const handleSwitchVersion = (version: string) => {
     if (!status) return
     if (version === status.currentVersion) return
-    Modal.confirm({
+    modal.confirm({
       title: t('detail.switchConfirm', { sdk: status.displayName, version }),
       content: t('detail.switchConfirmDesc'),
       okText: t('app.confirm'),
@@ -382,7 +343,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
   const handleUninstallVersion = (version: string) => {
     if (!status) return
     const isActive = version === status.currentVersion
-    Modal.confirm({
+    modal.confirm({
       title: isActive
         ? t('detail.uninstallActiveConfirm', {
             sdk: status.displayName,
@@ -514,12 +475,6 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
           }
         },
       })
-      modalRef.current = ref
-      try {
-        await ref
-      } finally {
-        modalRef.current = null
-      }
     } finally {
       setImporting(false)
     }
@@ -565,12 +520,6 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
           }
         },
       })
-      modalRef.current = ref
-      try {
-        await ref
-      } finally {
-        modalRef.current = null
-      }
     } finally {
       setImporting(false)
     }

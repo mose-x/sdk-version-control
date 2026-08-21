@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import { SdkStatus, SdkType } from '../../types/sdk'
+import { sdkColors, SDK_CATEGORIES } from '../../constants/sdk'
 import logoImg from '../../assets/logo.png'
 
 interface HomePageProps {
@@ -26,42 +27,6 @@ const CATEGORY_META: Record<string, { icon: React.ReactNode; color: string }> =
     build: { icon: <ToolOutlined />, color: '#722ed1' },
     mobile: { icon: <MobileOutlined />, color: '#13c2c2' },
   }
-
-const SDK_CATEGORIES = [
-  {
-    key: 'runtime',
-    sdkTypes: [
-      'nodejs',
-      'jdk',
-      'go',
-      'python',
-      'rust',
-      'ruby',
-      'dotnet',
-      'php',
-      'perl',
-    ],
-  },
-  { key: 'build', sdkTypes: ['maven', 'gradle'] },
-  { key: 'mobile', sdkTypes: ['flutter', 'android', 'dart'] },
-]
-
-const sdkColors: Record<string, string> = {
-  nodejs: '#339933',
-  jdk: '#f89820',
-  go: '#00ADD8',
-  python: '#3776AB',
-  rust: '#CE422B',
-  ruby: '#CC342D',
-  dotnet: '#512BD4',
-  php: '#777BB4',
-  perl: '#39457E',
-  maven: '#C71A36',
-  gradle: '#02303A',
-  flutter: '#02569B',
-  android: '#3DDC84',
-  dart: '#0175C2',
-}
 
 const HomePage: React.FC<HomePageProps> = ({
   statuses,

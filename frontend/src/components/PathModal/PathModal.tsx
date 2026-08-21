@@ -7,6 +7,7 @@ import {
 } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import { GetPathEntries, ImportSdk } from '../../../wailsjs/go/main/App'
+import { sdkColors } from '../../constants/sdk'
 
 interface PathEntry {
   path: string
@@ -18,15 +19,6 @@ interface PathModalProps {
   open: boolean
   onClose: () => void
   onRefresh: () => void
-}
-
-const sdkColors: Record<string, string> = {
-  nodejs: '#339933',
-  jdk: '#f89820',
-  go: '#00ADD8',
-  maven: '#C71A36',
-  python: '#3776AB',
-  gradle: '#02303A',
 }
 
 const sdkNames: Record<string, string> = {
@@ -102,7 +94,7 @@ const PathModal: React.FC<PathModalProps> = ({ open, onClose, onRefresh }) => {
 
   const columns = [
     {
-      title: 'SDK',
+      title: t('path.sdkColumn'),
       dataIndex: 'sdkType',
       key: 'sdkType',
       width: 100,
