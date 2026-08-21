@@ -281,12 +281,14 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	// Clean up .part on any error path.
+	// C1+H1 fix: always close out and try to remove .part on exit.
+	// On success, rename consumes .part so Remove is a no-op.
+	// On error, .part is cleaned up. This avoids the named-return capture
+	// problem where scoped `err :=` in if/case blocks didn't update the
+	// outer err that the defer checked.
 	defer func() {
 		out.Close()
-		if err != nil {
-			os.Remove(partPath)
-		}
+		os.Remove(partPath)
 	}()
 	if err := out.Truncate(totalBytes); err != nil {
 		return fmt.Errorf("failed to pre-allocate file: %w", err)
@@ -362,7 +364,7 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 				return
 			}
 
-			f, err := os.OpenFile(destPath, os.O_WRONLY, 0)
+			f, err := os.OpenFile(partPath, os.O_WRONLY, 0)
 			if err != nil {
 				errCh <- err
 				return
@@ -414,8 +416,10 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 	}
 
 	logger.Info("Multi-thread download completed: %s (%d threads, %d bytes)", filepath.Base(destPath), threads, totalBytes)
-	// M1: Atomically rename .part to final destination on success.
-	if err = os.Rename(partPath, destPath); err != nil {
+	// C1 fix: Close out before rename (Windows: can't rename open file),
+	// then atomically rename .part to final destination.
+	out.Close()
+	if err := os.Rename(partPath, destPath); err != nil {
 		return fmt.Errorf("failed to rename download file: %w", err)
 	}
 	return nil

@@ -125,7 +125,7 @@ func validatePathSegment(segment string) error {
 	}
 	// L14: reject ".." only as an exact segment (not a substring), so valid
 	// names like "1..2" are allowed. Path separators and NUL are still rejected.
-	if segment == ".." || strings.ContainsAny(segment, "/\\") || strings.ContainsRune(segment, 0) {
+	if segment == "." || segment == ".." || strings.ContainsAny(segment, "/\\") || strings.ContainsRune(segment, 0) {
 		return fmt.Errorf("invalid path segment: %s", segment)
 	}
 	if strings.ContainsAny(segment, windowsIllegalChars) {
