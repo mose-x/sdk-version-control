@@ -111,7 +111,7 @@ func (m *UnixPathManager) GetAllPathEntries() ([]PathEntry, error) {
 		if p == "" {
 			continue
 		}
-		isManaged := strings.Contains(filepath.ToSlash(p), "/.svc/") || strings.HasSuffix(filepath.ToSlash(p), "/.svc")
+		isManaged := hasSvcSegment(p)
 		if isManaged {
 			sdkType := detectSdkTypeFromPath(p)
 			entries = append(entries, PathEntry{
@@ -182,8 +182,8 @@ func (m *UnixPathManager) cleanExternalFromEnvSh(envPath string, sdkType string,
 
 	var lines []string
 	lines = append(lines, "# SVC Environment Configuration - Auto-generated, do not edit manually")
-	for k, v := range existing {
-		lines = append(lines, fmt.Sprintf("export %s=\"%s\"", k, v))
+	for _, k := range sortedKeys(existing) {
+		lines = append(lines, formatExportLine(k, existing[k]))
 	}
 	os.WriteFile(envPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
@@ -217,18 +217,14 @@ func (m *UnixPathManager) cleanExternalFromFishSh(fishEnvPath string, sdkType st
 
 	var lines []string
 	lines = append(lines, "# SVC Environment Configuration - Auto-generated, do not edit manually")
-	for k, v := range existing {
-		if k == "PATH" {
-			lines = append(lines, fmt.Sprintf("set -gx PATH \"%s\" $PATH", v))
-		} else {
-			lines = append(lines, fmt.Sprintf("set -gx %s \"%s\"", k, v))
-		}
+	for _, k := range sortedKeys(existing) {
+		lines = append(lines, formatFishLine(k, existing[k]))
 	}
 	os.WriteFile(fishEnvPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
 
 func (m *UnixPathManager) isExternalMatch(path string, sdkType string, version string, svcDir string, sourcePath string) bool {
-	if strings.Contains(path, ".svc") || strings.HasPrefix(path, svcDir) {
+	if hasSvcSegment(path) || hasPathPrefix(path, svcDir) {
 		return false
 	}
 	if sourcePath != "" && filepath.Clean(path) == filepath.Clean(sourcePath) {
@@ -265,7 +261,8 @@ func (m *UnixPathManager) writeEnvSh(sdkType string, binPath string, extraEnvVar
 	var filteredPath []string
 	for _, p := range pathParts {
 		p = strings.TrimSpace(p)
-		if p == "" || strings.HasPrefix(p, sdkDir) {
+		// Item 4: separator-anchored prefix check (/a/b must not match /a/bc).
+		if p == "" || hasPathPrefix(p, sdkDir) {
 			continue
 		}
 		if p == "$PATH" {
@@ -299,8 +296,9 @@ func (m *UnixPathManager) writeEnvSh(sdkType string, binPath string, extraEnvVar
 
 	var lines []string
 	lines = append(lines, "# SVC Environment Configuration - Auto-generated, do not edit manually")
-	for k, v := range existing {
-		lines = append(lines, fmt.Sprintf("export %s=\"%s\"", k, v))
+	// Item 15: sorted keys -> deterministic file content across runs.
+	for _, k := range sortedKeys(existing) {
+		lines = append(lines, formatExportLine(k, existing[k]))
 	}
 
 	return os.WriteFile(envPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
@@ -317,7 +315,8 @@ func (m *UnixPathManager) writeFishEnvSh(sdkType string, binPath string, extraEn
 		var filtered []string
 		for _, p := range parts {
 			p = strings.TrimSpace(p)
-			if p != "" && !strings.HasPrefix(p, sdkDir) {
+			// Item 4: separator-anchored prefix check.
+			if p != "" && !hasPathPrefix(p, sdkDir) {
 				filtered = append(filtered, p)
 			}
 		}
@@ -347,12 +346,10 @@ func (m *UnixPathManager) writeFishEnvSh(sdkType string, binPath string, extraEn
 
 	var lines []string
 	lines = append(lines, "# SVC Environment Configuration - Auto-generated, do not edit manually")
-	for k, v := range existing {
-		if k == "PATH" {
-			lines = append(lines, fmt.Sprintf("set -gx PATH \"%s\" $PATH", v))
-		} else {
-			lines = append(lines, fmt.Sprintf("set -gx %s \"%s\"", k, v))
-		}
+	// Item 15: sorted keys -> deterministic output. Item 6/8: fishEscape,
+	// not double quotes (fish double quotes still expand $).
+	for _, k := range sortedKeys(existing) {
+		lines = append(lines, formatFishLine(k, existing[k]))
 	}
 
 	return os.WriteFile(fishEnvPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
@@ -366,7 +363,7 @@ func (m *UnixPathManager) parseEnvSh(path string) map[string]string {
 			if strings.HasPrefix(line, "export ") {
 				parts := strings.SplitN(line[7:], "=", 2)
 				if len(parts) == 2 {
-					existing[parts[0]] = strings.Trim(parts[1], "\"")
+					existing[parts[0]] = unquoteShellValue(parts[1])
 				}
 			}
 		}
@@ -383,10 +380,14 @@ func (m *UnixPathManager) parseFishEnv(path string) map[string]string {
 				parts := strings.Fields(line[8:])
 				if len(parts) >= 2 {
 					key := parts[0]
-					if parts[1] == "$PATH" {
+					val := strings.Join(parts[1:], " ")
+					if key == "PATH" {
+						val = strings.TrimSuffix(val, " $PATH")
+					}
+					if val == "$PATH" {
 						continue
 					}
-					existing[key] = strings.Trim(parts[1], "\"")
+					existing[key] = unescapeFishWord(val)
 				}
 			}
 		}
@@ -396,7 +397,7 @@ func (m *UnixPathManager) parseFishEnv(path string) map[string]string {
 
 func (m *UnixPathManager) ensureSourceLine() error {
 	envPath := m.cfg.EnvShPath()
-	posixSourceLine := fmt.Sprintf("[ -f %s ] && source %s", envPath, envPath)
+	posixSourceLine := fmt.Sprintf(`[ -f "%s" ] && source "%s"`, envPath, envPath)
 
 	shellFiles := m.getShellConfigFiles()
 	var lastErr error
@@ -410,7 +411,7 @@ func (m *UnixPathManager) ensureSourceLine() error {
 	}
 
 	fishEnvPath := filepath.Join(m.cfg.SvcDir(), "env.sh.fish")
-	fishSourceLine := fmt.Sprintf("test -f %s; and source %s", fishEnvPath, fishEnvPath)
+	fishSourceLine := fmt.Sprintf(`test -f "%s"; and source "%s"`, fishEnvPath, fishEnvPath)
 	fishFiles := m.getFishConfigFiles()
 	for _, file := range fishFiles {
 		if err := m.appendIfNotExists(file, fishSourceLine, fishEnvPath); err != nil {

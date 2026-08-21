@@ -65,6 +65,9 @@ func (m *Manager) updateRcFile() error {
 	// Mirror env vars into the OS-level store on platforms that have one
 	// (Windows registry). No-op on Unix, where .svc.rc is the only store.
 	m.applyEnvVarsToSystem(envVars)
+	// Item 6: keep env.sh.fish in sync too (fish users get PATH + env vars).
+	// No-op on Windows.
+	m.writeFishEnvFile(envVars)
 	rcPath := m.cfg.RcFilePath()
 	return os.WriteFile(rcPath, []byte(content), 0644)
 }

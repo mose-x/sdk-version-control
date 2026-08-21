@@ -73,9 +73,12 @@ func attachParentConsole() {
 }
 
 // getStdHandle returns the handle for a standard device, or 0 if none.
+// GetStdHandle returns INVALID_HANDLE_VALUE (-1) — not only 0 — when the
+// device has no handle; isValidStdHandle rejects both (and the zero-
+// extended 32-bit -1) so os.NewFile never receives a bogus handle.
 func getStdHandle(id uint32) syscall.Handle {
 	r1, _, _ := procGetStdHandle.Call(uintptr(id))
-	if r1 == 0 {
+	if !isValidStdHandle(r1) {
 		return 0
 	}
 	return syscall.Handle(r1)

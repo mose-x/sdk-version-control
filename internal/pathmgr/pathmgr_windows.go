@@ -98,7 +98,7 @@ func (m *WindowsPathManager) GetCurrentConfig() (map[string]string, error) {
 	result := make(map[string]string)
 	if path, _, err := k.GetStringValue("Path"); err == nil {
 		for _, p := range strings.Split(path, ";") {
-			if strings.Contains(p, ".svc") {
+			if hasSvcSegment(p) {
 				result["PATH"] = p
 			}
 		}
@@ -126,7 +126,7 @@ func (m *WindowsPathManager) addToUserPath(binPath string, sdkType string) error
 		if p == "" {
 			continue
 		}
-		if strings.HasPrefix(p, sdkDir) {
+		if hasPathPrefix(p, sdkDir) {
 			continue
 		}
 		filtered = append(filtered, p)
@@ -158,7 +158,7 @@ func (m *WindowsPathManager) removeSvcPathsFromUserPath(sdkType string) error {
 		if p == "" {
 			continue
 		}
-		if strings.HasPrefix(p, sdkDir) {
+		if hasPathPrefix(p, sdkDir) {
 			continue
 		}
 		filtered = append(filtered, p)
@@ -215,11 +215,11 @@ func (m *WindowsPathManager) cleanExternalFromKey(sdkType string, version string
 		if p == "" {
 			continue
 		}
-		if strings.Contains(p, ".svc") {
+		if hasSvcSegment(p) {
 			filtered = append(filtered, p)
 			continue
 		}
-		if strings.HasPrefix(p, svcDir) {
+		if hasPathPrefix(p, svcDir) {
 			filtered = append(filtered, p)
 			continue
 		}
@@ -299,7 +299,7 @@ func (m *WindowsPathManager) readPathFromKey(root registry.Key, keyPath string) 
 		if p == "" {
 			continue
 		}
-		isManaged := strings.Contains(filepath.ToSlash(p), "/.svc/") || strings.HasSuffix(filepath.ToSlash(p), "/.svc")
+		isManaged := hasSvcSegment(p)
 		if isManaged {
 			sdkType := detectSdkTypeFromPath(p)
 			entries = append(entries, PathEntry{
@@ -344,7 +344,7 @@ func (m *WindowsPathManager) DetectSystemConflicts(sdkType string, envKeys []str
 				if p == "" {
 					continue
 				}
-				if strings.HasPrefix(p, sdkDir) {
+				if hasPathPrefix(p, sdkDir) {
 					conflicts = append(conflicts, fmt.Sprintf("PATH: %s", p))
 					continue
 				}

@@ -23,13 +23,24 @@ func (a *App) SaveSettings(settings config.AppSettings) error {
 		settings.Theme, settings.Language, settings.DownloadThreads)
 	// The general SaveSettings flow spreads the existing settings object
 	// (which carries the MASKED token from GetSettings) and writes it back
-	// for any single-field change (theme, proxy, threads, ...). Without this
-	// guard, the masked "ghp_abc***def" string would overwrite the real
-	// base64 token on every unrelated settings save. The token is written
-	// exclusively through SaveGithubToken, so here we always preserve the
-	// stored value and ignore whatever the frontend echoed back.
+	// for any single-field change (theme, proxy, threads, ...). Without these
+	// guards, the stale snapshot echoed back by the frontend would clobber
+	// fields owned by other write paths:
+	//   - GitHubToken: the masked "ghp_abc***def" string would overwrite the
+	//     real base64 token on every unrelated settings save. The token is
+	//     written exclusively through SaveGithubToken.
+	//   - Endpoints: written exclusively through SaveEndpoints; a snapshot
+	//     taken before the user saved custom endpoints would resurrect the
+	//     old map (or nil) and wipe them.
+	//   - InstallPath: written exclusively through MigrateInstallPath (which
+	//     updates the SettingsManager directly, bypassing SaveSettings); a
+	//     stale snapshot would silently revert the migration.
+	// So here we always preserve the stored values and ignore whatever the
+	// frontend echoed back for these three fields.
 	existing := a.settings.Get()
 	settings.GitHubToken = existing.GitHubToken
+	settings.Endpoints = existing.Endpoints
+	settings.InstallPath = existing.InstallPath
 	return a.settings.Update(settings)
 }
 

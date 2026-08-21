@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"sdk_version_control/internal/config"
@@ -58,15 +59,31 @@ func (m *Manager) EnsureSetup() error {
 // python.exe (no python3.exe); without this alias `python3` resolves to the
 // Windows Store stub.
 func (m *Manager) ensurePython3Shim() {
-	cfg, _ := m.loadShimConfig()
-	if !m.ensurePython3Alias(&cfg) {
+	// The load+save of shims.json runs under the cross-process lock (item 3)
+	// so a concurrent writer can't be clobbered when we persist the alias.
+	persisted := false
+	err := withShimsConfigLock(m.cfg.SvcDir(), func() error {
+		cfg, err := m.loadShimConfig()
+		if err != nil {
+			return fmt.Errorf("failed to load shim config: %w", err)
+		}
+		if !m.ensurePython3Alias(&cfg) {
+			return nil // nothing to persist
+		}
+		// Persist BEFORE creating the shim file: if save fails, the on-disk
+		// shims.json won't have python3, so a shim file would be an unrouteable
+		// orphan (hardlink exists, but shim.Run can't resolve the command).
+		if err := m.saveShimConfig(m.cfg.ShimsConfigPath(), cfg); err != nil {
+			return fmt.Errorf("failed to persist python3 alias: %w", err)
+		}
+		persisted = true
+		return nil
+	})
+	if err != nil {
+		logger.Warn("Failed to persist python3 alias: %v", err)
 		return
 	}
-	// Persist BEFORE creating the shim file: if save fails, the on-disk
-	// shims.json won't have python3, so a shim file would be an unrouteable
-	// orphan (hardlink exists, but shim.Run can't resolve the command).
-	if err := m.saveShimConfig(m.cfg.ShimsConfigPath(), cfg); err != nil {
-		logger.Warn("Failed to persist python3 alias: %v", err)
+	if !persisted {
 		return
 	}
 	ext := ""
@@ -276,13 +293,19 @@ func (m *Manager) RemoveSdk(sdkType string, extraEnvVars map[string]string) erro
 
 	// Drop the SDK's env vars from the OS-level store (Windows registry) so a
 	// leftover JAVA_HOME doesn't point at a now-uninstalled JDK. No-op on
-	// Unix where .svc.rc regeneration is the only path. extraEnvVars is the
-	// map originally passed to ConfigureSdk; its keys are the env var names.
-	keys := make([]string, 0, len(extraEnvVars))
-	for k := range extraEnvVars {
-		keys = append(keys, k)
+	// Unix where .svc.rc regeneration is the only path.
+	//
+	// Item 5: the keys come from the UNION of the caller-provided extraEnvVars
+	// and the EnvVars recorded in shims.json for this SDK type. Relying only
+	// on extraEnvVars leaks registry vars when the caller passes an empty or
+	// stale map (the shims.json entry is the durable record of what was set).
+	// Read the stored config BEFORE removeSdkFromConfig deletes the entry.
+	storedCfg, _ := m.loadShimConfig()
+	var storedEnv map[string]string
+	if entry, ok := storedCfg.SdkTypes[sdkType]; ok {
+		storedEnv = entry.EnvVars
 	}
-	m.removeEnvVarsFromSystem(keys)
+	m.removeEnvVarsFromSystem(mergeEnvVarKeys(storedEnv, extraEnvVars))
 
 	// Remove SDK type from shims.json
 	if err := m.removeSdkFromConfig(sdkType); err != nil {
@@ -296,6 +319,25 @@ func (m *Manager) RemoveSdk(sdkType string, extraEnvVars map[string]string) erro
 
 	logger.Info("Removed shims for %s: %d commands", sdkType, len(commands))
 	return nil
+}
+
+// mergeEnvVarKeys returns the sorted union of the env-var keys of two maps
+// (either may be nil). Sorting makes the deletion order deterministic for
+// tests and logs. Pure logic — no filesystem — so it is trivially testable.
+func mergeEnvVarKeys(a, b map[string]string) []string {
+	set := make(map[string]bool, len(a)+len(b))
+	for k := range a {
+		set[k] = true
+	}
+	for k := range b {
+		set[k] = true
+	}
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // createShimsForDirs scans all bin directories (relative to versionDir) and
@@ -458,7 +500,17 @@ func (m *Manager) getShimBinaryPath() string {
 }
 
 // updateShimConfig updates shims.json with the SDK type config and its commands.
+// The whole read-modify-write cycle runs under the cross-process shims.json
+// lock (item 3): the GUI can run in two instances and the CLI can run in
+// parallel; without the lock a concurrent writer's changes could be lost
+// when this function saves its stale in-memory copy.
 func (m *Manager) updateShimConfig(sdkType string, binDirs []string, envVars map[string]string, commands []string) error {
+	return withShimsConfigLock(m.cfg.SvcDir(), func() error {
+		return m.updateShimConfigLocked(sdkType, binDirs, envVars, commands)
+	})
+}
+
+func (m *Manager) updateShimConfigLocked(sdkType string, binDirs []string, envVars map[string]string, commands []string) error {
 	cfgPath := m.cfg.ShimsConfigPath()
 	// M7: loadShimConfig can fail on a corrupt shims.json. Check the error
 	// before writing back — silently using an empty config would wipe valid
@@ -502,7 +554,15 @@ func (m *Manager) updateShimConfig(sdkType string, binDirs []string, envVars map
 }
 
 // removeSdkFromConfig removes an SDK type and its commands from shims.json.
+// Runs under the cross-process shims.json lock (item 3) for the same
+// lost-update reason as updateShimConfig.
 func (m *Manager) removeSdkFromConfig(sdkType string) error {
+	return withShimsConfigLock(m.cfg.SvcDir(), func() error {
+		return m.removeSdkFromConfigLocked(sdkType)
+	})
+}
+
+func (m *Manager) removeSdkFromConfigLocked(sdkType string) error {
 	cfgPath := m.cfg.ShimsConfigPath()
 	// M7: loadShimConfig can fail on a corrupt shims.json. Check the error
 	// before writing back — silently using an empty config would wipe valid

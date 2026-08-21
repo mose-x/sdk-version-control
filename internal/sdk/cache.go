@@ -45,10 +45,15 @@ func InitVersionCacheDir(dir string) {
 }
 
 func (c *versionCache) cacheFile(t SdkType) string {
-	if c.dir == "" {
+	// dir is written by InitVersionCacheDir under the write lock; read it
+	// under the read lock so concurrent initialization cannot race.
+	c.mu.RLock()
+	dir := c.dir
+	c.mu.RUnlock()
+	if dir == "" {
 		return ""
 	}
-	return filepath.Join(c.dir, "versions_"+string(t)+".json")
+	return filepath.Join(dir, "versions_"+string(t)+".json")
 }
 
 // GetCachedVersions returns the cached version list for sdkType and whether a
@@ -101,22 +106,26 @@ func (c *versionCache) loadFromDisk(t SdkType) ([]VersionInfo, bool) {
 // slice is copied so later mutation by the caller does not affect the cache.
 // A disk write failure is logged but does not affect the in-memory cache --
 // the next refresh will retry the write.
+//
+// An EMPTY list is never cached: an empty result is almost always a fetch
+// anomaly (upstream hiccup, parse failure, rate limit returning no entries),
+// and overwriting the last good list with nothing would leave the UI empty
+// until the next successful refresh -- both in memory and on disk.
 func SetCachedVersions(t SdkType, versions []VersionInfo) {
+	if len(versions) == 0 {
+		return
+	}
 	e := versionCacheEntry{Versions: copyVersions(versions), FetchedAt: time.Now()}
 	globalVersionCache.mu.Lock()
 	globalVersionCache.entries[t] = e
-	dir := globalVersionCache.dir
 	globalVersionCache.mu.Unlock()
-	if dir == "" {
-		return
-	}
 	path := globalVersionCache.cacheFile(t)
 	if path == "" {
 		return
 	}
 	// Best-effort persist; a write failure only means the next restart starts
 	// from the previous on-disk cache, which is acceptable.
-	_ = os.MkdirAll(dir, 0755)
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
 	if data, err := json.Marshal(e); err == nil {
 		// M3: atomic write via temp file + os.Rename so a partial write
 		// doesn't leave a corrupt cache file on disk.

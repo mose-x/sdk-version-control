@@ -195,10 +195,18 @@ func (f *NodejsFetcher) GetDownloadURL(version string) (string, string, error) {
 	return url, fileName, nil
 }
 
-// CompareVersions compares two semantic versions, returns -1/0/1
+// CompareVersions compares two semantic versions, returns -1/0/1.
+//
+// Build metadata after "+" (e.g. "17.0.20+8") is discarded before comparing:
+// strconv.Atoi fails on a "+..." suffix and the ignored error used to zero the
+// whole segment, making "17.0.20+8" compare equal to "17.0.9+9" (20 -> 0 and
+// 9+9 -> 0). SemVer specifies that build metadata has no precedence, so
+// dropping it is the correct comparison semantics.
 func CompareVersions(a, b string) int {
 	a = strings.TrimPrefix(a, "v")
 	b = strings.TrimPrefix(b, "v")
+	a, _, _ = strings.Cut(a, "+")
+	b, _, _ = strings.Cut(b, "+")
 	partsA := strings.Split(a, ".")
 	partsB := strings.Split(b, ".")
 	maxLen := len(partsA)

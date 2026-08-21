@@ -331,7 +331,7 @@ func (a *App) DownloadUpdate(downloadURL, expectedSha256 string) error {
 			os.Remove(tmpPath)
 			return fmt.Errorf("failed to hash downloaded file: %w", err)
 		}
-		if actual != expectedSha256 {
+		if !sha256Matches(actual, expectedSha256) {
 			os.Remove(tmpPath)
 			return fmt.Errorf("integrity check failed: expected %s, got %s", expectedSha256, actual)
 		}
@@ -358,6 +358,14 @@ func sha256OfFile(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// sha256Matches reports whether a computed hex digest equals the expected one,
+// case-insensitively. Release manifests (sha256sums.txt and similar) sometimes
+// publish UPPERCASE hex while sha256OfFile always returns lowercase; a plain
+// case-sensitive != would then reject a perfectly valid download.
+func sha256Matches(actual, expected string) bool {
+	return strings.EqualFold(strings.TrimSpace(actual), strings.TrimSpace(expected))
 }
 
 func (a *App) emitUpdateProgress(p UpdateProgress) {

@@ -139,11 +139,15 @@ func (f *RubyFetcher) fetchRubyInstallerVersions() ([]VersionInfo, error) {
 func (f *RubyFetcher) rubyInstallerAsset(ver string, assets []ghAsset) (string, string) {
 	// RubyInstaller names assets like:
 	//   rubyinstaller-3.2.2-1-x64.7z
+	//   rubyinstaller-3.2.2-1-x64.7z.asc   (signature sidecar)
 	//   rubyinstaller-3.2.2-1-x64-javadoc.7z
-	// We want the main archive (without -javadoc).
+	// We want the main archive. The match MUST be a suffix check: a substring
+	// check ("-x64.7z" anywhere) also matches the .7z.asc signature file,
+	// which used to be downloaded in place of the real archive. The suffix
+	// also naturally excludes the -javadoc archive (ends in -javadoc.7z).
 	for _, a := range assets {
 		lower := strings.ToLower(a.Name)
-		if strings.Contains(lower, "-x64.7z") && !strings.Contains(lower, "javadoc") {
+		if strings.HasSuffix(lower, "-x64.7z") {
 			return f.useEndpoint(a.BrowserDownloadURL), a.Name
 		}
 	}

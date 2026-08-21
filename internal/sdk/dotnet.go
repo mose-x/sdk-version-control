@@ -3,11 +3,13 @@ package sdk
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"sdk_version_control/internal/config"
@@ -45,12 +47,55 @@ func (f *DotNetFetcher) GetExtraEnvVars() map[string]string {
 func (f *DotNetFetcher) VerifyCommand() (string, []string) { return "dotnet", []string{"--version"} }
 
 type dotnetReleaseIndex struct {
-	ReleasesIndex []struct {
-		ChannelVersion string `json:"channel-version"`
-		LatestRelease  string `json:"latest-release"`
-		SupportPhase   string `json:"support-phase"`
-		ReleasesJSON   string `json:"releases.json"`
-	} `json:"releases-index"`
+	ReleasesIndex []dotnetIndexChannel `json:"releases-index"`
+}
+
+// dotnetIndexChannel is one channel entry of releases-index.json. Only the
+// per-channel releases.json link is needed for SDK version discovery: the
+// index's own latest-release field is a RUNTIME version (e.g. "10.0.11"),
+// and building SDK download URLs from it produced 404s for every channel.
+type dotnetIndexChannel struct {
+	ChannelVersion string `json:"channel-version"`
+	ReleasesJSON   string `json:"releases.json"`
+}
+
+// dotnetChannelFile is the subset of a per-channel releases.json we consume.
+// latest-sdk is the newest SDK version of the channel (e.g. "10.0.400") and
+// is the correct version for SDK download URLs.
+type dotnetChannelFile struct {
+	LatestSDK string `json:"latest-sdk"`
+}
+
+// dotnetChannelMajor parses the major version number from a channel-version
+// string like "8.0". Returns 0 when the major part is not numeric. Pure so
+// the LTS rule is testable without network access.
+func dotnetChannelMajor(channelVersion string) int {
+	majorStr := channelVersion
+	if i := strings.Index(channelVersion, "."); i >= 0 {
+		majorStr = channelVersion[:i]
+	}
+	major, _ := strconv.Atoi(strings.TrimSpace(majorStr))
+	return major
+}
+
+// dotnetIsLTS implements the official .NET LTS rule: even major versions are
+// LTS, odd majors are Standard-Term Support. The index's support-phase field
+// is NOT usable for this purpose: its real values are only
+// preview/active/maintenance/eol -- it never equals "lts", so the previous
+// `support-phase == "lts"` comparison marked every channel as non-LTS. Pure
+// for testability.
+func dotnetIsLTS(channelVersion string) bool {
+	major := dotnetChannelMajor(channelVersion)
+	return major > 0 && major%2 == 0
+}
+
+// dotnetIsPrereleaseSDK reports whether an SDK version string denotes a
+// pre-release build (contains "preview" or "rc", case-insensitive, e.g.
+// "11.0.100-preview.7.26381.103"). Such versions are excluded from the
+// installable list. Pure for testability.
+func dotnetIsPrereleaseSDK(version string) bool {
+	lower := strings.ToLower(version)
+	return strings.Contains(lower, "preview") || strings.Contains(lower, "rc")
 }
 
 func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
@@ -69,22 +114,74 @@ func (f *DotNetFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		return nil, fmt.Errorf("failed to parse .NET version data: %w", err)
 	}
 
+	// Resolve each channel's latest SDK from its own releases.json (linked in
+	// the index). Fetches run with bounded concurrency; a failing/unreachable
+	// channel is skipped rather than failing the whole list.
+	results := make([]VersionInfo, len(index.ReleasesIndex))
+	found := make([]bool, len(index.ReleasesIndex))
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for i, ch := range index.ReleasesIndex {
+		if ch.ReleasesJSON == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, ch dotnetIndexChannel) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[i], found[i] = f.fetchChannelLatestSDK(ch)
+		}(i, ch)
+	}
+	wg.Wait()
+
 	var versions []VersionInfo
-	for _, ch := range index.ReleasesIndex {
-		ver := ch.LatestRelease
-		parts := strings.Split(ver, ".")
-		major, _ := strconv.Atoi(parts[0])
-		isLTS := ch.SupportPhase == "lts" || ch.SupportPhase == "maintenance"
-		versions = append(versions, VersionInfo{
-			Version:     ver,
-			Major:       major,
-			IsLTS:       isLTS,
-			DownloadURL: f.buildURL(ver),
-			FileName:    f.buildFileName(ver),
-		})
+	for i := range index.ReleasesIndex {
+		if found[i] {
+			versions = append(versions, results[i])
+		}
+	}
+	if len(versions) == 0 {
+		return nil, fmt.Errorf("no .NET SDK versions found in release metadata")
 	}
 	sort.Slice(versions, func(i, j int) bool { return CompareVersions(versions[i].Version, versions[j].Version) > 0 })
 	return versions, nil
+}
+
+// fetchChannelLatestSDK fetches one channel's releases.json and converts its
+// latest-sdk field into a VersionInfo. Returns ok=false (channel skipped)
+// when the fetch fails, latest-sdk is empty (channel has no SDK release
+// yet), or the latest SDK is a pre-release (preview/rc) -- pre-release
+// archives must not be offered as install targets.
+func (f *DotNetFetcher) fetchChannelLatestSDK(ch dotnetIndexChannel) (VersionInfo, bool) {
+	resp, err := f.httpClient.Get(ch.ReleasesJSON)
+	if err != nil {
+		return VersionInfo{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return VersionInfo{}, false
+	}
+	// Bound the read: channel files are at most ~1 MB; mirrors may misbehave.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+	if err != nil {
+		return VersionInfo{}, false
+	}
+	var file dotnetChannelFile
+	if err := json.Unmarshal(body, &file); err != nil {
+		return VersionInfo{}, false
+	}
+	sdk := strings.TrimSpace(file.LatestSDK)
+	if sdk == "" || dotnetIsPrereleaseSDK(sdk) {
+		return VersionInfo{}, false
+	}
+	return VersionInfo{
+		Version:     sdk,
+		Major:       dotnetChannelMajor(ch.ChannelVersion),
+		IsLTS:       dotnetIsLTS(ch.ChannelVersion),
+		DownloadURL: f.buildURL(sdk),
+		FileName:    f.buildFileName(sdk),
+	}, true
 }
 
 // dotnetRID maps a (goos, goarch) pair to the .NET Runtime ID (RID) used in

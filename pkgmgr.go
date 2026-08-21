@@ -228,12 +228,24 @@ func resolveInPath(cmd, searchPath string) string {
 	return cmd
 }
 
+// scopedCommandTimeout bounds package-manager install/update commands so a
+// hung process doesn't block forever. 180s (not 60s): corepack prepare and
+// npm install -g routinely exceed a minute on slow networks or registries,
+// and a mid-install timeout leaves the package manager in a half-done state.
+const scopedCommandTimeout = 180 * time.Second
+
+// newScopedCommandContext returns a context bounded by scopedCommandTimeout
+// for runScopedCommand. Extracted so the bound is unit-testable.
+func newScopedCommandContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), scopedCommandTimeout)
+}
+
 // runScopedCommand runs a command within the PATH scope of the specified SDK
 func (a *App) runScopedCommand(name string, parent sdk.SdkType, args ...string) error {
 	scopedPath := a.buildSdkPath(parent)
 	fullPath := resolveInPath(name, scopedPath)
 	// H3: Bound install/update commands so a hung process doesn't block forever.
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := newScopedCommandContext()
 	defer cancel()
 	cmd := createCmdContext(ctx, fullPath, args...)
 	cmd.Stdout = os.Stdout

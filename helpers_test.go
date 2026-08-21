@@ -111,41 +111,80 @@ func TestVerifyFileSHA256Mismatch(t *testing.T) {
 	}
 }
 
-// TestAtomicInstallPreservesOldOnFailure verifies that when extraction fails,
-// the previously-installed version directory is left intact (M4 fix).
-// The test simulates the InstallSdk pattern: extract to temp dir, only
-// replace old dir on success.
-func TestAtomicInstallPreservesOldOnFailure(t *testing.T) {
+// TestExtractorFailureDoesNotTouchTargetDir covers the extraction-failure half
+// of InstallSdk's atomic-install pattern (sdk_ops.go: extract into
+// versionDir+".new", then rename into place only on success — M4 fix).
+//
+// Scope note (honest coverage): InstallSdk itself cannot be unit-tested here
+// (it needs the fetcher registry, downloader, Wails context, and network),
+// and the rename/swap sequence is inline in InstallSdk rather than an
+// isolated function, so this test exercises the real production behavior the
+// pattern depends on: extractor.Extract returns an error for a corrupt
+// archive. Per InstallSdk's control flow, that error occurs before any
+// os.Rename touches the existing version directory, so the old directory must
+// remain intact. The load-bearing assertion is the extraction error itself.
+func TestExtractorFailureDoesNotTouchTargetDir(t *testing.T) {
 	baseDir := t.TempDir()
-	oldDir := filepath.Join(baseDir, "v1.0")
-	if err := os.MkdirAll(oldDir, 0755); err != nil {
+	versionDir := filepath.Join(baseDir, "v1.0")
+	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	markerContent := []byte("old version marker")
-	if err := os.WriteFile(filepath.Join(oldDir, "marker.txt"), markerContent, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(versionDir, "marker.txt"), markerContent, 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Simulate extraction to temp dir that fails (nonexistent archive).
-	tmpDir := oldDir + ".new"
-	os.RemoveAll(tmpDir)
-	ext, _ := extractor.NewExtractor("test.tar.gz")
-	extractErr := ext.Extract("/nonexistent/archive.tar.gz", tmpDir)
-
-	if extractErr == nil {
-		os.RemoveAll(tmpDir)
-		t.Fatal("expected extraction to fail for nonexistent archive")
+	cases := []struct {
+		name    string
+		archive string // filename whose extension selects the extractor
+		content []byte // corrupt payload guaranteed to fail extraction
+	}{
+		{"corrupt tar.gz", "sdk.tar.gz", []byte("this is not gzip data")},
+		{"corrupt zip", "sdk.zip", []byte("this is not a zip archive")},
 	}
-	// On failure, clean up temp dir (matching InstallSdk's error path).
-	os.RemoveAll(tmpDir)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			archivePath := filepath.Join(baseDir, tc.archive)
+			if err := os.WriteFile(archivePath, tc.content, 0644); err != nil {
+				t.Fatal(err)
+			}
 
-	// Old version directory must still exist with original content.
-	data, err := os.ReadFile(filepath.Join(oldDir, "marker.txt"))
-	if err != nil {
-		t.Fatalf("old version directory was destroyed on extraction failure: %v", err)
-	}
-	if string(data) != string(markerContent) {
-		t.Fatalf("old version content corrupted: got %q, want %q", data, markerContent)
+			// InstallSdk's sequence: extract into a sibling temp dir first.
+			tmpDir := versionDir + ".new"
+			os.RemoveAll(tmpDir)
+			if err := os.MkdirAll(tmpDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			ext, err := extractor.NewExtractor(tc.archive)
+			if err != nil {
+				t.Fatalf("NewExtractor(%q) failed: %v", tc.archive, err)
+			}
+			extractErr := ext.Extract(archivePath, tmpDir)
+
+			// Load-bearing assertion: a corrupt archive must fail extraction.
+			// InstallSdk's swap (os.Rename of the version dir) only runs after
+			// a successful extraction, so this error is what keeps the old
+			// version directory untouched.
+			if extractErr == nil {
+				os.RemoveAll(tmpDir)
+				t.Fatal("expected extraction of corrupt archive to fail, got nil")
+			}
+
+			// InstallSdk's error path: remove the temp dir, never the target.
+			os.RemoveAll(tmpDir)
+			if _, err := os.Stat(tmpDir); !os.IsNotExist(err) {
+				t.Errorf("temp dir %q still present after failed extraction", tmpDir)
+			}
+
+			// Old version directory must still exist with original content.
+			data, err := os.ReadFile(filepath.Join(versionDir, "marker.txt"))
+			if err != nil {
+				t.Fatalf("old version directory was destroyed on extraction failure: %v", err)
+			}
+			if string(data) != string(markerContent) {
+				t.Fatalf("old version content corrupted: got %q, want %q", data, markerContent)
+			}
+		})
 	}
 }
 

@@ -40,27 +40,8 @@ func NewDownloader() *Downloader {
 // BuildClient builds an HTTP client based on the proxy configuration
 func BuildClient(proxy ProxyConfig) *http.Client {
 	transport := &http.Transport{}
-
-	if proxy.Enabled {
-		switch proxy.Mode {
-		case "system":
-			applySystemProxy(transport)
-		case "custom":
-			if proxy.URL != "" {
-				proxyStr := proxy.URL
-				if !hasScheme(proxyStr) {
-					scheme := "http"
-					if proxy.Protocol == "socks5" {
-						scheme = "socks5"
-					}
-					proxyStr = scheme + "://" + proxyStr
-				}
-				proxyURL, err := url.Parse(proxyStr)
-				if err == nil {
-					applyProxy(transport, proxyURL)
-				}
-			}
-		}
+	if err := ApplyProxyConfig(transport, proxy); err != nil {
+		logger.Warn("Proxy configuration not applied: %v", err)
 	}
 
 	return &http.Client{
@@ -75,10 +56,53 @@ func BuildClient(proxy ProxyConfig) *http.Client {
 	}
 }
 
+// ApplyProxyConfig configures transport according to proxy. It is the single
+// implementation for turning a ProxyConfig into transport settings, shared by
+// BuildClient and by the update checker's transport (buildProxyTransport in
+// proxy.go) so the two cannot drift apart. Returns an error if a custom
+// proxy URL cannot be parsed.
+func ApplyProxyConfig(transport *http.Transport, proxy ProxyConfig) error {
+	if !proxy.Enabled {
+		return nil
+	}
+	switch proxy.Mode {
+	case "system":
+		applySystemProxy(transport)
+	case "custom":
+		if proxy.URL == "" {
+			return nil
+		}
+		proxyStr := proxy.URL
+		if !hasScheme(proxyStr) {
+			scheme := "http"
+			if proxy.Protocol == "socks5" {
+				scheme = "socks5"
+			}
+			proxyStr = scheme + "://" + proxyStr
+		}
+		proxyURL, err := url.Parse(proxyStr)
+		if err != nil {
+			return fmt.Errorf("invalid proxy URL %q: %w", proxy.URL, err)
+		}
+		applyProxy(transport, proxyURL)
+	}
+	return nil
+}
+
 // applyProxy applies a proxy URL to the transport, auto-detecting HTTP and SOCKS5
 func applyProxy(transport *http.Transport, proxyURL *url.URL) {
 	if proxyURL.Scheme == "socks5" || proxyURL.Scheme == "socks5h" {
-		dialer, err := xproxy.SOCKS5("tcp", proxyURL.Host, nil, xproxy.Direct)
+		// Forward credentials embedded in the proxy URL
+		// (socks5://user:pass@host:port). Previously nil was passed,
+		// silently dropping authentication for credentialed proxies.
+		var auth *xproxy.Auth
+		if proxyURL.User != nil {
+			auth = &xproxy.Auth{User: proxyURL.User.Username()}
+			if pw, ok := proxyURL.User.Password(); ok {
+				auth.Password = pw
+			}
+		}
+		dialer, err := xproxy.SOCKS5("tcp", proxyURL.Host, auth, xproxy.Direct)
 		if err == nil {
 			// H6: Use context-aware dialing if available, so that
 			// context cancellation/timeout works through SOCKS5 proxies.
@@ -235,6 +259,17 @@ func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, do
 		}
 	}
 
+	// Verify the body length against Content-Length when the value is
+	// trustworthy. A positive resp.ContentLength means the body was delivered
+	// verbatim: Go's transport sets ContentLength to -1 when it transparently
+	// decompresses a gzip response, so a re-encoded body is never compared.
+	// This catches truncated responses (e.g. a proxy closing the stream
+	// without an error) that would otherwise be renamed into place as a
+	// complete, silently-corrupt download.
+	if resp.ContentLength > 0 && downloaded != resp.ContentLength {
+		return fmt.Errorf("download incomplete: got %d bytes, want %d (Content-Length)", downloaded, resp.ContentLength)
+	}
+
 	// H4: Close out before rename (Windows: can't rename open file),
 	// then atomically rename .part to final destination.
 	out.Close()
@@ -316,8 +351,15 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 
 	// Progress reporter goroutine
 	go func() {
-		for !stopProgress.Load() {
+		for {
 			time.Sleep(500 * time.Millisecond)
+			// Re-check the completion flag after sleeping: if the download
+			// finished during the sleep, the main goroutine already emitted
+			// the final callback; emitting another "downloading" event after
+			// that would race with the terminal state.
+			if stopProgress.Load() {
+				return
+			}
 			if callback != nil {
 				downloaded := totalDownloaded.Load()
 				elapsed := time.Since(startTime).Seconds()
@@ -388,6 +430,16 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 					errCh <- readErr
 					return
 				}
+			}
+
+			// Verify the worker received exactly the requested range. A
+			// chunked-encoded 206 response can terminate cleanly (io.EOF)
+			// but early; accepting that as success would leave a zero hole
+			// in the pre-allocated .part file — a silently corrupt download.
+			if offset != end+1 {
+				errCh <- fmt.Errorf("downloaded segment %d-%d incomplete: got %d bytes, want %d",
+					start, end, offset-start, end-start+1)
+				return
 			}
 		}(c.start, c.end)
 	}

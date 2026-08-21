@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // execBinary runs the target binary as a child process and exits with its
@@ -18,8 +19,7 @@ func execBinary(realBinary string, args []string) {
 	var cmd *exec.Cmd
 	ext := strings.ToLower(filepath.Ext(realBinary))
 	if ext == ".cmd" || ext == ".bat" {
-		fullArgs := append([]string{"/c", realBinary}, args...)
-		cmd = exec.Command("cmd.exe", fullArgs...)
+		cmd = buildCmdExec(realBinary, args)
 	} else {
 		cmd = exec.Command(realBinary, args...)
 	}
@@ -39,4 +39,26 @@ func execBinary(realBinary string, args []string) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+// buildCmdExec builds the exec.Cmd that runs a .cmd/.bat target through
+// cmd.exe /c. The command line is assembled manually (SysProcAttr.CmdLine)
+// with cmd.exe-aware escaping: Go's default argument quoting is only
+// understood by CommandLineToArgvW consumers, NOT by cmd.exe. Passing args
+// via exec.Command("cmd.exe", "/c", script, args...) lets cmd.exe
+// re-interpret & | < > ^ inside arguments — truncating them or executing
+// injected commands. escapeCmdArg/buildCmdCommandLine implement the safe
+// encoding (see cmdescape.go), verified end-to-end against real cmd.exe.
+func buildCmdExec(script string, args []string) *exec.Cmd {
+	cmdExe, err := exec.LookPath("cmd.exe")
+	if err != nil {
+		// cmd.exe is always present on Windows; fall back to the bare name
+		// and let CreateProcess search the standard locations.
+		cmdExe = "cmd.exe"
+	}
+	cmd := exec.Command(cmdExe)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CmdLine: buildCmdCommandLine(cmdExe, script, args),
+	}
+	return cmd
 }

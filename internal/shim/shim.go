@@ -49,6 +49,23 @@ var envVarDenylist = map[string]bool{
 	"PS1":                   true,
 	"SHELLOPTS":             true,
 	"PATH":                  true, // managed by the shim system itself
+	// Interpreter / tool hooks that execute attacker-controlled code or
+	// files when the target program starts (same hijack class as LD_PRELOAD
+	// / BASH_ENV). PYTHONPATH/PERL5LIB/RUBYLIB steer module resolution to a
+	// malicious module; *_OPT inject switches; GIT_SSH_COMMAND runs an
+	// arbitrary command; BROWSER launches an arbitrary program.
+	"NODE_OPTIONS":      true,
+	"NPM_CONFIG_PREFIX": true,
+	"GIT_SSH_COMMAND":   true,
+	"GIT_EXEC_PATH":     true,
+	"PYTHONSTARTUP":     true,
+	"PYTHONPATH":        true,
+	"PERL5LIB":          true,
+	"PERL5OPT":          true,
+	"RUBYLIB":           true,
+	"RUBYOPT":           true,
+	"CDPATH":            true,
+	"BROWSER":           true,
 }
 
 // isDeniedEnvVar reports whether key is on the env-var denylist.
@@ -235,9 +252,38 @@ func resolveSvcHome() (string, error) {
 		return defaultDir, nil
 	}
 	if s.InstallPath != "" {
-		return s.InstallPath, nil
+		dir := s.InstallPath
+		if !filepath.IsAbs(dir) {
+			if abs, err := filepath.Abs(dir); err == nil {
+				dir = abs
+			}
+		}
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir, nil
+		}
+		// L14: an installPath that does not exist (or is not a directory)
+		// must not be used blindly — every later read (shims.json,
+		// config.json) would fail with confusing errors. Fall back to the
+		// default and tell the user why their custom path was ignored.
+		fmt.Fprintf(os.Stderr, "svc shim: settings.json installPath %q is not a usable directory, using default %s\n", s.InstallPath, defaultDir)
 	}
 	return defaultDir, nil
+}
+
+// isValidStdHandle reports whether a raw GetStdHandle result is a usable
+// handle. GetStdHandle signals "no handle" with 0 or INVALID_HANDLE_VALUE
+// (-1); the latter surfaces as an all-ones uintptr on both 32-bit and
+// 64-bit, and defensively we also reject a zero-extended 32-bit -1 on
+// 64-bit systems. Passing such a value to os.NewFile would hand the shim a
+// file whose every read/write fails (os.NewFile(-1)).
+func isValidStdHandle(r uintptr) bool {
+	if r == 0 || r == ^uintptr(0) {
+		return false
+	}
+	if r == uintptr(uint32(0xFFFFFFFF)) {
+		return false
+	}
+	return true
 }
 
 func loadShimConfig(svcHome string) (*ShimConfig, error) {

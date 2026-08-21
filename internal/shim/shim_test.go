@@ -1,6 +1,7 @@
 package shim
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,13 +29,21 @@ func TestIsDeniedEnvVar(t *testing.T) {
 		"DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
 		"IFS", "ENV", "BASH_ENV", "PS1", "SHELLOPTS",
 		"PATH", "Path", "path",
+		// Item 7: interpreter/tool hooks that execute attacker-controlled
+		// code or steer module/command resolution at program startup.
+		"NODE_OPTIONS", "NPM_CONFIG_PREFIX",
+		"GIT_SSH_COMMAND", "GIT_EXEC_PATH",
+		"PYTHONSTARTUP", "PYTHONPATH", "pythonpath",
+		"PERL5LIB", "PERL5OPT",
+		"RUBYLIB", "RUBYOPT",
+		"CDPATH", "BROWSER",
 	}
 	for _, k := range denied {
 		if !isDeniedEnvVar(k) {
 			t.Errorf("isDeniedEnvVar(%q) = false; want true (denylisted)", k)
 		}
 	}
-	allowed := []string{"JAVA_HOME", "GOROOT", "ANDROID_HOME", "FLUTTER_ROOT", "PYTHONPATH"}
+	allowed := []string{"JAVA_HOME", "GOROOT", "ANDROID_HOME", "FLUTTER_ROOT", "CARGO_HOME"}
 	for _, k := range allowed {
 		if isDeniedEnvVar(k) {
 			t.Errorf("isDeniedEnvVar(%q) = true; want false (allow)", k)
@@ -104,5 +113,96 @@ func TestResolveRealBinaryMulti_python3AliasFallback(t *testing.T) {
 	want := filepath.Join(versionDir, pyName)
 	if got != want {
 		t.Fatalf(`resolveRealBinaryMulti(alias=%q) = %q; want %q`, alias, got, want)
+	}
+}
+
+// redirectHome points os.UserHomeDir at a temp dir for the duration of the
+// test (HOME on Unix, USERPROFILE on Windows; both are set so the test is
+// platform-agnostic).
+func redirectHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	return home
+}
+
+func writeSettings(t *testing.T, svcDir string, installPath string) {
+	t.Helper()
+	data, err := json.Marshal(settings{InstallPath: installPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(svcDir, "settings.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestResolveSvcHome pins L14: the settings.json installPath is validated
+// before use. A missing/non-directory installPath must fall back to the
+// default ~/.svc (with a diagnostic) instead of being used blindly — blind
+// use made every later config read fail with confusing errors.
+func TestResolveSvcHome(t *testing.T) {
+	home := redirectHome(t)
+	defaultDir := filepath.Join(home, ".svc")
+	if err := os.MkdirAll(defaultDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// No settings.json -> default.
+	got, err := resolveSvcHome()
+	if err != nil || got != defaultDir {
+		t.Fatalf("no settings.json: resolveSvcHome = (%q, %v); want (%q, nil)", got, err, defaultDir)
+	}
+
+	// Valid installPath (existing directory) is used.
+	custom := t.TempDir()
+	writeSettings(t, defaultDir, custom)
+	got, err = resolveSvcHome()
+	if err != nil || got != custom {
+		t.Fatalf("valid installPath: resolveSvcHome = (%q, %v); want (%q, nil)", got, err, custom)
+	}
+
+	// Nonexistent installPath -> fallback to default.
+	writeSettings(t, defaultDir, filepath.Join(home, "definitely-missing-dir"))
+	got, err = resolveSvcHome()
+	if err != nil || got != defaultDir {
+		t.Fatalf("missing installPath: resolveSvcHome = (%q, %v); want (%q, nil)", got, err, defaultDir)
+	}
+
+	// installPath pointing at a FILE (not a directory) -> fallback.
+	filePath := filepath.Join(home, "not-a-dir.txt")
+	if err := os.WriteFile(filePath, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeSettings(t, defaultDir, filePath)
+	got, err = resolveSvcHome()
+	if err != nil || got != defaultDir {
+		t.Fatalf("file installPath: resolveSvcHome = (%q, %v); want (%q, nil)", got, err, defaultDir)
+	}
+
+	// Relative installPath is resolved against the working directory via
+	// filepath.Abs; if the resolved path doesn't exist, fall back.
+	writeSettings(t, defaultDir, "relative-missing")
+	got, err = resolveSvcHome()
+	if err != nil || got != defaultDir {
+		t.Fatalf("relative missing installPath: resolveSvcHome = (%q, %v); want (%q, nil)", got, err, defaultDir)
+	}
+}
+
+// TestResolveSvcHome_parseError covers the existing fallback for a corrupt
+// settings.json (parse error -> default dir, no crash).
+func TestResolveSvcHome_parseError(t *testing.T) {
+	home := redirectHome(t)
+	defaultDir := filepath.Join(home, ".svc")
+	if err := os.MkdirAll(defaultDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(defaultDir, "settings.json"), []byte("{not json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveSvcHome()
+	if err != nil || got != defaultDir {
+		t.Fatalf("corrupt settings.json: resolveSvcHome = (%q, %v); want (%q, nil)", got, err, defaultDir)
 	}
 }

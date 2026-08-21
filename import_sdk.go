@@ -15,11 +15,17 @@ import (
 )
 
 // copyToTargetAtomically copies sourceDir to a temp sibling of targetDir,
-// aligns the import layout, runs the verify callback on the temp dir, then
-// atomically replaces targetDir. Uses rename-old-first pattern: the old
-// targetDir is renamed to .old BEFORE the new tmpDir is renamed into place,
-// so if the second rename fails, the old version is restored from .old.
-func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string, verify func(string) error) error {
+// aligns the import layout, runs the layer-2 critical-files check and the
+// verify callback on the ALIGNED temp dir, then atomically replaces
+// targetDir. Uses rename-old-first pattern: the old targetDir is renamed to
+// .old BEFORE the new tmpDir is renamed into place, so if the second rename
+// fails, the old version is restored from .old.
+//
+// The critical-files check runs AFTER AlignImportLayout (see
+// alignAndCheckCriticalFiles): flat imports (directory / PATH / flat archive)
+// only gain their expected wrapper dir (go/, dart-sdk/, ...) during alignment,
+// so checking the pre-alignment layout would reject complete SDKs.
+func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string, sdkType sdk.SdkType, verify func(string) error) error {
 	tmpDir := targetDir + ".new"
 	oldDir := targetDir + ".old"
 	os.RemoveAll(tmpDir)
@@ -28,8 +34,9 @@ func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string, verif
 		os.RemoveAll(tmpDir)
 		return fmt.Errorf("failed to copy SDK: %w", err)
 	}
-	if err := pathmgr.AlignImportLayout(tmpDir, binDirs); err != nil {
-		logger.Warn("Failed to align import layout: %v", err)
+	if err := alignAndCheckCriticalFiles(tmpDir, binDirs, sdkType); err != nil {
+		os.RemoveAll(tmpDir)
+		return err
 	}
 	if verify != nil {
 		if err := verify(tmpDir); err != nil {
@@ -60,9 +67,29 @@ func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string, verif
 	return nil
 }
 
+// alignAndCheckCriticalFiles aligns the import layout of dir (wrapping a flat
+// layout into the fetcher's expected top-level dir when needed) and only THEN
+// runs the layer-2 critical-files check on the aligned result.
+//
+// The check MUST run after alignment: directory / PATH imports of Go, Dart,
+// Android, Perl (Windows) and Python (all platforms) — and the JDK macOS PATH
+// import — arrive flat (bin/... with no go/ dart-sdk/ python/ ... wrapper),
+// so checking the pre-alignment layout wrongly rejects complete SDKs as
+// "SDK incomplete". Archive imports whose layout already carries the wrapper
+// are unaffected: AlignImportLayout is a no-op for them.
+func alignAndCheckCriticalFiles(dir string, binDirs []string, t sdk.SdkType) error {
+	if err := pathmgr.AlignImportLayout(dir, binDirs); err != nil {
+		logger.Warn("Failed to align import layout: %v", err)
+	}
+	return checkCriticalFiles(dir, t)
+}
+
 // criticalFilesFor returns the relative paths (from SDK root) of files that
-// must exist for the SDK to be considered complete. Used by the import flow
-// to reject incomplete SDKs before copying (layer 2 of integrity verification).
+// must exist for the SDK to be considered complete. Used by the import flow's
+// layer-2 integrity check, which runs AFTER AlignImportLayout (see
+// alignAndCheckCriticalFiles) so flat imports are judged on their aligned
+// layout. The paths therefore match the post-alignment / download-install
+// layout (e.g. "go/bin/go" with the wrapper dir present).
 func criticalFilesFor(t sdk.SdkType) []string {
 	switch t {
 	case sdk.Golang:
@@ -236,11 +263,9 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		return fmt.Errorf("SDK binary verification failed, cannot import: %w", err)
 	}
 
-	// Layer 2: Critical files check — verify the SDK is complete.
-	if err := checkCriticalFiles(sourceDir, sdkType); err != nil {
-		return err
-	}
-
+	// Layer 2 (critical files) runs INSIDE copyToTargetAtomically, AFTER the
+	// layout is aligned: checking the pre-alignment (possibly flat) sourceDir
+	// wrongly rejected complete SDKs as "SDK incomplete".
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
 	binDirs := f.GetBinDirs()
 	verifyImport := func(dir string) error {
@@ -253,7 +278,7 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 		}
 		return nil
 	}
-	if err := copyToTargetAtomically(sourceDir, targetDir, binDirs, verifyImport); err != nil {
+	if err := copyToTargetAtomically(sourceDir, targetDir, binDirs, sdkType, verifyImport); err != nil {
 		return err
 	}
 
@@ -296,11 +321,9 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 		return fmt.Errorf("SDK binary verification failed, cannot import: %w", err)
 	}
 
-	// Layer 2: Critical files check — verify the SDK is complete.
-	if err := checkCriticalFiles(sdkRoot, sdk.SdkType(sdkType)); err != nil {
-		return err
-	}
-
+	// Layer 2 (critical files) runs INSIDE copyToTargetAtomically, AFTER the
+	// layout is aligned: checking the pre-alignment (possibly flat) sdkRoot
+	// wrongly rejected complete SDKs as "SDK incomplete".
 	targetDir := a.cfg.SdkVersionDir(sdkType, versionName)
 	binDirs := f.GetBinDirs()
 	verifyImport := func(dir string) error {
@@ -313,7 +336,7 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 		}
 		return nil
 	}
-	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs, verifyImport); err != nil {
+	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs, sdk.SdkType(sdkType), verifyImport); err != nil {
 		return err
 	}
 
@@ -376,11 +399,10 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 		return fmt.Errorf("SDK binary verification failed, cannot import: %w", err)
 	}
 
-	// Layer 2: Critical files check — verify the SDK is complete.
-	if err := checkCriticalFiles(sdkRoot, sdkType); err != nil {
-		return err
-	}
-
+	// Layer 2 (critical files) runs INSIDE copyToTargetAtomically, AFTER the
+	// layout is aligned: checking the pre-alignment (possibly flat) sdkRoot
+	// wrongly rejected complete SDKs as "SDK incomplete" (e.g. PATH imports
+	// of Python on all platforms, Perl on Windows, JDK on macOS).
 	targetDir := a.cfg.SdkVersionDir(sdkTypeStr, versionName)
 	binDirs := f.GetBinDirs()
 	verifyImport := func(dir string) error {
@@ -393,7 +415,7 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 		}
 		return nil
 	}
-	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs, verifyImport); err != nil {
+	if err := copyToTargetAtomically(sdkRoot, targetDir, binDirs, sdkType, verifyImport); err != nil {
 		return err
 	}
 
