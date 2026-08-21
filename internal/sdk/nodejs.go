@@ -158,7 +158,7 @@ func (f *NodejsFetcher) buildDownloadURL(version string) (string, string) {
 }
 
 func (f *NodejsFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(NodeJS))
+	installed, _ := f.cfg.GetInstalledVersions(string(NodeJS))
 	active := f.cfg.GetActiveVersion(string(NodeJS))
 	configured := active != ""
 

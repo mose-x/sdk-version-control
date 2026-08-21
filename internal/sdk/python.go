@@ -298,7 +298,7 @@ func (f *PythonFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *PythonFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Python))
+	installed, _ := f.cfg.GetInstalledVersions(string(Python))
 	active := f.cfg.GetActiveVersion(string(Python))
 	configured := active != ""
 

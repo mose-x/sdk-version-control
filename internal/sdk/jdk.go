@@ -192,7 +192,7 @@ func (f *JdkFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *JdkFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(JDK))
+	installed, _ := f.cfg.GetInstalledVersions(string(JDK))
 	active := f.cfg.GetActiveVersion(string(JDK))
 	configured := active != ""
 

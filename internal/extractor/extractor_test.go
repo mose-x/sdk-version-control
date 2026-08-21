@@ -246,13 +246,15 @@ func TestExtractTarHardlinkEscapingRejected(t *testing.T) {
 
 // TestLimitedCopy verifies that limitedCopy succeeds for small and empty data.
 func TestLimitedCopy(t *testing.T) {
+	var counter int64
 	small := strings.Repeat("x", 100)
-	err := limitedCopy(io.Discard, strings.NewReader(small))
+	err := limitedCopy(io.Discard, strings.NewReader(small), &counter)
 	if err != nil {
 		t.Errorf("limitedCopy with small data: got %v, want nil", err)
 	}
 
-	err = limitedCopy(io.Discard, strings.NewReader(""))
+	counter = 0
+	err = limitedCopy(io.Discard, strings.NewReader(""), &counter)
 	if err != nil {
 		t.Errorf("limitedCopy with empty data: got %v, want nil", err)
 	}

@@ -202,15 +202,24 @@ func (c *Config) ClearActiveVersion(sdkType string) error {
 	return c.save()
 }
 
-// GetInstalledVersions returns all locally installed versions
-func (c *Config) GetInstalledVersions(sdkType string) []string {
+// GetInstalledVersions returns all locally installed versions.
+//
+// M7: Now returns ([]string, error) so callers can distinguish "no versions
+// installed yet" from a genuine read failure. A missing SDK directory is the
+// normal "no versions" state and returns (nil, nil); any other read error
+// (permission denied, path is a file, ...) is propagated as (nil, err) so the
+// caller does not mistake a transient failure for "0 remaining" and wrongly
+// tear down the shim layer.
+func (c *Config) GetInstalledVersions(sdkType string) ([]string, error) {
 	dir := c.SdkDir(sdkType)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			logger.Error("Failed to read SDK directory (%s): %v", dir, err)
+			return nil, err
 		}
-		return nil
+		// SDK dir doesn't exist yet -> genuinely no versions installed.
+		return nil, nil
 	}
 	var versions []string
 	for _, e := range entries {
@@ -218,7 +227,7 @@ func (c *Config) GetInstalledVersions(sdkType string) []string {
 			versions = append(versions, e.Name())
 		}
 	}
-	return versions
+	return versions, nil
 }
 
 // EnvShPath returns the env.sh file path (used on Linux/macOS)

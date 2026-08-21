@@ -135,7 +135,7 @@ func (f *GradleFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *GradleFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Gradle))
+	installed, _ := f.cfg.GetInstalledVersions(string(Gradle))
 	active := f.cfg.GetActiveVersion(string(Gradle))
 	configured := active != ""
 

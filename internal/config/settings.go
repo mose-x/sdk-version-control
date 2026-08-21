@@ -73,9 +73,17 @@ func (s *SettingsManager) load() {
 	if err != nil {
 		return
 	}
-	if err := json.Unmarshal(data, &s.settings); err != nil {
+	// M9: Unmarshal into a temp struct and only copy on success. Unmarshaling
+	// directly into s.settings can leave it partially-populated when JSON
+	// parsing fails midway (some fields applied from the file, others left at
+	// their zero value), corrupting the in-memory defaults. On error, keep the
+	// defaults that NewSettingsManager already set.
+	var tmp AppSettings
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		logger.Warn("Failed to parse settings file (%s): %v, using default settings", path, err)
+		return
 	}
+	s.settings = tmp
 }
 
 func (s *SettingsManager) save() error {

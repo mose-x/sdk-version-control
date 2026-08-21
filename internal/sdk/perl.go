@@ -260,7 +260,7 @@ func (f *PerlFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *PerlFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Perl))
+	installed, _ := f.cfg.GetInstalledVersions(string(Perl))
 	active := f.cfg.GetActiveVersion(string(Perl))
 	configured := active != ""
 

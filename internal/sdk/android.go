@@ -206,7 +206,7 @@ func (f *AndroidFetcher) GetDownloadURL(version string) (string, string, error) 
 }
 
 func (f *AndroidFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Android))
+	installed, _ := f.cfg.GetInstalledVersions(string(Android))
 	active := f.cfg.GetActiveVersion(string(Android))
 	configured := active != ""
 

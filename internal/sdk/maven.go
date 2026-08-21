@@ -112,7 +112,7 @@ func (f *MavenFetcher) GetDownloadURL(version string) (string, string, error) {
 }
 
 func (f *MavenFetcher) GetLocalStatus() (*SdkStatus, error) {
-	installed := f.cfg.GetInstalledVersions(string(Maven))
+	installed, _ := f.cfg.GetInstalledVersions(string(Maven))
 	active := f.cfg.GetActiveVersion(string(Maven))
 	configured := active != ""
 

@@ -60,7 +60,15 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 	// Only remove when NO versions remain: if other versions of the same
 	// SDK are still installed, their shims must stay (shims route by SDK
 	// type, not by version — the active version is resolved at run time).
-	if a.noVersionsLeft(sdkType) {
+	//
+	// M7: Propagate the GetInstalledVersions error instead of treating any
+	// read failure as "0 remaining". A transient read error (permission,
+	// path is a file, ...) must NOT trigger shim teardown, otherwise
+	// installed-but-unreadable SDKs lose their shims.
+	left, err := a.noVersionsLeft(sdkType)
+	if err != nil {
+		logger.Warn("Failed to check remaining versions for %s, skipping shim teardown: %v", sdkType, err)
+	} else if left {
 		extraEnvVars := a.getExtraEnvVars(sdkType)
 		if err := a.pathMgr.RemoveSdk(sdkType, extraEnvVars); err != nil {
 			logger.Warn("Failed to remove shims for %s: %v", sdkType, err)
@@ -80,9 +88,18 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 // Used after UninstallVersion to decide whether to tear down the shim layer
 // for the whole SDK type (shims route by type, so they are only obsolete
 // once the last version is gone).
-func (a *App) noVersionsLeft(sdkType string) bool {
-	remaining := a.cfg.GetInstalledVersions(sdkType)
-	return len(remaining) == 0
+//
+// M7: Returns (bool, error) so callers can distinguish a genuine "no
+// versions" result from a read failure. A read error (permission, path is a
+// file, ...) is propagated; callers must NOT treat it as "0 remaining" or
+// they would wrongly tear down shims for SDKs whose versions are merely
+// unreadable.
+func (a *App) noVersionsLeft(sdkType string) (bool, error) {
+	remaining, err := a.cfg.GetInstalledVersions(sdkType)
+	if err != nil {
+		return false, err
+	}
+	return len(remaining) == 0, nil
 }
 
 // getExtraEnvVars returns the extra env vars (JAVA_HOME, GOROOT, ...) declared
@@ -182,11 +199,16 @@ func (a *App) CleanInactiveVersions(sdkType string) error {
 	// inactive), tear down the shim layer for this SDK type — same rationale
 	// as in UninstallVersion: orphan shims keep PathConfigured=true and
 	// resolve to "no active version" at run time.
-	if cleaned > 0 && a.noVersionsLeft(sdkType) {
+	// M7: on read error, do NOT tear down shims (cannot confirm zero left).
+	left, err := a.noVersionsLeft(sdkType)
+	if cleaned > 0 && err == nil && left {
 		extraEnvVars := a.getExtraEnvVars(sdkType)
 		if err := a.pathMgr.RemoveSdk(sdkType, extraEnvVars); err != nil {
 			logger.Warn("Failed to remove shims for %s: %v", sdkType, err)
 		}
+	}
+	if err != nil {
+		logger.Warn("Failed to check remaining versions for %s, skipped shim teardown: %v", sdkType, err)
 	}
 	logger.Info("Cleaned %d inactive versions for %s", cleaned, sdkType)
 	return nil
