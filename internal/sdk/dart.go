@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"sdk_version_control/internal/config"
+	"sdk_version_control/internal/logger"
 )
 
 type DartFetcher struct {
@@ -62,8 +63,17 @@ func dartArch(goos, goarch string) string {
 func (f *DartFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	var versions []VersionInfo
 	pageToken := ""
+	pageCount := 0
 
 	for {
+		// M10: Guard against an infinite pagination loop (e.g. a misconfigured
+		// mirror returning the same pageToken forever). 100 pages × 200 results
+		// = 20000 versions — far more than Dart has ever published.
+		pageCount++
+		if pageCount > 100 {
+			logger.Warn("Dart version fetch exceeded 100 pages, stopping pagination")
+			break
+		}
 		apiURL := f.useEndpoint("https://storage.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&delimiter=/&maxResults=200")
 		if pageToken != "" {
 			apiURL += "&pageToken=" + url.QueryEscape(pageToken)

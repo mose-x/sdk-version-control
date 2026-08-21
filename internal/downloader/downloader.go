@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -158,7 +157,7 @@ func (d *Downloader) Download(ctx context.Context, downloadURL, destPath string,
 }
 
 // downloadSingle single-threaded download (original logic)
-func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, downloadURL, destPath string, callback ProgressCallback) error {
+func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, downloadURL, destPath string, callback ProgressCallback) (err error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -178,7 +177,14 @@ func (d *Downloader) downloadSingle(ctx context.Context, client *http.Client, do
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer out.Close()
+	// M1: Surface Close errors (e.g. disk full during flush) instead of
+	// dropping them. On early-return paths the original error wins; on the
+	// success path a Close error is returned to the caller.
+	defer func() {
+		if cerr := out.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close file: %w", cerr)
+		}
+	}()
 
 	totalBytes := resp.ContentLength
 	var downloaded int64
@@ -392,24 +398,4 @@ func (d *Downloader) downloadMultiThread(ctx context.Context, client *http.Clien
 
 	logger.Info("Multi-thread download completed: %s (%d threads, %d bytes)", filepath.Base(destPath), threads, totalBytes)
 	return nil
-}
-
-// GetContentLength retrieves the size of a remote file (used by update downloads etc.)
-func GetContentLength(ctx context.Context, client *http.Client, downloadURL string) (int64, error) {
-	req, err := http.NewRequestWithContext(ctx, "HEAD", downloadURL, nil)
-	if err != nil {
-		return 0, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	resp.Body.Close()
-	return resp.ContentLength, nil
-}
-
-// ParseContentLength parses Content-Length from a string
-func ParseContentLength(s string) int64 {
-	n, _ := strconv.ParseInt(s, 10, 64)
-	return n
 }

@@ -460,7 +460,13 @@ func (m *Manager) getShimBinaryPath() string {
 // updateShimConfig updates shims.json with the SDK type config and its commands.
 func (m *Manager) updateShimConfig(sdkType string, binDirs []string, envVars map[string]string, commands []string) error {
 	cfgPath := m.cfg.ShimsConfigPath()
-	cfg, _ := m.loadShimConfig()
+	// M7: loadShimConfig can fail on a corrupt shims.json. Check the error
+	// before writing back — silently using an empty config would wipe valid
+	// command mappings on save.
+	cfg, err := m.loadShimConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load shim config: %w", err)
+	}
 
 	if cfg.Commands == nil {
 		cfg.Commands = make(map[string]string)
@@ -498,7 +504,13 @@ func (m *Manager) updateShimConfig(sdkType string, binDirs []string, envVars map
 // removeSdkFromConfig removes an SDK type and its commands from shims.json.
 func (m *Manager) removeSdkFromConfig(sdkType string) error {
 	cfgPath := m.cfg.ShimsConfigPath()
-	cfg, _ := m.loadShimConfig()
+	// M7: loadShimConfig can fail on a corrupt shims.json. Check the error
+	// before writing back — silently using an empty config would wipe valid
+	// command mappings for other SDKs on save.
+	cfg, err := m.loadShimConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load shim config: %w", err)
+	}
 
 	for cmd, st := range cfg.Commands {
 		if st == sdkType {

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"sdk_version_control/internal/sdk"
 )
@@ -51,7 +53,10 @@ func (a *App) detectPM(name, cmd string, args []string, parent sdk.SdkType) sdk.
 	if fullPath == cmd {
 		return sdk.PackageManagerInfo{Name: name, Installed: false, ParentSdk: parent}
 	}
-	c := createCmd(fullPath, args...)
+	// H3: Bound version detection so a hung package manager doesn't block.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := createCmdContext(ctx, fullPath, args...)
 	c.Env = replacePathEnv(os.Environ(), scopedPath)
 	out, err := c.CombinedOutput()
 	if err != nil {
@@ -224,7 +229,10 @@ func resolveInPath(cmd, searchPath string) string {
 func (a *App) runScopedCommand(name string, parent sdk.SdkType, args ...string) error {
 	scopedPath := a.buildSdkPath(parent)
 	fullPath := resolveInPath(name, scopedPath)
-	cmd := createCmd(fullPath, args...)
+	// H3: Bound install/update commands so a hung process doesn't block forever.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := createCmdContext(ctx, fullPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = replacePathEnv(os.Environ(), scopedPath)

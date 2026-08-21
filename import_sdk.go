@@ -41,8 +41,10 @@ func copyToTargetAtomically(sourceDir, targetDir string, binDirs []string, verif
 	// version so it can be restored if the next Rename fails.
 	if _, err := os.Stat(targetDir); err == nil {
 		if renameErr := os.Rename(targetDir, oldDir); renameErr != nil {
-			// Can't rename old — fall back to RemoveAll (old behavior).
-			os.RemoveAll(targetDir)
+			// H1: Never delete the live version as fallback. Abort so the
+			// existing directory is preserved instead of losing data.
+			os.RemoveAll(tmpDir)
+			return fmt.Errorf("failed to backup existing directory for atomic replace: %w", renameErr)
 		}
 	}
 	// Rename tmpDir into place. If this fails, restore from .old.

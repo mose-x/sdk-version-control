@@ -192,12 +192,14 @@ func (c *Config) SetActiveVersion(sdkType string, version string) error {
 	return c.save()
 }
 
-// ClearActiveVersion clears the active version for the specified SDK type
-func (c *Config) ClearActiveVersion(sdkType string) {
+// ClearActiveVersion clears the active version for the specified SDK type.
+// M4: returns the save() error instead of ignoring it, so a failed persist
+// is surfaced to the caller rather than silently dropping the entry in-memory.
+func (c *Config) ClearActiveVersion(sdkType string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.data.ActiveVersions, sdkType)
-	c.save()
+	return c.save()
 }
 
 // GetInstalledVersions returns all locally installed versions
@@ -250,14 +252,4 @@ func (c *Config) RcFilePath() string {
 // IsWindows reports whether the current OS is Windows
 func IsWindows() bool {
 	return runtime.GOOS == "windows"
-}
-
-// IsDarwin reports whether the current OS is macOS
-func IsDarwin() bool {
-	return runtime.GOOS == "darwin"
-}
-
-// IsLinux reports whether the current OS is Linux
-func IsLinux() bool {
-	return runtime.GOOS == "linux"
 }

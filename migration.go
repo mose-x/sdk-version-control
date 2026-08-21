@@ -133,6 +133,12 @@ func (a *App) MigrateInstallPath(newPath string) error {
 		logger.Warn("Failed to delete old install directory (%s): %v", oldDir, err)
 	}
 
+	// H4: If oldDir was ~/.svc itself, RemoveAll deleted settings.json.
+	// Re-create it at the fixed ~/.svc/ location with the new InstallPath.
+	if err := a.settings.Update(s); err != nil {
+		logger.Error("Failed to re-create settings after migration: %v", err)
+	}
+
 	logger.Info("Install path migration completed successfully")
 	return nil
 }

@@ -3,6 +3,7 @@
 package shim
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 )
@@ -15,5 +16,10 @@ import (
 // matching the Windows exec_windows.go behaviour (cmd.Env = os.Environ()).
 func execBinary(realBinary string, args []string) {
 	fullArgs := append([]string{realBinary}, args...)
-	syscall.Exec(realBinary, fullArgs, os.Environ())
+	err := syscall.Exec(realBinary, fullArgs, os.Environ())
+	// H6: syscall.Exec only returns on failure — if we reach here, exec
+	// failed. Print to stderr and exit so the error is visible instead of
+	// silently falling through and returning from the shim entry point.
+	fmt.Fprintln(os.Stderr, "svc shim: exec failed:", err)
+	os.Exit(1)
 }

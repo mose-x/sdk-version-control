@@ -150,9 +150,12 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-
+	// M2: Surface Close errors (e.g. disk full during flush) — previously
+	// dropped via defer out.Close(), hiding the real cause of a corrupt copy.
 	_, err = io.Copy(out, in)
+	if cerr := out.Close(); cerr != nil && err == nil {
+		err = cerr
+	}
 	return err
 }
 

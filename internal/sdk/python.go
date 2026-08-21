@@ -91,14 +91,16 @@ func IsSystemPythonPath(binPath string) bool {
 	lower := strings.ToLower(p)
 	switch runtime.GOOS {
 	case "darwin":
+		// H7: prefixes are lowercase; match against the lowercased path so
+		// /System/ and /Library/ (capitalized on macOS) are caught.
 		for _, prefix := range []string{"/usr/bin/", "/bin/", "/sbin/", "/system/", "/library/"} {
-			if strings.HasPrefix(p, prefix) {
+			if strings.HasPrefix(lower, prefix) {
 				return true
 			}
 		}
 	case "linux":
 		for _, prefix := range []string{"/usr/bin/", "/bin/", "/sbin/", "/usr/lib/"} {
-			if strings.HasPrefix(p, prefix) {
+			if strings.HasPrefix(lower, prefix) {
 				return true
 			}
 		}
