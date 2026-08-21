@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 import { useTranslation } from 'react-i18next'
+import { sdkColors, SDK_CATEGORIES } from '../../constants/sdk'
 import logoImg from '../../assets/logo.png'
 
 interface SidebarProps {
@@ -19,32 +20,6 @@ interface SidebarProps {
   onGoHome: () => void
   onOpenSettings: () => void
 }
-
-// Category definitions
-const SDK_CATEGORIES = [
-  {
-    key: 'runtime',
-    sdkTypes: [
-      'nodejs',
-      'jdk',
-      'go',
-      'python',
-      'rust',
-      'ruby',
-      'dotnet',
-      'php',
-      'perl',
-    ],
-  },
-  {
-    key: 'build',
-    sdkTypes: ['maven', 'gradle'],
-  },
-  {
-    key: 'mobile',
-    sdkTypes: ['flutter', 'android', 'dart'],
-  },
-]
 
 // SVG icons
 const NodeIcon = () => (
@@ -405,23 +380,6 @@ const sdkIcons: Record<string, React.ReactNode> = {
   flutter: <FlutterIcon />,
   android: <AndroidIcon />,
   dart: <DartIcon />,
-}
-
-const sdkColors: Record<string, string> = {
-  nodejs: '#339933',
-  jdk: '#f89820',
-  go: '#00ADD8',
-  python: '#3776AB',
-  rust: '#CE422B',
-  ruby: '#CC342D',
-  dotnet: '#512BD4',
-  php: '#777BB4',
-  perl: '#39457E',
-  maven: '#C71A36',
-  gradle: '#02303A',
-  flutter: '#02569B',
-  android: '#3DDC84',
-  dart: '#0175C2',
 }
 
 const Sidebar: React.FC<SidebarProps> = ({

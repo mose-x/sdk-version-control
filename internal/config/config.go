@@ -94,20 +94,37 @@ func (c *Config) load() error {
 }
 
 func (c *Config) save() error {
+	// NOTE: caller must hold c.mu. save() is called from load(),
+	// SetActiveVersion, ClearActiveVersion — all of which take the write
+	// lock before mutating c.data. Acquiring the lock here would deadlock.
 	data, err := json.MarshalIndent(c.data, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(c.svcDir, configFile), data, 0644)
+	path := filepath.Join(c.svcDir, configFile)
+	// O9: atomic write via temp file + os.Rename. A partial write to
+	// config.json (e.g. process killed mid-write) would corrupt the file
+	// and break every shim lookup at startup. Writing to a sibling temp file
+	// and renaming over the target is atomic on POSIX (rename(2)) and on
+	// Windows (MoveFileEx with MOVEFILE_REPLACE_EXISTING).
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // HomeDir returns the user's home directory
 func (c *Config) HomeDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.homeDir
 }
 
 // SvcDir returns the ~/.svc path
 func (c *Config) SvcDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.svcDir
 }
 
@@ -141,16 +158,22 @@ func DefaultSvcDir() string {
 
 // TmpDir returns the temporary download directory
 func (c *Config) TmpDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return filepath.Join(c.svcDir, tmpDirName)
 }
 
 // SdkDir returns the storage directory of the specified SDK
 func (c *Config) SdkDir(sdkType string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return filepath.Join(c.svcDir, sdkType)
 }
 
 // SdkVersionDir returns the install directory of the specified SDK version
 func (c *Config) SdkVersionDir(sdkType string, version string) string {
+	// Delegates to SdkDir which acquires the read lock — do NOT also take
+	// the lock here (nested RLock deadlocks on some sync.RWMutex impls).
 	return filepath.Join(c.SdkDir(sdkType), version)
 }
 
@@ -198,21 +221,29 @@ func (c *Config) GetInstalledVersions(sdkType string) []string {
 
 // EnvShPath returns the env.sh file path (used on Linux/macOS)
 func (c *Config) EnvShPath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return filepath.Join(c.svcDir, envShFile)
 }
 
 // ShimsDir returns the shims directory path (~/.svc/shims)
 func (c *Config) ShimsDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return filepath.Join(c.svcDir, shimsDirName)
 }
 
 // ShimsConfigPath returns the shims.json file path (~/.svc/shims.json)
 func (c *Config) ShimsConfigPath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return filepath.Join(c.svcDir, shimsCfgFile)
 }
 
 // RcFilePath returns the .svc.rc file path (~/ .svc.rc, fixed location)
 func (c *Config) RcFilePath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return filepath.Join(c.homeDir, rcFileName)
 }
 

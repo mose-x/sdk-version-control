@@ -104,6 +104,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
 }) => {
   const { t, i18n } = useTranslation()
   const { message: msgApi } = App.useApp()
+  const [modal, contextHolder] = Modal.useModal()
   const [settings, setSettings] = useState<AppSettings>({
     theme: 'dark',
     language: 'zh',
@@ -247,7 +248,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   }
 
   const handleCleanLogs = () => {
-    Modal.confirm({
+    modal.confirm({
       title: t('logs.cleanConfirm'),
       content: t('logs.cleanConfirmDesc'),
       okText: t('app.confirm'),
@@ -269,7 +270,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   }
 
   const handleDeleteLog = (filename: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: t('logs.deleteConfirm'),
       content: t('logs.deleteConfirmDesc', { filename }),
       okText: t('app.confirm'),
@@ -468,7 +469,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   }
 
   const handleClearToken = () => {
-    Modal.confirm({
+    modal.confirm({
       title: t('settings.githubTokenClear'),
       content: t('settings.githubTokenClearDesc'),
       okText: t('app.confirm'),
@@ -523,7 +524,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   }
 
   const handleRollback = () => {
-    Modal.confirm({
+    modal.confirm({
       title: t('settings.rollbackConfirm'),
       content: t('settings.rollbackConfirmDesc'),
       okText: t('settings.rollbackBtn'),
@@ -547,7 +548,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   const handleSaveInstallPath = () => {
     const newPath = installPathDraft.trim()
     if (!newPath) return
-    Modal.confirm({
+    modal.confirm({
       title: t('settings.installPathConfirm'),
       content: t('settings.installPathConfirmDesc', { path: newPath }),
       okText: t('app.confirm'),
@@ -570,7 +571,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   }
 
   const handleResetInstallPath = () => {
-    Modal.confirm({
+    modal.confirm({
       title: t('settings.installPathResetConfirm'),
       content: t('settings.installPathResetConfirmDesc', {
         path: defaultInstallPath,
@@ -604,7 +605,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   }
 
   const handleSaveEndpoints = () => {
-    Modal.confirm({
+    modal.confirm({
       title: t('endpoint.confirmSave'),
       content: t('endpoint.confirmSaveDesc'),
       okText: t('app.confirm'),
@@ -625,7 +626,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   }
 
   const handleResetOneEndpoint = (sdkType: string, displayName: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: t('endpoint.confirmResetOne', { sdk: displayName }),
       content: t('endpoint.confirmResetOneDesc', { sdk: displayName }),
       okText: t('app.confirm'),
@@ -788,10 +789,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
                     size="small"
                     loading={checkingProxy['https://www.google.com']}
                     onClick={() =>
-                      handleCheckProxy('https://www.google.com', 'Google')
+                      handleCheckProxy(
+                        'https://www.google.com',
+                        t('settings.proxyCheckGoogle'),
+                      )
                     }
                   >
-                    Google
+                    {t('settings.proxyCheckGoogle')}
                   </Button>
                 </div>
               </div>
@@ -1194,7 +1198,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
                   color: 'var(--ant-color-text-secondary)',
                 }}
               >
-                Loading...
+                {t('settings.loading')}
               </div>
             ) : logFiles.length === 0 ? (
               <div
@@ -1224,7 +1228,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
                     color: 'var(--ant-color-text-secondary)',
                   }}
                 >
-                  <div style={{ flex: 2 }}>Filename</div>
+                  <div style={{ flex: 2 }}>{t('settings.filename')}</div>
                   <div style={{ flex: 1, textAlign: 'right' }}>
                     {t('logs.size')}
                   </div>
@@ -1381,6 +1385,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
                   href="#"
                   onClick={(e) => {
                     e.preventDefault()
+                    BrowserOpenURL(appInfo.repoUrl)
                   }}
                   style={{ color: '#1677ff' }}
                 >
@@ -1396,6 +1401,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
 
   return (
     <div className="settings-page">
+      {contextHolder}
       <div className="settings-header">
         <Tabs items={tabItems} style={{ flex: 1 }} />
       </div>
@@ -1564,7 +1570,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
             lineHeight: 1.6,
           }}
         >
-          {logContent || 'No content'}
+          {logContent || t('settings.noContent')}
         </div>
       </Modal>
     </div>

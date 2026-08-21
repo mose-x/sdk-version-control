@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -78,11 +79,45 @@ func (a *App) applyGithubMirror(url string) string {
 	// Guard against a mirror that already points at github.com (e.g. a user
 	// misconfigured it as https://github.com/proxy): without the prefix check
 	// we'd prepend mirror to an already-mirrored URL, producing garbage.
-	if strings.Contains(url, "github.com") && !strings.HasPrefix(url, mirror) {
+	if isGithubHost(url) && !strings.HasPrefix(url, mirror) {
 		return mirror + "/" + url
 	}
 	return url
 }
+
+// isGithubHost reports whether url targets github.com or a github.com subdomain.
+// Uses net/url parsing so a non-github URL that merely contains "github.com"
+// as a substring (e.g. https://evil.example.com/path/github.com/foo or
+// https://github.com.evil.example.com/) is NOT treated as a github URL.
+func isGithubHost(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Host
+	// Strip any port suffix for the host comparison.
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.ToLower(host)
+	return host == "github.com" || strings.HasSuffix(host, ".github.com")
+}
+
+// windowsReservedNames lists Windows reserved device names that cannot be
+// used as file or directory names. Applied on all platforms because a path
+// segment that is a Windows reserved name is never a legitimate SDK name and
+// would break Windows portability (CON.txt is still the CON device).
+var windowsReservedNames = map[string]bool{
+	"CON": true, "PRN": true, "NUL": true, "AUX": true,
+	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true,
+	"COM6": true, "COM7": true, "COM8": true, "COM9": true,
+	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true,
+	"LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
+}
+
+// windowsIllegalChars are characters not allowed in Windows filenames.
+// Rejected on all platforms for the same cross-platform portability reason.
+const windowsIllegalChars = `<>:"|*?`
 
 func validatePathSegment(segment string) error {
 	if segment == "" {
@@ -90,6 +125,12 @@ func validatePathSegment(segment string) error {
 	}
 	if strings.ContainsAny(segment, "/\\") || strings.Contains(segment, "..") || strings.ContainsRune(segment, 0) {
 		return fmt.Errorf("invalid path segment: %s", segment)
+	}
+	if strings.ContainsAny(segment, windowsIllegalChars) {
+		return fmt.Errorf("invalid path segment (contains illegal character): %s", segment)
+	}
+	if windowsReservedNames[strings.ToUpper(segment)] {
+		return fmt.Errorf("invalid path segment (Windows reserved name): %s", segment)
 	}
 	return nil
 }

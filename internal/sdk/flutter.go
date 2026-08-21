@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"sdk_version_control/internal/config"
+	"sdk_version_control/internal/logger"
 )
 
 type FlutterFetcher struct {
@@ -41,6 +42,25 @@ func (f *FlutterFetcher) GetExtraEnvVars() map[string]string {
 	return map[string]string{"FLUTTER_ROOT": ""}
 }
 func (f *FlutterFetcher) VerifyCommand() (string, []string) { return "flutter", []string{"--version"} }
+
+// flutterArchWarned guards warnFlutterUnsupportedArm64 so the warning is
+// logged only once per process (avoids spamming on every GetDownloadURL call).
+var flutterArchWarned bool
+
+// warnFlutterUnsupportedArm64 logs a one-time warning when Flutter is being
+// fetched on a non-darwin arm64 host. Flutter does not publish arm64-specific
+// builds for Windows or Linux — only macOS has an arm64 build. The x64 build
+// is selected on Win/Linux arm64 and runs via emulation, which is slower and
+// may have edge-case bugs (notably on Windows-on-Arm translation).
+func warnFlutterUnsupportedArm64() {
+	if flutterArchWarned {
+		return
+	}
+	if runtime.GOARCH == "arm64" && runtime.GOOS != "darwin" {
+		logger.Warn("Flutter does not publish arm64 builds for %s; the x64 build will be installed and runs via emulation", runtime.GOOS)
+		flutterArchWarned = true
+	}
+}
 
 func (f *FlutterFetcher) buildOSName() string {
 	switch runtime.GOOS {
@@ -77,6 +97,7 @@ func isStableFlutterTag(tag string) bool {
 }
 
 func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
+	warnFlutterUnsupportedArm64()
 	var versions []VersionInfo
 	page := 1
 	for page <= 3 {
@@ -123,6 +144,7 @@ func (f *FlutterFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 }
 
 func (f *FlutterFetcher) GetDownloadURL(version string) (string, string, error) {
+	warnFlutterUnsupportedArm64()
 	osName := f.buildOSName()
 	ext := f.buildExt()
 	archSuffix := flutterArchSuffix(runtime.GOOS, runtime.GOARCH)

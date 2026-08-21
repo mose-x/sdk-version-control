@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // ShimConfig is the shims.json structure that maps commands to SDK types
@@ -28,6 +29,34 @@ type svcConfig struct {
 // settings is the settings.json structure (partial)
 type settings struct {
 	InstallPath string `json:"installPath"`
+}
+
+// envVarDenylist lists env-var keys that MUST NOT be set from shims.json
+// config. These keys, if set from a user-controlled config file, can be
+// used to hijack the spawned child process (LD_PRELOAD, DYLD_INSERT_LIBRARIES,
+// BASH_ENV, ...) or break the shim system itself (PATH is managed by the
+// shim system via .svc.rc + shims dir; allowing shims.json to override it
+// would silently break PATH-scoped resolution). Denylist applies on all
+// platforms — the Unix-only keys are no-ops on Windows.
+var envVarDenylist = map[string]bool{
+	"LD_PRELOAD":            true,
+	"LD_LIBRARY_PATH":       true,
+	"DYLD_LIBRARY_PATH":     true,
+	"DYLD_INSERT_LIBRARIES": true,
+	"IFS":                   true,
+	"ENV":                   true,
+	"BASH_ENV":              true,
+	"PS1":                   true,
+	"SHELLOPTS":             true,
+	"PATH":                  true, // managed by the shim system itself
+}
+
+// isDeniedEnvVar reports whether key is on the env-var denylist.
+// Case-insensitive (Windows env keys are case-insensitive; on Unix the
+// dangerous keys are conventionally uppercase, but we err on the side of
+// rejecting any case variant).
+func isDeniedEnvVar(key string) bool {
+	return envVarDenylist[strings.ToUpper(key)]
 }
 
 // commandAliases maps a command to an alternate name to try when the real
@@ -68,7 +97,7 @@ func Run() {
 		os.Exit(1)
 	}
 
-	sdkType, ok := shimCfg.Commands[inv.Command]
+	sdkType, ok := lookupCommand(shimCfg.Commands, inv.Command)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "shim: unknown command %q\n", inv.Command)
 		os.Exit(1)
@@ -98,7 +127,7 @@ func Run() {
 		// (a Unix convention). The shimmanager registers python3 as an alias of
 		// python; resolve it to the real python binary. Matches Unix where
 		// python3 exists as a real executable/symlink.
-		if alias, ok := commandAliases[inv.Command]; ok {
+		if alias, ok := lookupCommand(commandAliases, inv.Command); ok {
 			realBinary = resolveRealBinaryMulti(versionDir, sdkCfg.BinDirs, alias)
 		}
 	}
@@ -109,6 +138,13 @@ func Run() {
 
 	// Set environment variables (JAVA_HOME, GOROOT, etc.)
 	for key, relPath := range sdkCfg.EnvVars {
+		if isDeniedEnvVar(key) {
+			// O10: refuse to set denylisted env vars from shims.json —
+			// they can hijack the child process (LD_PRELOAD, BASH_ENV, ...)
+			// or break the shim system itself (PATH is shim-managed).
+			fmt.Fprintf(os.Stderr, "shim: refusing to set denied env var %q from shims.json\n", key)
+			continue
+		}
 		val := versionDir
 		if relPath != "" {
 			val = filepath.Join(versionDir, relPath)
@@ -117,6 +153,25 @@ func Run() {
 	}
 
 	execBinary(realBinary, inv.Args)
+}
+
+// lookupCommand looks up name in m. On Windows command names are
+// case-insensitive (cmd.exe / batch are case-insensitive; a hardlink to
+// NODE.exe is the same as node.exe), so the lookup is case-insensitive there.
+// On Unix it is a direct (case-sensitive) map lookup. Returns the value and
+// whether the key was found.
+func lookupCommand(m map[string]string, name string) (string, bool) {
+	if runtime.GOOS == "windows" {
+		lower := strings.ToLower(name)
+		for k, v := range m {
+			if strings.ToLower(k) == lower {
+				return v, true
+			}
+		}
+		return "", false
+	}
+	v, ok := m[name]
+	return v, ok
 }
 
 // resolveRealBinaryMulti finds the real executable for a command by trying

@@ -51,6 +51,9 @@ jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.js
 jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp && mv wails.json.tmp wails.json
 echo "Version bumped to $VERSION in about.json, wails.json"
 
+# R9: Restore version-bumped files on exit so local builds don't leave the repo dirty.
+trap 'git checkout about.json wails.json 2>/dev/null; git checkout winres/winres.json 2>/dev/null' EXIT
+
 # --- Build the bare binary.
 wails build -platform "linux/$ARCH" -o SDKVersionControl
 # Wails appends the arch suffix when cross-compiling; normalize to the plain
@@ -80,7 +83,7 @@ SRC_ICON="build/desktop-icons/icon-white-bg.png"
 for sz in 16 32 48 64 128 256 512; do
   d="$STAGING/share/icons/hicolor/${sz}x${sz}/apps"
   mkdir -p "$d"
-  python3 -c "from PIL import Image; Image.open('$SRC_ICON').resize(($sz,$sz), Image.LANCZOS).save('$d/sdkversioncontrol.png')"
+  python3 -c "from PIL import Image; Image.open('$SRC_ICON').resize(($sz,$sz), Image.Resampling.LANCZOS).save('$d/sdkversioncontrol.png')"
 done
 
 fpm -s dir -t deb \

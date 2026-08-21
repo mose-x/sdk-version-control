@@ -52,7 +52,7 @@ func (a *App) detectPM(name, cmd string, args []string, parent sdk.SdkType) sdk.
 		return sdk.PackageManagerInfo{Name: name, Installed: false, ParentSdk: parent}
 	}
 	c := createCmd(fullPath, args...)
-	c.Env = append(os.Environ(), "PATH="+scopedPath)
+	c.Env = replacePathEnv(os.Environ(), scopedPath)
 	out, err := c.CombinedOutput()
 	if err != nil {
 		return sdk.PackageManagerInfo{Name: name, Installed: false, ParentSdk: parent}
@@ -227,6 +227,6 @@ func (a *App) runScopedCommand(name string, parent sdk.SdkType, args ...string) 
 	cmd := createCmd(fullPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "PATH="+scopedPath)
+	cmd.Env = replacePathEnv(os.Environ(), scopedPath)
 	return cmd.Run()
 }

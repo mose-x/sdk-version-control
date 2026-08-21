@@ -32,6 +32,9 @@ jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.js
 jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp && mv wails.json.tmp wails.json
 echo "Version bumped to $VERSION in about.json, wails.json"
 
+# R9: Restore version-bumped files on exit so local builds don't leave the repo dirty.
+trap 'git checkout about.json wails.json 2>/dev/null; git checkout winres/winres.json 2>/dev/null' EXIT
+
 # --- Build .app
 # SVC_SKIP_BINDINGS=1 (set by scripts/build-macos-local.sh) passes
 # -skipbindings so Wails does not run the ad-hoc-signed binding-generator
@@ -77,12 +80,10 @@ cp "$ICNS" "$APP/Contents/Resources/iconfile.icns"
 # --- Create DMG with a pure-white background + English red security hint.
 command -v create-dmg >/dev/null 2>&1 || brew install create-dmg
 
-# Reuse a persistent venv so local re-runs don't reinstall Pillow each time.
-VENV="/tmp/svc-dmgvenv"
-[ -d "$VENV" ] || python3 -m venv "$VENV"
-if ! "$VENV/bin/python" -c "import PIL" 2>/dev/null; then
-  "$VENV/bin/pip" install --quiet Pillow
-fi
+# Create a throwaway venv for Pillow (DMG background image generation).
+VENV="$(mktemp -d)"
+python3 -m venv "$VENV"
+"$VENV/bin/pip" install --quiet Pillow
 
 BG_PATH="build/bin/dmg_bg.png"
 export BG_PATH VERSION

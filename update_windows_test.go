@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -73,11 +74,20 @@ func TestBuildUpdateScript_containsHashAndCertutil(t *testing.T) {
 		{"has copy fallback", `copy /Y "` + newExe + `" "` + currentExe + `"`},
 		{"rolls back to bak", `copy /Y "` + bak + `" "` + currentExe + `"`},
 		{"exits non-zero on mismatch", "exit /b 1"},
+		// M11: exact PID match. The new findstr /B /C:"<pid> " matches the
+		// PID at the beginning of a line with a trailing space (so PID 4242
+		// does not match a row for PID 42421 or 14242).
+		{"uses findstr exact PID match", `findstr /B /C:"` + strconv.Itoa(pid) + ` " >NUL`},
 	}
 	for _, c := range checks {
 		if !strings.Contains(script, c.want) {
 			t.Errorf("buildUpdateScript missing %q\n--- script ---\n%s", c.name, script)
 		}
+	}
+	// M11: the old substring `find "<pid>"` pattern must NOT be present — it
+	// matched any PID containing the same digits (e.g. 4242 vs 42421).
+	if strings.Contains(script, `find "`+strconv.Itoa(pid)+`" >NUL`) {
+		t.Errorf("buildUpdateScript still uses the old substring `find %%d` pattern (M11 not fixed)\n--- script ---\n%s", script)
 	}
 	// The loop var must use the batch `%%i` form (a single `%%` in the file is
 	// a stray percent that breaks the for-loop); a Go `%%%%i` template becomes

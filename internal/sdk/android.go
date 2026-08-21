@@ -65,11 +65,26 @@ type androidPackage struct {
 	} `xml:"revision"`
 	Archives struct {
 		Archive []struct {
-			OS   string `xml:"host-os"`
-			URL  string `xml:"complete>url"`
-			Size int64  `xml:"complete>size"`
+			OS       string `xml:"host-os"`
+			HostArch string `xml:"host-arch"`
+			URL      string `xml:"complete>url"`
+			Size     int64  `xml:"complete>size"`
 		} `xml:"archive"`
 	} `xml:"archives"`
+}
+
+// androidHostArchKey returns the host-arch value used by the Android
+// repository XML for the current runtime architecture. Returns "" for
+// unknown architectures so callers can fall back to the legacy behaviour
+// (any archive matching host-os).
+func androidHostArchKey(goarch string) string {
+	switch goarch {
+	case "arm64":
+		return "aarch64"
+	case "amd64":
+		return "x64"
+	}
+	return ""
 }
 
 func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
@@ -100,6 +115,10 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 	if runtime.GOOS == "darwin" {
 		osKey = "macosx"
 	}
+	// E3: filter archives by host-arch so e.g. an arm64-only macosx build is
+	// not selected on an amd64 macosx host. Empty HostArch matches any arch
+	// (legacy XML or archive genuinely omitting host-arch).
+	wantArch := androidHostArchKey(runtime.GOARCH)
 
 	seen := make(map[string]bool)
 	var versions []VersionInfo
@@ -113,19 +132,32 @@ func (f *AndroidFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 		}
 		seen[ver] = true
 
-		// Find the download URL matching the current platform
+		// Find the download URL matching the current platform + arch.
+		// Prefer an exact (os, arch) match; fall back to the first archive
+		// matching the os with an empty HostArch (legacy/backward compat).
 		downloadURL := ""
 		fileName := ""
-		for _, a := range pkg.Archives.Archive {
-			// a.OS == "" is a safety net for archives that genuinely omit
-			// <host-os> (not the old ,attr bug — E1 fixed that). Kept to avoid
-			// breaking on future archive entries without host-os.
-			if a.OS == osKey || a.OS == "" {
+		legacyIdx := -1
+		for i := range pkg.Archives.Archive {
+			a := &pkg.Archives.Archive[i]
+			if a.OS != osKey && a.OS != "" {
+				continue
+			}
+			if a.HostArch == wantArch {
 				downloadURL = f.useEndpoint("https://dl.google.com/android/repository/" + a.URL)
 				parts := strings.Split(a.URL, "/")
 				fileName = parts[len(parts)-1]
 				break
 			}
+			if a.HostArch == "" && legacyIdx == -1 {
+				legacyIdx = i
+			}
+		}
+		if downloadURL == "" && legacyIdx != -1 {
+			a := &pkg.Archives.Archive[legacyIdx]
+			downloadURL = f.useEndpoint("https://dl.google.com/android/repository/" + a.URL)
+			parts := strings.Split(a.URL, "/")
+			fileName = parts[len(parts)-1]
 		}
 		if downloadURL == "" {
 			continue
@@ -153,10 +185,11 @@ func (f *AndroidFetcher) GetDownloadURL(version string) (string, string, error) 
 	if url, name, ok := LookupCachedDownloadURL(Android, version); ok {
 		return url, name, nil
 	}
-	// Fetch from remote. Unlike the previous behaviour (which silently fell
-	// back to a hardcoded 14.0/build when the XML fetch failed), a fetch
-	// failure now surfaces as an error so the caller does not install the
-	// wrong version.
+	// E4: the legacy hardcoded fallback to a stale cmdline-tools build
+	// (e.g. build 14742923, "14.0") was removed in PR #74. A fetch failure
+	// MUST surface as an error so the caller does not silently install the
+	// wrong version. This is intentional and the only code path — the
+	// fallback is unreachable and was removed entirely.
 	versions, err := f.FetchRemoteVersions()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to fetch Android cmdline-tools versions: %w", err)

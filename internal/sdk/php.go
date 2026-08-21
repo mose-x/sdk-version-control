@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"sdk_version_control/internal/config"
+	"sdk_version_control/internal/logger"
 )
 
 // PHPFetcher fetches PHP versions.
@@ -74,6 +75,24 @@ func (f *PHPFetcher) GetBinDirs() []string { return []string{""} }
 func (f *PHPFetcher) GetExtraEnvVars() map[string]string { return nil }
 func (f *PHPFetcher) VerifyCommand() (string, []string)  { return "php", []string{"--version"} }
 
+// phpArchWarned guards warnPHPRunningOnWindowsArm64 so the warning is logged
+// only once per process.
+var phpArchWarned bool
+
+// warnPHPRunningOnWindowsArm64 logs a one-time warning when PHP is being
+// fetched on Windows arm64. windows.php.net only publishes x64 builds (the
+// version-listing regex matches "-x64.zip"), so on Windows arm64 the x64
+// build is installed and runs via Windows-on-Arm x64 emulation.
+func warnPHPRunningOnWindowsArm64() {
+	if phpArchWarned {
+		return
+	}
+	if runtime.GOOS == "windows" && runtime.GOARCH == "arm64" {
+		logger.Warn("PHP does not publish native Windows arm64 builds; the x64 build will be installed and runs via Windows-on-Arm emulation")
+		phpArchWarned = true
+	}
+}
+
 // unixTarget returns the os-arch suffix used in rodrigodotdev/php asset names
 // for the current Unix platform. Returns "" on Windows or unsupported arches.
 // Asset naming (verified via the GitHub releases API):
@@ -100,6 +119,7 @@ func (f *PHPFetcher) unixTarget() string {
 // ----- Windows: windows.php.net -----
 
 func (f *PHPFetcher) fetchWindowsVersions() ([]VersionInfo, error) {
+	warnPHPRunningOnWindowsArm64()
 	resp, err := f.httpClient.Get(f.useEndpoint("https://windows.php.net/downloads/releases/"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch PHP version list: %w", err)
@@ -222,6 +242,7 @@ func (f *PHPFetcher) FetchRemoteVersions() ([]VersionInfo, error) {
 }
 
 func (f *PHPFetcher) GetDownloadURL(version string) (string, string, error) {
+	warnPHPRunningOnWindowsArm64()
 	// Cache short-circuit: skip a fresh FetchRemoteVersions round-trip when the
 	// version list was already fetched (see PythonFetcher.GetDownloadURL).
 	if url, name, ok := LookupCachedDownloadURL(PHP, version); ok {
