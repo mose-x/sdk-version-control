@@ -1,5 +1,5 @@
 {
-  "name": "sdk-version-control",
+  "name": "svc",
   "private": true,
   "description": "Root package.json for code-hooks toolchain (npm test stage). Frontend code lives under frontend/.",
   "scripts": {

@@ -62,7 +62,7 @@ Creating `dev` fresh from `main` each cycle keeps the push range = only the new 
 
 ## Caveats
 
-- `git push --delete <branch>` and force-pushes are rejected by the pre-push hook (it errors on `new=0000` ref deletions and on noreply in a force-push range). Use the GitHub API (`gh api -X DELETE repos/mose-x/sdk-version-control/git/refs/heads/dev`) or `gh release delete --cleanup-tag` for tags.
+- `git push --delete <branch>` and force-pushes are rejected by the pre-push hook (it errors on `new=0000` ref deletions and on noreply in a force-push range). Use the GitHub API (`gh api -X DELETE repos/mose-x/svc/git/refs/heads/dev`) or `gh release delete --cleanup-tag` for tags.
 - CI merge race: after CI completes, `mergeStateStatus` may show `BLOCKED` for ~10-30s before flipping to `CLEAN` (the push-event run has `commit-lint` skipped; the PR-event run passes). Poll `gh pr view <n> --json mergeStateStatus` until `CLEAN` before merging.
 
 ## Development Workflow (Mandatory)
@@ -110,7 +110,7 @@ The pre-commit hook will run `go vet` on staged Go files. If the hook rejects, f
 ```bash
 # Delete old remote dev if it exists (from previous PRs):
 # Use gh API (not git push --delete — the hook can't handle ref deletions):
-HTTPS_PROXY=http://127.0.0.1:7890 gh api -X DELETE repos/mose-x/sdk-version-control/git/refs/heads/dev 2>/dev/null || true
+HTTPS_PROXY=http://127.0.0.1:7890 gh api -X DELETE repos/mose-x/svc/git/refs/heads/dev 2>/dev/null || true
 
 # Push with proxy (Clash on port 7890 — github.com is blocked without proxy):
 HTTPS_PROXY=http://127.0.0.1:7890 HTTP_PROXY=http://127.0.0.1:7890 git push -u origin dev
@@ -146,7 +146,7 @@ HTTPS_PROXY=http://127.0.0.1:7890 "$GH" pr merge <PR_N> --squash
 ### Step 8: Cleanup
 ```bash
 # Delete remote dev (via API — git push --delete is rejected by the hook):
-HTTPS_PROXY=http://127.0.0.1:7890 "$GH" api -X DELETE repos/mose-x/sdk-version-control/git/refs/heads/dev
+HTTPS_PROXY=http://127.0.0.1:7890 "$GH" api -X DELETE repos/mose-x/svc/git/refs/heads/dev
 # Sync local main:
 HTTPS_PROXY=http://127.0.0.1:7890 git fetch origin
 git checkout main && git merge --ff-only origin/main

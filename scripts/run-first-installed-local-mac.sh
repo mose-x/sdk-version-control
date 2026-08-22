@@ -7,11 +7,11 @@
 # 什么时候用这个脚本 / When to use this script
 # ==========================================================
 #
-# 当你从本地构建的 DMG 安装了 SDK Version Control 后,macOS 可能会因为
+# 当你从本地构建的 DMG 安装了 svc 后,macOS 可能会因为
 # 签名和隔离属性的问题阻止应用启动(表现为"已损坏,无法打开"或进程
 # 被 SIGKILL 137 杀掉)。这在严格 MDM 管控的 Mac 上尤为常见。
 #
-# After installing SDK Version Control from a locally-built DMG, macOS may
+# After installing svc from a locally-built DMG, macOS may
 # block the app from launching due to ad-hoc signature + quarantine
 # attributes. You'll see "damaged and can't be opened" or the process
 # gets SIGKILL'd (exit 137). This is especially common on strict MDM
@@ -28,8 +28,8 @@
 #   ./run-first-installed-local-mac.sh
 #
 # 前提 / Prerequisites:
-#   - SDK Version Control 已从 DMG 拖到 /Applications
-#     SDK Version Control has been dragged to /Applications from the DMG
+#   - svc 已从 DMG 拖到 /Applications
+#     svc has been dragged to /Applications from the DMG
 #   - 在 macOS 上运行(Run on macOS)
 #
 # 注意 / Note:
@@ -45,7 +45,7 @@
 
 set -euo pipefail
 
-APP="/Applications/SDK Version Control.app"
+APP="/Applications/svc.app"
 
 if [ ! -d "$APP" ]; then
     echo "错误: $APP 不存在。请先从 DMG 拖到 /Applications。"
@@ -57,7 +57,7 @@ echo "1/4 去掉 bundle 签名 / Stripping bundle signature..."
 codesign --remove-signature "$APP" 2>/dev/null || true
 
 echo "2/4 去掉内层二进制签名 / Stripping inner binary signature..."
-codesign --remove-signature "$APP/Contents/MacOS/SDKVersionControl" 2>/dev/null || true
+codesign --remove-signature "$APP/Contents/MacOS/svc" 2>/dev/null || true
 
 echo "3/4 清除所有 xattr / Clearing all xattrs..."
 xattr -cr "$APP"

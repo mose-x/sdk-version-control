@@ -1,4 +1,4 @@
-# SDK Version Control
+# svc
 
 一个跨平台桌面应用，用于统一管理多种 SDK（Node.js、JDK、Go、Python、Rust 等）的版本安装、切换、环境变量配置，以及带完整性校验的应用内自更新。
 
@@ -43,7 +43,7 @@
 - **SHA256 校验**：下载的二进制在替换前会与发布的校验和比对；损坏或被篡改的产物会被拒绝并删除
 - **一次性回滚**：每次升级会备份上一版本到 `<exe>.bak`；应用内「回滚」按钮可恢复到紧邻的上一版本
 - **跨平台替换**：Unix 用 shell 脚本（`pgrep` 等待 → 备份 → 替换 → 重启）；Windows 用批处理脚本（`tasklist` 等待 → 备份 → 替换 → 重启）处理运行中二进制锁
-- **产物命名**：`SDKVersionControl-{version}-{os}-{arch}.{ext}`（amd64 → x64），每个 release 附带独立的 `sha256sums.txt`
+- **产物命名**：`svc-{version}-{os}-{arch}.{ext}`（amd64 → x64），每个 release 附带独立的 `sha256sums.txt`
 
 ### 用户体验
 - **下载进度**：实时显示下载速度、进度和剩余大小
@@ -100,7 +100,7 @@
 ## 项目结构
 
 ```
-sdk_version_control/
+svc/
 ├── main.go                    # 入口（shim 模式 / CLI / GUI 分发）
 ├── app.go                     # Wails App 门面 + 运行时适配器
 ├── about.json                 # 应用信息（版本、协议、updateUrl）
@@ -167,7 +167,7 @@ wails dev
 wails build
 
 # 指定输出文件名
-wails build -o SDKVersionControl
+wails build -o svc
 ```
 
 ### 跨平台打包说明
@@ -176,16 +176,16 @@ Wails v2 不支持交叉编译 Linux（CGO 链接 webkit2gtk/gtk），Linux ARM6
 
 ## 安装
 
-从 [Releases](https://github.com/mose-x/sdk-version-control/releases/latest) 下载对应平台的产物：
+从 [Releases](https://github.com/mose-x/svc/releases/latest) 下载对应平台的产物：
 
 | 平台 | 产物名 |
 |---|---|
-| Windows x64 | `SDKVersionControl-{ver}-windows-x64.exe` |
-| Windows arm64 | `SDKVersionControl-{ver}-windows-arm64.exe` |
-| macOS x64 | `SDKVersionControl-{ver}-macos-x64.dmg` |
-| macOS arm64 (Apple Silicon) | `SDKVersionControl-{ver}-macos-arm64.dmg` |
-| Linux x64 | `SDKVersionControl-{ver}-linux-x64` |
-| Linux arm64 | `SDKVersionControl-{ver}-linux-arm64` |
+| Windows x64 | `svc-{ver}-windows-x64.exe` |
+| Windows arm64 | `svc-{ver}-windows-arm64.exe` |
+| macOS x64 | `svc-{ver}-macos-x64.dmg` |
+| macOS arm64 (Apple Silicon) | `svc-{ver}-macos-arm64.dmg` |
+| Linux x64 | `svc-{ver}-linux-x64` |
+| Linux arm64 | `svc-{ver}-linux-arm64` |
 
 用发布的校验文件验证完整性：
 
@@ -195,7 +195,7 @@ sha256sum -c sha256sums.txt --ignore-missing
 
 ## 自动更新机制
 
-应用会检查 `https://github.com/mose-x/sdk-version-control/releases/latest/download/version.json`（配置在 [about.json](about.json)）。每个 release 附带描述各平台下载链接和 SHA256 校验和的 `version.json`，以及独立的 `sha256sums.txt`。
+应用会检查 `https://github.com/mose-x/svc/releases/latest/download/version.json`（配置在 [about.json](about.json)）。每个 release 附带描述各平台下载链接和 SHA256 校验和的 `version.json`，以及独立的 `sha256sums.txt`。
 
 ### 更新流程
 
@@ -215,13 +215,13 @@ sha256sum -c sha256sums.txt --ignore-missing
   "changelog": "Release v1.0.0 — 详情见 ...",
   "downloads": {
     "windows-amd64": {
-      "url": ".../SDKVersionControl-1.0.0-windows-x64.exe",
-      "filename": "SDKVersionControl-1.0.0-windows-x64.exe",
+      "url": ".../svc-1.0.0-windows-x64.exe",
+      "filename": "svc-1.0.0-windows-x64.exe",
       "sha256": "abc123..."
     },
     "darwin-arm64": {
-      "url": ".../SDKVersionControl-1.0.0-macos-arm64.bin",
-      "filename": "SDKVersionControl",
+      "url": ".../svc-1.0.0-macos-arm64.bin",
+      "filename": "svc",
       "sha256": "def456..."
     }
   }

@@ -34,6 +34,14 @@ Unicode true
 ####
 !include "wails_tools.nsh"
 
+# Rename migration: installs of the old product ("SDK Version Control",
+# binary SDKVersionControl.exe) registered under a different uninstall key.
+# Define the legacy values so this installer can detect, upgrade in place,
+# and clean up the old product instead of installing a second copy.
+!define LEGACY_PRODUCTNAME "SDK Version Control"
+!define LEGACY_EXECUTABLE  "SDKVersionControl.exe"
+!define LEGACY_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${INFO_COMPANYNAME}${LEGACY_PRODUCTNAME}"
+
 # The version information for this two must consist of 4 parts
 VIProductVersion "${INFO_PRODUCTVERSION}.0"
 VIFileVersion    "${INFO_PRODUCTVERSION}.0"
@@ -87,8 +95,13 @@ FunctionEnd
 
 # Skip the directory page on upgrade: if a previous install location is
 # found in the registry, set $INSTDIR to it and Abort (skip) the page.
+# Also checks the LEGACY product's key so pre-rename installs
+# ("SDK Version Control") upgrade in place instead of a second copy.
 Function SkipDirIfInstalled
     ReadRegStr $0 HKLM "${UNINST_KEY}" "InstallLocation"
+    ${If} $0 == ""
+        ReadRegStr $0 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
+    ${EndIf}
     ${If} $0 != ""
         StrCpy $INSTDIR $0
         Abort
@@ -102,12 +115,23 @@ Section
 
     # Kill any running instance of the app before overwriting the binary.
     # Windows locks a running .exe; without this, the File step fails.
+    # Also kill the LEGACY executable name: pre-rename installs run
+    # SDKVersionControl.exe, which would lock files in the same directory.
     ExecWait 'taskkill /F /IM "${PRODUCT_EXECUTABLE}" /T' $0
+    ExecWait 'taskkill /F /IM "${LEGACY_EXECUTABLE}" /T' $0
 
     # Backup the previous version before overwriting (for manual rollback).
     IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}" 0 skipBackup
         CopyFiles /SILENT "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.bak"
     skipBackup:
+
+    # Rename migration: an in-place upgrade from the legacy product leaves
+    # SDKVersionControl.exe in the directory; move it aside (rollback backup)
+    # so only the new svc.exe remains after wails.files installs it.
+    IfFileExists "$INSTDIR\${LEGACY_EXECUTABLE}" 0 skipLegacyBackup
+        CopyFiles /SILENT "$INSTDIR\${LEGACY_EXECUTABLE}" "$INSTDIR\${LEGACY_EXECUTABLE}.bak"
+        Delete "$INSTDIR\${LEGACY_EXECUTABLE}"
+    skipLegacyBackup:
 
     SetOutPath $INSTDIR
 
@@ -132,12 +156,24 @@ Section
 
     # Write InstallLocation so the next upgrade can detect + skip the dir page.
     WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
+
+    # Rename migration cleanup: if the legacy product was installed at this
+    # same location, drop its now-stale uninstall entry and shortcuts so
+    # Apps & Features does not list both products. (If the legacy install
+    # lives elsewhere, its own entry/uninstaller stays untouched.)
+    ReadRegStr $1 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
+    ${If} $1 == "$INSTDIR"
+        DeleteRegKey HKLM "${LEGACY_UNINST_KEY}"
+        Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
+        Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
+    ${EndIf}
 SectionEnd
 
 Section "uninstall"
     !insertmacro wails.setShellContext
 
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
+    RMDir /r "$AppData\${LEGACY_EXECUTABLE}" # Legacy (pre-rename) WebView2 DataPath
 
     RMDir /r $INSTDIR
 

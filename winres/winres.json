@@ -18,12 +18,12 @@
           "0409": {
             "Comments": "",
             "CompanyName": "",
-            "FileDescription": "SDK Version Control",
+            "FileDescription": "svc",
             "FileVersion": "1.1.1.0",
-            "InternalName": "SDKVersionControl",
+            "InternalName": "svc",
             "LegalCopyright": "MIT License",
-            "OriginalFilename": "SDKVersionControl.exe",
-            "ProductName": "SDK Version Control",
+            "OriginalFilename": "svc.exe",
+            "ProductName": "svc",
             "ProductVersion": "1.1.1.0"
           }
         }

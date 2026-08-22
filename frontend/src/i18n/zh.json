@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "SDK Version Control",
+    "title": "svc",
     "configured": "已配置",
     "notConfigured": "未配置",
     "inPathOnly": "仅在 PATH 中",

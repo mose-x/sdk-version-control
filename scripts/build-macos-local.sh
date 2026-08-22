@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local MDM-Mac build wrapper for SDK Version Control.
+# Local MDM-Mac build wrapper for svc.
 #
 # Usage:   ./scripts/build-macos-local.sh <version> [arch]
 #   version:  release version, e.g. 1.1.1

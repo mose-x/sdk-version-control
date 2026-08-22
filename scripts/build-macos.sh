@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build the macOS .app, DMG, and self-update .bin for SDK Version Control.
+# Build the macOS .app, DMG, and self-update .bin for svc.
 #
 # Usage:   ./scripts/build-macos.sh <version> [arch]
 #   version:  release version, e.g. 1.1.0
 #   arch:     amd64 | arm64  (default: native GOARCH)
 #
 # Produces in build/bin/:
-#   SDKVersionControl-<ver>-macos-<x64|arm64>.dmg   (first-install)
-#   SDKVersionControl-<ver>-macos-<x64|arm64>.bin   (in-app self-update)
+#   svc-<ver>-macos-<x64|arm64>.dmg   (first-install)
+#   svc-<ver>-macos-<x64|arm64>.bin   (in-app self-update)
 #
 # Prereqs: Go 1.25+, Node 18+, Wails CLI, jq, create-dmg (brew), Pillow (pip3).
 # macOS-only: hdiutil/create-dmg/iconutil/sips are macOS tools.
@@ -25,7 +25,7 @@ case "$ARCH" in
   *) echo "unsupported arch: $ARCH (want amd64|arm64)" >&2; exit 1 ;;
 esac
 
-APP="build/bin/SDK Version Control.app"
+APP="build/bin/svc.app"
 
 # --- Bump about.json so the binary reports the correct version to CheckUpdate.
 jq --arg v "$VERSION" '.version = $v' about.json > about.json.tmp && mv about.json.tmp about.json
@@ -48,7 +48,7 @@ trap '[ -n "$VERSION" ] && git checkout about.json wails.json 2>/dev/null' EXIT
 # must be current (commit refreshed bindings before changing Go App methods).
 WAILS_FLAGS=""
 [ "${SVC_SKIP_BINDINGS:-0}" = "1" ] && WAILS_FLAGS="-skipbindings"
-wails build $WAILS_FLAGS -platform "darwin/$ARCH" -o SDKVersionControl
+wails build $WAILS_FLAGS -platform "darwin/$ARCH" -o svc
 
 # Strip the ad-hoc signature Wails/Go applies to the .app. An ad-hoc-signed
 # .app under Gatekeeper (browser quarantine) shows "damaged" with no
@@ -60,7 +60,7 @@ wails build $WAILS_FLAGS -platform "darwin/$ARCH" -o SDKVersionControl
 # signature to the inner binary at exec time, so stripping it is safe (the
 # binary still runs). See note/t.md.
 codesign --remove-signature "$APP" 2>/dev/null || true
-codesign --remove-signature "$APP/Contents/MacOS/SDKVersionControl" 2>/dev/null || true
+codesign --remove-signature "$APP/Contents/MacOS/svc" 2>/dev/null || true
 
 # --- Apply rounded desktop icon (Dock/Launchpad readability).
 ICONSET="$(mktemp -d)/icon.iconset"
@@ -116,7 +116,7 @@ hint_font = load_font(14)
 small_font = load_font(12)
 cx = w / 2
 
-draw.text((cx, 40), "SDK Version Control", fill=(30, 30, 46, 255),
+draw.text((cx, 40), "svc", fill=(30, 30, 46, 255),
           font=title_font, anchor="mm")
 draw.text((cx, 130),
           "Drag the app icon to the Applications folder on the right",
@@ -134,15 +134,15 @@ draw.text((cx, 320), 'Right-click the app  ->  Open  ->  "Open"',
 img.save(os.environ["BG_PATH"])
 PYEOF
 
-DMG_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.dmg"
+DMG_NAME="svc-${VERSION}-macos-${ASSET_ARCH}.dmg"
 create-dmg \
-  --volname "SDK Version Control" \
+  --volname "svc" \
   --background "$BG_PATH" \
   --window-pos 200 120 \
   --window-size 660 400 \
   --icon-size 100 \
   --app-drop-link 480 200 \
-  --icon "SDK Version Control.app" 180 200 \
+  --icon "svc.app" 180 200 \
   --no-internet-enable \
   "build/bin/${DMG_NAME}" \
   "$APP"
@@ -159,8 +159,8 @@ xattr -w com.apple.quarantine "0083;00000000;SVC;|com.mose-x.sdkversioncontrol" 
 # --- Extract bare inner binary for in-app self-update.
 # ApplyUpdate swaps the executable inside the existing .app bundle, not the
 # bundle itself, so ship the inner binary as a separate .bin asset.
-BIN_NAME="SDKVersionControl-${VERSION}-macos-${ASSET_ARCH}.bin"
-cp "$APP/Contents/MacOS/SDKVersionControl" "build/bin/${BIN_NAME}"
+BIN_NAME="svc-${VERSION}-macos-${ASSET_ARCH}.bin"
+cp "$APP/Contents/MacOS/svc" "build/bin/${BIN_NAME}"
 
 echo
 echo "Built:"

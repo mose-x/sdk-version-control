@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Build the Linux bare binary, .deb, and .rpm for SDK Version Control.
+# Build the Linux bare binary, .deb, and .rpm for svc.
 #
 # Usage:   ./scripts/build-linux.sh <version> [arch]
 #   version:  release version, e.g. 1.1.0
 #   arch:     amd64 | arm64  (default: native GOARCH)
 #
 # Produces in build/bin/:
-#   SDKVersionControl-<ver>-linux-<x64|arm64>          (self-update)
-#   SDKVersionControl-<ver>-linux-<x64|arm64>.deb      (first-install)
-#   SDKVersionControl-<ver>-linux-<x64|arm64>.rpm
+#   svc-<ver>-linux-<x64|arm64>          (self-update)
+#   svc-<ver>-linux-<x64|arm64>.deb      (first-install)
+#   svc-<ver>-linux-<x64|arm64>.rpm
 #
 # Prereqs: Go 1.25+, Node 18+, Wails CLI, jq, fpm (ruby gem),
 #   libgtk-3-dev libwebkit2gtk-4.0-dev libayatana-appindicator3-dev librsvg2-dev,
@@ -61,23 +61,23 @@ trap '[ -n "$VERSION" ] && git checkout about.json wails.json 2>/dev/null' EXIT
 
 # --- Build the bare binary.
 # -o sets the exact output name (wails does NOT append an arch suffix when
-# -o is given), so build/bin/SDKVersionControl is ready to rename as-is.
-wails build -platform "linux/$ARCH" -o SDKVersionControl
-ASSET_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}"
-mv "build/bin/SDKVersionControl" "build/bin/${ASSET_NAME}"
+# -o is given), so build/bin/svc is ready to rename as-is.
+wails build -platform "linux/$ARCH" -o svc
+ASSET_NAME="svc-${VERSION}-linux-${ASSET_ARCH}"
+mv "build/bin/svc" "build/bin/${ASSET_NAME}"
 
 # --- Build .deb and .rpm with a .desktop entry + hicolor icons so the app
 # shows up in application launchers with a proper icon.
-DEB_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}.deb"
-RPM_NAME="SDKVersionControl-${VERSION}-linux-${ASSET_ARCH}.rpm"
+DEB_NAME="svc-${VERSION}-linux-${ASSET_ARCH}.deb"
+RPM_NAME="svc-${VERSION}-linux-${ASSET_ARCH}.rpm"
 STAGING="$(mktemp -d)"
 mkdir -p "$STAGING/share/applications"
 cat > "$STAGING/share/applications/sdkversioncontrol.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
-Name=SDK Version Control
+Name=svc
 Comment=Manage SDK versions in one place
-Exec=/usr/bin/SDKVersionControl
+Exec=/usr/bin/svc
 Icon=sdkversioncontrol
 Terminal=false
 Categories=Development;
@@ -90,25 +90,25 @@ for sz in 16 32 48 64 128 256 512; do
 done
 
 fpm -s dir -t deb \
-  -n SDKVersionControl -v "${VERSION}" -a "${DEB_ARCH}" \
+  -n svc -v "${VERSION}" -a "${DEB_ARCH}" \
   --depends libgtk-3-0 \
   --depends libwebkit2gtk-4.0-37 \
   --depends libayatana-appindicator3-1 \
   --depends librsvg2-2 \
-  --description "SDK Version Control" \
+  --description "svc" \
   -p "build/bin/${DEB_NAME}" \
-  "build/bin/${ASSET_NAME}=/usr/bin/SDKVersionControl" \
+  "build/bin/${ASSET_NAME}=/usr/bin/svc" \
   "$STAGING/share/=/usr/share/"
 
 fpm -s dir -t rpm \
-  -n SDKVersionControl -v "${VERSION}" -a "${RPM_ARCH}" \
+  -n svc -v "${VERSION}" -a "${RPM_ARCH}" \
   --depends gtk3 \
   --depends webkit2gtk3 \
   --depends libayatana-appindicator3 \
   --depends librsvg2 \
-  --description "SDK Version Control" \
+  --description "svc" \
   -p "build/bin/${RPM_NAME}" \
-  "build/bin/${ASSET_NAME}=/usr/bin/SDKVersionControl" \
+  "build/bin/${ASSET_NAME}=/usr/bin/svc" \
   "$STAGING/share/=/usr/share/"
 
 echo
