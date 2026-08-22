@@ -51,16 +51,18 @@ func TestProjectNSI_UpgradeInPlace(t *testing.T) {
 		{"taskkill running app", `taskkill /F /IM "${PRODUCT_EXECUTABLE}"`},
 		{"CopyFiles backup", `CopyFiles /SILENT "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.bak"`},
 		{"InstallLocation write to registry", `WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"`},
-		// Rename migration (SDK Version Control -> svc): upgrades from the
-		// pre-rename product must happen in place, not as a second install.
+		// Rename migration (SDK Version Control -> svc): legacy installs are
+		// fully retired into the fresh directory (no in-place reuse of the
+		// old folder), so folder/shortcuts/registry all carry the new name.
 		{"legacy product name define", `!define LEGACY_PRODUCTNAME "SDK Version Control"`},
-		{"legacy executable define", `!define LEGACY_EXECUTABLE  "SDKVersionControl.exe"`},
+		{"legacy executable define", `!define LEGACY_EXECUTABLE  "SDK Version Control.exe"`},
 		{"legacy uninstall key define", `!define LEGACY_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${INFO_COMPANYNAME}${LEGACY_PRODUCTNAME}"`},
-		{"legacy InstallLocation fallback", `ReadRegStr $0 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"`},
 		{"taskkill legacy executable", `taskkill /F /IM "${LEGACY_EXECUTABLE}"`},
-		{"legacy exe removal on upgrade", `Delete "$INSTDIR\${LEGACY_EXECUTABLE}"`},
+		{"legacy shortcuts removal", `Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"`},
 		{"legacy uninstall key cleanup", `DeleteRegKey HKLM "${LEGACY_UNINST_KEY}"`},
 		{"legacy WebView2 datapath cleanup", `RMDir /r "$AppData\${LEGACY_EXECUTABLE}"`},
+		{"legacy directory removal", `RMDir /r "$1"`},
+		{"same-dir guard for legacy removal", `${If} $1 != "$INSTDIR"`},
 	}
 
 	for _, c := range checks {
