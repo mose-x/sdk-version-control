@@ -1,4 +1,4 @@
-package main
+package storage
 
 import (
 	"fmt"
@@ -78,16 +78,16 @@ func validateMigrationPaths(oldDir, newDir string) error {
 	return nil
 }
 
-func (a *App) GetDefaultInstallPath() string {
+func (m *Manager) GetDefaultInstallPath() string {
 	return config.DefaultSvcDir()
 }
 
-func (a *App) GetInstallPath() string {
-	return a.cfg.SvcDir()
+func (m *Manager) GetInstallPath() string {
+	return m.cfg.SvcDir()
 }
 
-func (a *App) MigrateInstallPath(newPath string) error {
-	oldDir := a.cfg.SvcDir()
+func (m *Manager) MigrateInstallPath(newPath string) error {
+	oldDir := m.cfg.SvcDir()
 	newDir := filepath.Clean(newPath)
 
 	// N2: Reject system directories and relative paths.
@@ -131,7 +131,7 @@ func (a *App) MigrateInstallPath(newPath string) error {
 
 	installedSDKs := make(map[string]string)
 	for _, sdkType := range sdk.AllSdkTypes() {
-		activeVersion := a.cfg.GetActiveVersion(string(sdkType))
+		activeVersion := m.cfg.GetActiveVersion(string(sdkType))
 		if activeVersion != "" {
 			installedSDKs[string(sdkType)] = activeVersion
 		}
@@ -140,27 +140,27 @@ func (a *App) MigrateInstallPath(newPath string) error {
 	// Switch the config to the new directory. The shell rc source line points
 	// to the fixed ~/.svc.rc location, so it never needs updating; only the
 	// SVC_HOME variable inside .svc.rc changes.
-	a.cfg.SetSvcDir(newDir)
+	m.cfg.SetSvcDir(newDir)
 
 	// Re-run shim setup at the new location: recreates the shims dir, refreshes
 	// the shim binary, and regenerates .svc.rc with the new SVC_HOME.
-	if err := a.shimMgr.EnsureSetup(); err != nil {
+	if err := m.shimMgr.EnsureSetup(); err != nil {
 		logger.Error("Shim setup at new location failed, aborting migration: %v", err)
 		os.RemoveAll(newDir)
-		a.cfg.SetSvcDir(oldDir) // revert in-memory cfg so app keeps working until restart
+		m.cfg.SetSvcDir(oldDir) // revert in-memory cfg so app keeps working until restart
 		return fmt.Errorf("shim setup failed at new location: %w", err)
 	}
 
 	// Re-create shims for every active SDK at the new install path.
 	logger.Info("Re-configuring %d active SDKs at new location", len(installedSDKs))
 	for sdkTypeStr, activeVersion := range installedSDKs {
-		f := a.registry.Get(sdk.SdkType(sdkTypeStr))
+		f := m.registry.Get(sdk.SdkType(sdkTypeStr))
 		if f == nil {
 			continue
 		}
-		versionDir := a.cfg.SdkVersionDir(sdkTypeStr, activeVersion)
+		versionDir := m.cfg.SdkVersionDir(sdkTypeStr, activeVersion)
 		logger.Info("Re-configuring: %s %s", sdkTypeStr, activeVersion)
-		if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
+		if err := m.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 			logger.Warn("Failed to re-configure %s: %v", sdkTypeStr, err)
 		}
 	}
@@ -170,9 +170,9 @@ func (a *App) MigrateInstallPath(newPath string) error {
 	// If oldDir was ~/.svc itself, RemoveAll would delete settings.json;
 	// saving first ensures the new path is recorded even if deletion fails.
 	// If oldDir != ~/.svc, settings.json is untouched by RemoveAll.
-	s := a.settings.Get()
+	s := m.settings.Get()
 	s.InstallPath = newDir
-	if err := a.settings.Update(s); err != nil {
+	if err := m.settings.Update(s); err != nil {
 		// M4: Do NOT RemoveAll the old directory if persisting the new install
 		// path failed. The new path must be recorded in settings.json before
 		// the old dir is deleted; otherwise a restart would fall back to the
@@ -183,8 +183,8 @@ func (a *App) MigrateInstallPath(newPath string) error {
 		// location. Restore cfg first, then re-run shim setup at the old
 		// location so PATH / .svc.rc point back at the surviving install
 		// (mirrors the rollback in the EnsureSetup failure branch above).
-		a.cfg.SetSvcDir(oldDir)
-		if rbErr := a.shimMgr.EnsureSetup(); rbErr != nil {
+		m.cfg.SetSvcDir(oldDir)
+		if rbErr := m.shimMgr.EnsureSetup(); rbErr != nil {
 			logger.Error("Failed to restore shim setup at old directory %s: %v", oldDir, rbErr)
 		}
 		// Clean up the copied-but-unpersisted newDir so a retry is not
@@ -209,7 +209,7 @@ func (a *App) MigrateInstallPath(newPath string) error {
 
 	// H4: If oldDir was ~/.svc itself, RemoveAll deleted settings.json.
 	// Re-create it at the fixed ~/.svc/ location with the new InstallPath.
-	if err := a.settings.Update(s); err != nil {
+	if err := m.settings.Update(s); err != nil {
 		logger.Error("Failed to re-create settings after migration: %v", err)
 	}
 

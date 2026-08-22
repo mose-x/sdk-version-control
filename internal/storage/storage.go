@@ -1,14 +1,33 @@
-package main
+package storage
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/logger"
+	"sdk_version_control/internal/pathmgr"
 	"sdk_version_control/internal/sdk"
+	"sdk_version_control/internal/shimmanager"
 )
+
+// Manager owns the SVC on-disk data lifecycle: version uninstall, storage
+// accounting, cache cleaning, and install-path migration.
+type Manager struct {
+	cfg      *config.Config
+	registry *sdk.Registry
+	pathMgr  pathmgr.PathManager
+	shimMgr  *shimmanager.Manager
+	settings *config.SettingsManager
+}
+
+// NewManager wires a Manager with its dependencies. registry/pathMgr/shimMgr/
+// settings may be nil in unit tests that only exercise cfg-backed paths.
+func NewManager(cfg *config.Config, registry *sdk.Registry, pathMgr pathmgr.PathManager, shimMgr *shimmanager.Manager, settings *config.SettingsManager) *Manager {
+	return &Manager{cfg: cfg, registry: registry, pathMgr: pathMgr, shimMgr: shimMgr, settings: settings}
+}
 
 type StorageInfo struct {
 	SdkType      string `json:"sdkType"`
@@ -19,7 +38,7 @@ type StorageInfo struct {
 	ActiveVer    string `json:"activeVer"`
 }
 
-func (a *App) UninstallVersion(sdkType string, version string) error {
+func (m *Manager) UninstallVersion(sdkType string, version string) error {
 	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return err
 	}
@@ -29,10 +48,10 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 
 	logger.Info("Uninstalling %s version: %s", sdkType, version)
 
-	active := a.cfg.GetActiveVersion(sdkType)
+	active := m.cfg.GetActiveVersion(sdkType)
 	wasActive := active == version
 
-	versionDir := a.cfg.SdkVersionDir(sdkType, version)
+	versionDir := m.cfg.SdkVersionDir(sdkType, version)
 	if _, err := os.Stat(versionDir); os.IsNotExist(err) {
 		logger.Error("Version directory does not exist: %s", versionDir)
 		return fmt.Errorf("version directory does not exist: %s", version)
@@ -46,7 +65,7 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 	// If we deleted the active version, clear the active version config
 	if wasActive {
 		logger.Info("Deleted active version, clearing active version config")
-		if err := a.cfg.ClearActiveVersion(sdkType); err != nil {
+		if err := m.cfg.ClearActiveVersion(sdkType); err != nil {
 			logger.Error("Failed to clear active version config: %v", err)
 		}
 	}
@@ -66,12 +85,12 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 	// read failure as "0 remaining". A transient read error (permission,
 	// path is a file, ...) must NOT trigger shim teardown, otherwise
 	// installed-but-unreadable SDKs lose their shims.
-	left, err := a.noVersionsLeft(sdkType)
+	left, err := m.noVersionsLeft(sdkType)
 	if err != nil {
 		logger.Warn("Failed to check remaining versions for %s, skipping shim teardown: %v", sdkType, err)
 	} else if left {
-		extraEnvVars := a.getExtraEnvVars(sdkType)
-		if err := a.pathMgr.RemoveSdk(sdkType, extraEnvVars); err != nil {
+		extraEnvVars := m.getExtraEnvVars(sdkType)
+		if err := m.pathMgr.RemoveSdk(sdkType, extraEnvVars); err != nil {
 			logger.Warn("Failed to remove shims for %s: %v", sdkType, err)
 		}
 	}
@@ -95,8 +114,8 @@ func (a *App) UninstallVersion(sdkType string, version string) error {
 // file, ...) is propagated; callers must NOT treat it as "0 remaining" or
 // they would wrongly tear down shims for SDKs whose versions are merely
 // unreadable.
-func (a *App) noVersionsLeft(sdkType string) (bool, error) {
-	remaining, err := a.cfg.GetInstalledVersions(sdkType)
+func (m *Manager) noVersionsLeft(sdkType string) (bool, error) {
+	remaining, err := m.cfg.GetInstalledVersions(sdkType)
 	if err != nil {
 		return false, err
 	}
@@ -106,21 +125,21 @@ func (a *App) noVersionsLeft(sdkType string) (bool, error) {
 // getExtraEnvVars returns the extra env vars (JAVA_HOME, GOROOT, ...) declared
 // by the SDK fetcher, mirroring the InstallSdk/ImportPathSdk call sites so the
 // RemoveSdk path stays symmetric with the ConfigureSdk path.
-func (a *App) getExtraEnvVars(sdkType string) map[string]string {
-	if a.registry == nil {
+func (m *Manager) getExtraEnvVars(sdkType string) map[string]string {
+	if m.registry == nil {
 		return nil
 	}
-	f := a.registry.Get(sdk.SdkType(sdkType))
+	f := m.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
 		return nil
 	}
 	return f.GetExtraEnvVars()
 }
 
-func (a *App) GetStorageInfo() []StorageInfo {
+func (m *Manager) GetStorageInfo() []StorageInfo {
 	var infos []StorageInfo
 	for _, t := range sdk.AllSdkTypes() {
-		sdkDir := a.cfg.SdkDir(string(t))
+		sdkDir := m.cfg.SdkDir(string(t))
 		entries, err := os.ReadDir(sdkDir)
 		if err != nil {
 			continue
@@ -142,19 +161,19 @@ func (a *App) GetStorageInfo() []StorageInfo {
 				SdkDir:       sdkDir,
 				TotalSize:    totalSize,
 				VersionCount: versionCount,
-				ActiveVer:    a.cfg.GetActiveVersion(string(t)),
+				ActiveVer:    m.cfg.GetActiveVersion(string(t)),
 			})
 		}
 	}
 	return infos
 }
 
-func (a *App) GetTmpCacheSize() int64 {
-	return dirSize(a.cfg.TmpDir())
+func (m *Manager) GetTmpCacheSize() int64 {
+	return dirSize(m.cfg.TmpDir())
 }
 
-func (a *App) CleanTmpCache() error {
-	tmpDir := a.cfg.TmpDir()
+func (m *Manager) CleanTmpCache() error {
+	tmpDir := m.cfg.TmpDir()
 	entries, err := os.ReadDir(tmpDir)
 	if err != nil {
 		logger.Error("Failed to read cache directory %s: %v", tmpDir, err)
@@ -177,13 +196,13 @@ func (a *App) CleanTmpCache() error {
 	return nil
 }
 
-func (a *App) CleanInactiveVersions(sdkType string) error {
+func (m *Manager) CleanInactiveVersions(sdkType string) error {
 	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return err
 	}
 
-	active := a.cfg.GetActiveVersion(sdkType)
-	sdkDir := a.cfg.SdkDir(sdkType)
+	active := m.cfg.GetActiveVersion(sdkType)
+	sdkDir := m.cfg.SdkDir(sdkType)
 	entries, err := os.ReadDir(sdkDir)
 	if err != nil {
 		logger.Error("Failed to read directory %s: %v", sdkDir, err)
@@ -210,10 +229,10 @@ func (a *App) CleanInactiveVersions(sdkType string) error {
 	// as in UninstallVersion: orphan shims keep PathConfigured=true and
 	// resolve to "no active version" at run time.
 	// M7: on read error, do NOT tear down shims (cannot confirm zero left).
-	left, err := a.noVersionsLeft(sdkType)
+	left, err := m.noVersionsLeft(sdkType)
 	if cleaned > 0 && err == nil && left {
-		extraEnvVars := a.getExtraEnvVars(sdkType)
-		if err := a.pathMgr.RemoveSdk(sdkType, extraEnvVars); err != nil {
+		extraEnvVars := m.getExtraEnvVars(sdkType)
+		if err := m.pathMgr.RemoveSdk(sdkType, extraEnvVars); err != nil {
 			logger.Warn("Failed to remove shims for %s: %v", sdkType, err)
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"sdk_version_control/internal/sdk"
 	"sdk_version_control/internal/settings"
 	"sdk_version_control/internal/shimmanager"
+	"sdk_version_control/internal/storage"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -50,6 +51,7 @@ type App struct {
 	settings     *config.SettingsManager
 	proxySvc     *proxy.Service
 	settingsSvc  *settings.Service
+	storageMgr   *storage.Manager
 	appInfo      AppInfo
 	cancelMu     sync.Mutex
 	cancelFuncs  map[string]cancelEntry
@@ -122,6 +124,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.registry = sdk.NewRegistry(a.cfg, a.settings)
 	logger.Info("SDK registry initialized with %d SDK types", len(a.registry.All()))
+	a.storageMgr = storage.NewManager(a.cfg, a.registry, a.pathMgr, a.shimMgr, a.settings)
 
 	// Seed ~/.svc/mirrors.json (the editable "easter egg" GitHub mirror list)
 	// and point the version cache at ~/.svc/cache. Both must be (re)initialised
@@ -236,4 +239,44 @@ func (a *App) DeleteLogFile(filename string) error {
 // GetLogDir returns the active log directory.
 func (a *App) GetLogDir() string {
 	return logmgr.GetLogDir()
+}
+
+// UninstallVersion deletes an installed SDK version.
+func (a *App) UninstallVersion(sdkType string, version string) error {
+	return a.storageMgr.UninstallVersion(sdkType, version)
+}
+
+// GetStorageInfo reports per-SDK disk usage.
+func (a *App) GetStorageInfo() []storage.StorageInfo {
+	return a.storageMgr.GetStorageInfo()
+}
+
+// GetTmpCacheSize reports the temp cache size in bytes.
+func (a *App) GetTmpCacheSize() int64 {
+	return a.storageMgr.GetTmpCacheSize()
+}
+
+// CleanTmpCache empties the temp cache directory.
+func (a *App) CleanTmpCache() error {
+	return a.storageMgr.CleanTmpCache()
+}
+
+// CleanInactiveVersions removes all non-active versions of an SDK.
+func (a *App) CleanInactiveVersions(sdkType string) error {
+	return a.storageMgr.CleanInactiveVersions(sdkType)
+}
+
+// GetDefaultInstallPath returns the default install path.
+func (a *App) GetDefaultInstallPath() string {
+	return a.storageMgr.GetDefaultInstallPath()
+}
+
+// GetInstallPath returns the current install path.
+func (a *App) GetInstallPath() string {
+	return a.storageMgr.GetInstallPath()
+}
+
+// MigrateInstallPath moves the SVC install to a new directory.
+func (a *App) MigrateInstallPath(newPath string) error {
+	return a.storageMgr.MigrateInstallPath(newPath)
 }

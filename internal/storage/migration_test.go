@@ -1,4 +1,4 @@
-package main
+package storage
 
 import (
 	"os"
@@ -85,7 +85,7 @@ func TestMigrateInstallPath_RejectsExistingFile(t *testing.T) {
 
 	cfg := &config.Config{}
 	cfg.SetSvcDir(oldDir)
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 
 	err := app.MigrateInstallPath(target)
 	if err == nil {
@@ -116,7 +116,7 @@ func TestMigrateInstallPath_RejectsNestedTarget(t *testing.T) {
 
 	cfg := &config.Config{}
 	cfg.SetSvcDir(oldDir)
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 
 	err := app.MigrateInstallPath(filepath.Join(oldDir, "nested"))
 	if err == nil {
@@ -145,6 +145,58 @@ func TestIsSystemPath_AllowsTempDir(t *testing.T) {
 	} else {
 		if !isSystemPath("/usr") {
 			t.Error("/usr must be a system path")
+		}
+	}
+}
+func TestIsSystemPath(t *testing.T) {
+	// Relative paths should be rejected by migration (H1 fix), but isSystemPath
+	// itself only checks system dirs — the IsAbs check is separate.
+	if runtime.GOOS == "windows" {
+		systemPaths := []string{`C:\Windows`, `C:\Windows\System32`, `C:\Program Files`, `c:\program files (x86)`, `C:\ProgramData\foo`}
+		for _, p := range systemPaths {
+			if !isSystemPath(p) {
+				t.Errorf("isSystemPath(%q) = false; want true", p)
+			}
+		}
+		validPaths := []string{`C:\Users\mose\.svc`, `D:\SDKs`, `C:\dev\sdk-version-control`}
+		for _, p := range validPaths {
+			if isSystemPath(p) {
+				t.Errorf("isSystemPath(%q) = true; want false", p)
+			}
+		}
+	} else {
+		systemPaths := []string{"/usr", "/usr/local", "/bin", "/etc", "/var/log", "/sbin", "/boot"}
+		for _, p := range systemPaths {
+			if !isSystemPath(p) {
+				t.Errorf("isSystemPath(%q) = false; want true", p)
+			}
+		}
+		validPaths := []string{"/home/user/.svc", "/opt/sdks", "/Users/mose/.svc"}
+		for _, p := range validPaths {
+			if isSystemPath(p) {
+				t.Errorf("isSystemPath(%q) = true; want false", p)
+			}
+		}
+	}
+}
+
+func TestFilePathIsAbs(t *testing.T) {
+	var absPaths, relPaths []string
+	if runtime.GOOS == "windows" {
+		absPaths = []string{`C:\Users\mose\.svc`, `D:\SDKs`, `C:\dev`}
+		relPaths = []string{"foo", `..\bar`, `.\baz`, ""}
+	} else {
+		absPaths = []string{"/usr/local", "/home/user/.svc", "/opt/sdks"}
+		relPaths = []string{"foo", "../bar", "./baz", ""}
+	}
+	for _, p := range absPaths {
+		if !filepath.IsAbs(p) {
+			t.Errorf("filepath.IsAbs(%q) = false; want true", p)
+		}
+	}
+	for _, p := range relPaths {
+		if filepath.IsAbs(p) {
+			t.Errorf("filepath.IsAbs(%q) = true; want false", p)
 		}
 	}
 }

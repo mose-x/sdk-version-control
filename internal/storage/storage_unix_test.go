@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package storage
 
 import (
 	"os"
@@ -35,7 +35,7 @@ func TestCleanTmpCache_RemoveError(t *testing.T) {
 
 	cfg := &config.Config{}
 	cfg.SetSvcDir(dir)
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 	if err := app.CleanTmpCache(); err == nil {
 		t.Fatal("expected error when a cache entry cannot be removed, got nil")
 	}

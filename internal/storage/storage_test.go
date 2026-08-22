@@ -1,4 +1,4 @@
-package main
+package storage
 
 import (
 	"os"
@@ -14,7 +14,7 @@ import (
 func TestNoVersionsLeft_MissingDir(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.SetSvcDir(t.TempDir())
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 	left, err := app.noVersionsLeft("nodejs")
 	if err != nil {
 		t.Fatalf("expected no error for missing dir (IsNotExist), got %v", err)
@@ -33,7 +33,7 @@ func TestNoVersionsLeft_WithVersions(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "nodejs", "v18.0.0"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 	left, err := app.noVersionsLeft("nodejs")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -68,7 +68,7 @@ func TestNoVersionsLeft_ReadErrorPropagates(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(sdkDir, 0755) }) // restore so TempDir cleanup works
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 	left, err := app.noVersionsLeft("nodejs")
 	if err == nil {
 		t.Fatalf("expected an error for unreadable dir, got nil; left=%v", left)
@@ -95,7 +95,7 @@ func TestCleanTmpCache_RemovesEntries(t *testing.T) {
 
 	cfg := &config.Config{}
 	cfg.SetSvcDir(dir)
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 	if err := app.CleanTmpCache(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestCleanTmpCache_EmptyDir(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.SetSvcDir(dir)
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 	if err := app.CleanTmpCache(); err != nil {
 		t.Fatalf("unexpected error for empty cache: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestCleanTmpCache_EmptyDir(t *testing.T) {
 func TestCleanTmpCache_MissingDir(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.SetSvcDir(filepath.Join(t.TempDir(), "no-such-svc"))
-	app := &App{cfg: cfg}
+	app := NewManager(cfg, nil, nil, nil, nil)
 	if err := app.CleanTmpCache(); err == nil {
 		t.Fatal("expected error for missing tmp dir, got nil")
 	}
