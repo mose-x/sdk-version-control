@@ -12,6 +12,7 @@ import (
 	"sdk_version_control/internal/downloader"
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/pathmgr"
+	"sdk_version_control/internal/proxy"
 	"sdk_version_control/internal/sdk"
 	"sdk_version_control/internal/shimmanager"
 
@@ -45,6 +46,7 @@ type App struct {
 	pathMgr      pathmgr.PathManager
 	shimMgr      *shimmanager.Manager
 	settings     *config.SettingsManager
+	proxySvc     *proxy.Service
 	appInfo      AppInfo
 	cancelMu     sync.Mutex
 	cancelFuncs  map[string]cancelEntry
@@ -92,9 +94,11 @@ func NewApp() *App {
 	pathMgr := pathmgr.NewPathManager(cfg)
 	pathMgr.SetShimManager(shimMgr)
 
+	settings := config.NewSettingsManager(cfg.HomeDir())
 	app := &App{
 		cfg:         cfg,
-		settings:    config.NewSettingsManager(cfg.HomeDir()),
+		settings:    settings,
+		proxySvc:    proxy.New(settings),
 		pathMgr:     pathMgr,
 		shimMgr:     shimMgr,
 		downloader:  downloader.NewDownloader(),
@@ -168,4 +172,9 @@ func (a *App) emitProgress(sdkType sdk.SdkType, version, stage string, percent i
 // GetPathEntries retrieves all PATH entries
 func (a *App) GetPathEntries() ([]pathmgr.PathEntry, error) {
 	return a.pathMgr.GetAllPathEntries()
+}
+
+// CheckProxy verifies that the configured proxy can reach the given URL.
+func (a *App) CheckProxy(targetURL string) error {
+	return a.proxySvc.CheckProxy(targetURL)
 }

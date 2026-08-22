@@ -80,7 +80,7 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 		return UpdateInfo{}, fmt.Errorf("update URL is not configured")
 	}
 
-	client := &http.Client{Transport: a.buildProxyTransport(), Timeout: 15 * time.Second}
+	client := &http.Client{Transport: a.proxySvc.BuildTransport(), Timeout: 15 * time.Second}
 
 	// updateUrl points at the GitHub Releases API
 	// (https://api.github.com/repos/<owner>/<repo>/releases/latest). To pick
@@ -92,7 +92,7 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	// by stripping the trailing "/latest" so the existing about.json updateUrl
 	// (ending in /latest) keeps working without a config change.
 	listURL := strings.TrimSuffix(a.appInfo.UpdateURL, "/latest")
-	mirroredURL := a.applyGithubMirror(listURL)
+	mirroredURL := a.proxySvc.ApplyGithubMirror(listURL)
 	token := sdk.DecodeGithubToken(a.settings)
 	useToken := token != "" && mirroredURL == listURL
 	listURL = mirroredURL
@@ -285,12 +285,12 @@ func (a *App) DownloadUpdate(downloadURL, expectedSha256 string) error {
 	if downloadURL == "" {
 		return fmt.Errorf("download URL is empty")
 	}
-	downloadURL = a.applyGithubMirror(downloadURL)
+	downloadURL = a.proxySvc.ApplyGithubMirror(downloadURL)
 
 	tmpPath := getUpdateFilePath()
 	os.Remove(tmpPath)
 
-	proxyCfg := a.getProxyConfig()
+	proxyCfg := a.proxySvc.Config()
 	threads := a.settings.Get().DownloadThreads
 	if threads <= 0 {
 		threads = 4

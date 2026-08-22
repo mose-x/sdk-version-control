@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"sdk_version_control/internal/config"
+	"sdk_version_control/internal/proxy"
 )
 
 func TestCheckUpdateSendsAuthorizationWhenTokenSet(t *testing.T) {
@@ -25,7 +26,7 @@ func TestCheckUpdateSendsAuthorizationWhenTokenSet(t *testing.T) {
 		t.Fatalf("sm.Update: %v", err)
 	}
 
-	app := &App{settings: sm, appInfo: AppInfo{UpdateURL: ts.URL + "/releases/latest"}}
+	app := &App{settings: sm, proxySvc: proxy.New(sm), appInfo: AppInfo{UpdateURL: ts.URL + "/releases/latest"}}
 	if _, err := app.CheckUpdate(); err != nil {
 		t.Fatalf("CheckUpdate returned error: %v", err)
 	}
@@ -43,7 +44,8 @@ func TestCheckUpdateOmitsAuthorizationWhenNoToken(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	app := &App{settings: config.NewSettingsManager(t.TempDir()), appInfo: AppInfo{UpdateURL: ts.URL + "/releases/latest"}}
+	sm := config.NewSettingsManager(t.TempDir())
+	app := &App{settings: sm, proxySvc: proxy.New(sm), appInfo: AppInfo{UpdateURL: ts.URL + "/releases/latest"}}
 	if _, err := app.CheckUpdate(); err != nil {
 		t.Fatalf("CheckUpdate returned error: %v", err)
 	}

@@ -145,7 +145,7 @@ func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
 // the version cache (memory + disk), and returns it. Used both by the
 // synchronous cache-miss path and by the background refresh goroutine.
 func (a *App) fetchAndCacheVersions(t sdk.SdkType, f sdk.VersionFetcher) ([]sdk.VersionInfo, error) {
-	proxyCfg := a.getProxyConfig()
+	proxyCfg := a.proxySvc.Config()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
 	// Serialize SetHTTPClient + the fetch that must observe it under the
@@ -220,7 +220,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	// used the bare constructor client and bypassed the user's proxy, so
 	// resolving the URL failed in proxy-only networks even though the actual
 	// file download (below) correctly used the proxy.
-	proxyCfg := a.getProxyConfig()
+	proxyCfg := a.proxySvc.Config()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
 	// Serialize SetHTTPClient + the call that must observe it under the
@@ -237,7 +237,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	if err := helpers.ValidatePathSegment(fileName); err != nil {
 		return fmt.Errorf("invalid download filename: %w", err)
 	}
-	downloadURL = a.applyGithubMirror(downloadURL)
+	downloadURL = a.proxySvc.ApplyGithubMirror(downloadURL)
 
 	tmpFile := filepath.Join(a.cfg.TmpDir(), fileName)
 	logger.Info("Download URL: %s", downloadURL)
@@ -521,7 +521,7 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 	}
 	// Same proxy injection as InstallSdk: GetDownloadURL may issue HTTP API
 	// calls that must honor the user's proxy configuration.
-	proxyCfg := a.getProxyConfig()
+	proxyCfg := a.proxySvc.Config()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
 	// Serialize SetHTTPClient + the call that must observe it under the
@@ -535,7 +535,7 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return a.applyGithubMirror(url), nil
+	return a.proxySvc.ApplyGithubMirror(url), nil
 }
 
 func (a *App) DetectPathVersion(sdkType string) string {
