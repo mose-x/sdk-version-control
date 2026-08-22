@@ -6,14 +6,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/downloader"
+	"sdk_version_control/internal/importer"
+	"sdk_version_control/internal/installer"
 	"sdk_version_control/internal/logger"
+	"sdk_version_control/internal/logmgr"
 	"sdk_version_control/internal/pathmgr"
+	"sdk_version_control/internal/pkgmgr"
+	"sdk_version_control/internal/proxy"
 	"sdk_version_control/internal/sdk"
+	"sdk_version_control/internal/settings"
 	"sdk_version_control/internal/shimmanager"
+	"sdk_version_control/internal/storage"
+	"sdk_version_control/internal/update"
+	"sdk_version_control/internal/wailsrt"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -21,22 +29,14 @@ import (
 //go:embed about.json
 var aboutJSON []byte
 
-// cancelEntry pairs a cancel func with a monotonic install ID so the deferred
-// cleanup in InstallSdk only deletes the map entry when it still belongs to
-// THIS install (not a newer concurrent install of the same SDK type).
-//
-// done is closed by the owning install's deferred cleanup when it has FULLY
-// exited. A newer InstallSdk for the same SDK cancels the old entry and then
-// waits (bounded) on done: without that wait the old download goroutine could
-// still be writing the shared tmp download file (or its deferred cleanup
-// could delete it) after the new install has re-created the same file.
-type cancelEntry struct {
-	cancel context.CancelFunc
-	id     uint64
-	done   chan struct{}
-}
+// errUninitialized is returned by bindings whose backing service is only
+// created in startup (registry-dependent). The message matches the original
+// inline error text.
+var errUninitialized = fmt.Errorf("application not fully initialized")
 
-// App struct - Wails bound core structure
+// App struct - Wails bound core structure. It is a thin facade: all business
+// logic lives in internal service packages; App wires them together and
+// exposes their methods to the Wails frontend.
 type App struct {
 	ctx          context.Context
 	cfg          *config.Config
@@ -45,37 +45,39 @@ type App struct {
 	pathMgr      pathmgr.PathManager
 	shimMgr      *shimmanager.Manager
 	settings     *config.SettingsManager
-	appInfo      AppInfo
-	cancelMu     sync.Mutex
-	cancelFuncs  map[string]cancelEntry
-	nextCancelID uint64
-
-	// fetcherMu guards fetcherLocks (NOT the fetchers themselves). The
-	// registry hands out shared fetcher singletons whose HTTP client is a
-	// bare field set via SetHTTPClient; the per-SDK mutexes returned by
-	// fetcherLock serialize "SetHTTPClient + the calls that must observe it"
-	// (FetchRemoteVersions / GetDownloadURL / FetchChecksum) so a background
-	// version refresh and an install of the same SDK cannot race on it.
-	fetcherMu    sync.Mutex
-	fetcherLocks map[string]*sync.Mutex
+	proxySvc     *proxy.Service
+	settingsSvc  *settings.Service
+	storageMgr   *storage.Manager
+	updater      *update.Updater
+	pkgmgrSvc    *pkgmgr.Service
+	installerSvc *installer.Service
+	importerSvc  *importer.Service
+	appInfo      update.AppInfo
 }
 
-// fetcherLock returns the per-SDK mutex used to serialize SetHTTPClient and
-// the HTTP calls that depend on it. Lazily initialized so tests can use a
-// bare &App{}.
-func (a *App) fetcherLock(key string) *sync.Mutex {
-	a.fetcherMu.Lock()
-	defer a.fetcherMu.Unlock()
-	if a.fetcherLocks == nil {
-		a.fetcherLocks = make(map[string]*sync.Mutex)
-	}
-	m, ok := a.fetcherLocks[key]
-	if !ok {
-		m = &sync.Mutex{}
-		a.fetcherLocks[key] = m
-	}
-	return m
+// runtimeAdapter implements wailsrt.Runtime on top of the Wails runtime so
+// the internal service packages stay free of any Wails dependency.
+type runtimeAdapter struct{ ctx context.Context }
+
+func (r *runtimeAdapter) Context() context.Context { return r.ctx }
+
+func (r *runtimeAdapter) EventsEmit(eventName string, data ...any) {
+	wailsRuntime.EventsEmit(r.ctx, eventName, data...)
 }
+
+func (r *runtimeAdapter) OpenFileDialog(title string, filters []wailsrt.FileFilter) (string, error) {
+	fs := make([]wailsRuntime.FileFilter, len(filters))
+	for i, f := range filters {
+		fs[i] = wailsRuntime.FileFilter{DisplayName: f.DisplayName, Pattern: f.Pattern}
+	}
+	return wailsRuntime.OpenFileDialog(r.ctx, wailsRuntime.OpenDialogOptions{Title: title, Filters: fs})
+}
+
+func (r *runtimeAdapter) OpenDirectoryDialog(title string) (string, error) {
+	return wailsRuntime.OpenDirectoryDialog(r.ctx, wailsRuntime.OpenDialogOptions{Title: title})
+}
+
+func (r *runtimeAdapter) Quit() { wailsRuntime.Quit(r.ctx) }
 
 // NewApp creates an App instance
 func NewApp() *App {
@@ -92,15 +94,17 @@ func NewApp() *App {
 	pathMgr := pathmgr.NewPathManager(cfg)
 	pathMgr.SetShimManager(shimMgr)
 
+	sm := config.NewSettingsManager(cfg.HomeDir())
 	app := &App{
 		cfg:         cfg,
-		settings:    config.NewSettingsManager(cfg.HomeDir()),
+		settings:    sm,
+		proxySvc:    proxy.New(sm),
+		settingsSvc: settings.New(sm),
 		pathMgr:     pathMgr,
 		shimMgr:     shimMgr,
 		downloader:  downloader.NewDownloader(),
-		cancelFuncs: make(map[string]cancelEntry),
 	}
-	app.loadAboutInfo()
+	app.appInfo = update.ParseAppInfo(aboutJSON)
 	return app
 }
 
@@ -114,6 +118,12 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.registry = sdk.NewRegistry(a.cfg, a.settings)
 	logger.Info("SDK registry initialized with %d SDK types", len(a.registry.All()))
+	a.storageMgr = storage.NewManager(a.cfg, a.registry, a.pathMgr, a.shimMgr, a.settings)
+	rt := &runtimeAdapter{ctx: ctx}
+	a.updater = update.NewUpdater(a.appInfo, a.settings, a.downloader, a.proxySvc, rt)
+	a.pkgmgrSvc = pkgmgr.New(a.cfg, a.registry)
+	a.installerSvc = installer.New(a.cfg, a.registry, a.downloader, a.pathMgr, a.shimMgr, a.settings, a.proxySvc, rt)
+	a.importerSvc = importer.New(a.cfg, a.registry, a.pathMgr, a.shimMgr, rt)
 
 	// Seed ~/.svc/mirrors.json (the editable "easter egg" GitHub mirror list)
 	// and point the version cache at ~/.svc/cache. Both must be (re)initialised
@@ -142,30 +152,272 @@ func (a *App) startup(ctx context.Context) {
 // shutdown called on application exit
 func (a *App) shutdown(ctx context.Context) {
 	logger.Info("Application shutting down...")
-	a.cancelMu.Lock()
-	for sdkType, entry := range a.cancelFuncs {
-		logger.Info("Cancelling ongoing install: %s", sdkType)
-		entry.cancel()
+	if a.installerSvc != nil {
+		a.installerSvc.CancelAll()
 	}
-	a.cancelMu.Unlock()
 	logger.Info("Application shutdown complete")
-}
-
-func (a *App) emitProgress(sdkType sdk.SdkType, version, stage string, percent int, message string, downloadedBytes, totalBytes, speedBytesPerSec int64, downloadURL string) {
-	wailsRuntime.EventsEmit(a.ctx, "install:progress", sdk.InstallProgress{
-		SdkType:          sdkType,
-		Version:          version,
-		Stage:            stage,
-		Percent:          percent,
-		Message:          message,
-		DownloadedBytes:  downloadedBytes,
-		TotalBytes:       totalBytes,
-		SpeedBytesPerSec: speedBytesPerSec,
-		DownloadURL:      downloadURL,
-	})
 }
 
 // GetPathEntries retrieves all PATH entries
 func (a *App) GetPathEntries() ([]pathmgr.PathEntry, error) {
 	return a.pathMgr.GetAllPathEntries()
+}
+
+// CheckProxy verifies that the configured proxy can reach the given URL.
+func (a *App) CheckProxy(targetURL string) error {
+	return a.proxySvc.CheckProxy(targetURL)
+}
+
+// GetSettings returns the settings with the GitHub token masked.
+func (a *App) GetSettings() config.AppSettings {
+	return a.settingsSvc.Get()
+}
+
+// SaveSettings persists a settings snapshot (owned fields are preserved).
+func (a *App) SaveSettings(s config.AppSettings) error {
+	return a.settingsSvc.Save(s)
+}
+
+// SaveGithubToken stores (or clears, when empty) the GitHub PAT.
+func (a *App) SaveGithubToken(token string) error {
+	return a.settingsSvc.SaveGithubToken(token)
+}
+
+// GetDefaultEndpoints lists the built-in endpoint presets.
+func (a *App) GetDefaultEndpoints() []sdk.EndpointInfo {
+	return a.settingsSvc.GetDefaultEndpoints()
+}
+
+// GetEndpoints returns the custom endpoint overrides.
+func (a *App) GetEndpoints() map[string]string {
+	return a.settingsSvc.GetEndpoints()
+}
+
+// SaveEndpoints replaces the custom endpoint overrides.
+func (a *App) SaveEndpoints(endpoints map[string]string) error {
+	return a.settingsSvc.SaveEndpoints(endpoints)
+}
+
+// GetLogFiles lists the application log files.
+func (a *App) GetLogFiles() ([]logger.LogFileInfo, error) {
+	return logmgr.GetLogFiles()
+}
+
+// GetLogContent returns the content of one log file.
+func (a *App) GetLogContent(filename string) (string, error) {
+	return logmgr.GetLogContent(filename)
+}
+
+// CleanLogs removes all log files.
+func (a *App) CleanLogs() error {
+	return logmgr.CleanLogs()
+}
+
+// DeleteLogFile removes a single log file.
+func (a *App) DeleteLogFile(filename string) error {
+	return logmgr.DeleteLogFile(filename)
+}
+
+// GetLogDir returns the active log directory.
+func (a *App) GetLogDir() string {
+	return logmgr.GetLogDir()
+}
+
+// UninstallVersion deletes an installed SDK version.
+func (a *App) UninstallVersion(sdkType string, version string) error {
+	return a.storageMgr.UninstallVersion(sdkType, version)
+}
+
+// GetStorageInfo reports per-SDK disk usage.
+func (a *App) GetStorageInfo() []storage.StorageInfo {
+	return a.storageMgr.GetStorageInfo()
+}
+
+// GetTmpCacheSize reports the temp cache size in bytes.
+func (a *App) GetTmpCacheSize() int64 {
+	return a.storageMgr.GetTmpCacheSize()
+}
+
+// CleanTmpCache empties the temp cache directory.
+func (a *App) CleanTmpCache() error {
+	return a.storageMgr.CleanTmpCache()
+}
+
+// CleanInactiveVersions removes all non-active versions of an SDK.
+func (a *App) CleanInactiveVersions(sdkType string) error {
+	return a.storageMgr.CleanInactiveVersions(sdkType)
+}
+
+// GetDefaultInstallPath returns the default install path.
+func (a *App) GetDefaultInstallPath() string {
+	return a.storageMgr.GetDefaultInstallPath()
+}
+
+// GetInstallPath returns the current install path.
+func (a *App) GetInstallPath() string {
+	return a.storageMgr.GetInstallPath()
+}
+
+// MigrateInstallPath moves the SVC install to a new directory.
+func (a *App) MigrateInstallPath(newPath string) error {
+	return a.storageMgr.MigrateInstallPath(newPath)
+}
+
+// GetAppInfo returns the embedded about.json metadata.
+func (a *App) GetAppInfo() update.AppInfo {
+	return a.appInfo
+}
+
+// CheckUpdate queries the release endpoint for a newer stable version.
+func (a *App) CheckUpdate() (update.UpdateInfo, error) {
+	return a.updater.CheckUpdate()
+}
+
+// DownloadUpdate fetches the update asset and verifies its checksum.
+func (a *App) DownloadUpdate(downloadURL, expectedSha256 string) error {
+	return a.updater.DownloadUpdate(downloadURL, expectedSha256)
+}
+
+// ApplyUpdate swaps in the downloaded update and restarts.
+func (a *App) ApplyUpdate() error {
+	return a.updater.ApplyUpdate()
+}
+
+// RollbackUpdate restores the previous binary from the .bak backup.
+func (a *App) RollbackUpdate() error {
+	return a.updater.RollbackUpdate()
+}
+
+// GetPackageManagers lists the package managers available for an SDK.
+func (a *App) GetPackageManagers(sdkType string) []sdk.PackageManagerInfo {
+	return a.pkgmgrSvc.GetPackageManagers(sdkType)
+}
+
+// InstallPackageManager installs a package manager (yarn/pnpm/...).
+func (a *App) InstallPackageManager(name string) error {
+	return a.pkgmgrSvc.InstallPackageManager(name)
+}
+
+// UpdatePackageManager updates a package manager to the latest version.
+func (a *App) UpdatePackageManager(name string) error {
+	return a.pkgmgrSvc.UpdatePackageManager(name)
+}
+
+// GetAllSdkStatus returns the local status of every known SDK.
+func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
+	if a.installerSvc == nil {
+		return nil
+	}
+	return a.installerSvc.GetAllSdkStatus()
+}
+
+// GetSdkStatus returns the local status of one SDK.
+func (a *App) GetSdkStatus(sdkType string) (*sdk.SdkStatus, error) {
+	if a.installerSvc == nil {
+		return nil, errUninitialized
+	}
+	return a.installerSvc.GetSdkStatus(sdkType)
+}
+
+// CheckSystemConflicts reports system PATH/env conflicts for an SDK.
+func (a *App) CheckSystemConflicts(sdkType string) ([]string, error) {
+	if a.installerSvc == nil {
+		return nil, errUninitialized
+	}
+	return a.installerSvc.CheckSystemConflicts(sdkType)
+}
+
+// GetRemoteVersions returns the installable versions of an SDK.
+func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
+	if a.installerSvc == nil {
+		return nil, errUninitialized
+	}
+	return a.installerSvc.GetRemoteVersions(sdkType)
+}
+
+// InstallSdk downloads, verifies and installs an SDK version.
+func (a *App) InstallSdk(sdkType string, version string) error {
+	if a.installerSvc == nil {
+		return errUninitialized
+	}
+	return a.installerSvc.InstallSdk(sdkType, version)
+}
+
+// CancelInstall requests cancellation of an in-flight install.
+func (a *App) CancelInstall(sdkType string) {
+	if a.installerSvc != nil {
+		a.installerSvc.CancelInstall(sdkType)
+	}
+}
+
+// GetInstallDir returns the install directory of an SDK.
+func (a *App) GetInstallDir(sdkType string) string {
+	if a.installerSvc == nil {
+		return ""
+	}
+	return a.installerSvc.GetInstallDir(sdkType)
+}
+
+// SwitchVersion activates an installed SDK version.
+func (a *App) SwitchVersion(sdkType string, version string) error {
+	if a.installerSvc == nil {
+		return errUninitialized
+	}
+	return a.installerSvc.SwitchVersion(sdkType, version)
+}
+
+// GetSdkDownloadURL resolves the download URL of an SDK version.
+func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) {
+	if a.installerSvc == nil {
+		return "", errUninitialized
+	}
+	return a.installerSvc.GetSdkDownloadURL(sdkType, version)
+}
+
+// DetectPathVersion detects the version of an SDK found on the system PATH.
+func (a *App) DetectPathVersion(sdkType string) string {
+	if a.installerSvc == nil {
+		return ""
+	}
+	return a.installerSvc.DetectPathVersion(sdkType)
+}
+
+// SelectLocalFile opens a file dialog to pick an SDK archive.
+func (a *App) SelectLocalFile() (string, error) {
+	if a.importerSvc == nil {
+		return "", errUninitialized
+	}
+	return a.importerSvc.SelectLocalFile()
+}
+
+// SelectLocalDir opens a directory dialog to pick an SDK directory.
+func (a *App) SelectLocalDir() (string, error) {
+	if a.importerSvc == nil {
+		return "", errUninitialized
+	}
+	return a.importerSvc.SelectLocalDir()
+}
+
+// ImportLocalSdk imports an SDK from a local archive or directory.
+func (a *App) ImportLocalSdk(sdkType string, localPath string) error {
+	if a.importerSvc == nil {
+		return errUninitialized
+	}
+	return a.importerSvc.ImportLocalSdk(sdkType, localPath)
+}
+
+// ImportSdk imports an SDK from an external directory.
+func (a *App) ImportSdk(externalPath string, sdkType string) error {
+	if a.importerSvc == nil {
+		return errUninitialized
+	}
+	return a.importerSvc.ImportSdk(externalPath, sdkType)
+}
+
+// ImportPathSdk imports an SDK detected on the system PATH.
+func (a *App) ImportPathSdk(sdkType string) error {
+	if a.importerSvc == nil {
+		return errUninitialized
+	}
+	return a.importerSvc.ImportPathSdk(sdkType)
 }

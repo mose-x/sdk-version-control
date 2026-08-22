@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -10,6 +9,7 @@ import (
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/shim"
 	"sdk_version_control/internal/shimmanager"
+	"sdk_version_control/internal/update"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -103,8 +103,8 @@ func runInitCLI() {
 }
 
 func printVersion() {
-	var info AppInfo
-	if err := json.Unmarshal(aboutJSON, &info); err != nil || info.Version == "" {
+	info := update.ParseAppInfo(aboutJSON)
+	if info.Version == "" {
 		fmt.Fprintln(os.Stdout, "svc 0.1.0")
 		return
 	}

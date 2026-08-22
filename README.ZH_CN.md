@@ -101,22 +101,21 @@
 
 ```
 sdk_version_control/
-├── main.go                    # 入口
-├── app.go                     # Wails App 绑定
+├── main.go                    # 入口（shim 模式 / CLI / GUI 分发）
+├── app.go                     # Wails App 门面 + 运行时适配器
 ├── about.json                 # 应用信息（版本、协议、updateUrl）
-├── update.go                  # 更新检查 + 下载 + SHA256 校验
-├── update_unix.go             # Unix 二进制替换 + 回滚（.bak）
-├── update_windows.go          # Windows 二进制替换 + 回滚（.bak）
-├── sdk_ops.go                 # SDK 安装/切换/卸载操作
-├── import_sdk.go              # 从压缩包/文件夹/PATH 导入 SDK
-├── migration.go               # 安装位置迁移（带桌面备份）
-├── pkgmgr.go                  # 包管理器检测与安装
-├── storage.go                 # 缓存大小 + 未激活版本清理
-├── logmgr.go                  # 日志文件管理
-├── proxy.go                   # 代理 transport 构建
-├── helpers.go                 # 杂项辅助
-├── cmd_unix.go / cmd_windows.go  # 跨平台命令启动器
 ├── internal/
+│   ├── installer/             # SDK 安装/切换/取消 + 版本状态
+│   ├── importer/              # 从压缩包/文件夹/PATH 导入 SDK
+│   ├── storage/               # 卸载、存储统计、缓存、安装位置迁移
+│   ├── update/                # 自更新：检查/下载/应用/回滚
+│   ├── pkgmgr/                # 包管理器检测与安装
+│   ├── proxy/                 # 代理配置、GitHub 镜像、SSRF 防护检查
+│   ├── settings/              # 设置策略（token 掩码、保存保护）
+│   ├── logmgr/                # 日志文件管理
+│   ├── helpers/               # 纯工具：命令构建、env、版本、路径
+│   ├── wailsrt/               # Wails 运行时接口（解耦服务层）
+│   ├── packaging/             # 构建产物内容测试（NSIS 模板）
 │   ├── config/                # 配置（settings、install path、shell 检测）
 │   ├── downloader/            # 多线程 HTTP 下载器（支持代理）
 │   ├── extractor/             # 压缩包解压（zip、tar.gz、7z 等）
