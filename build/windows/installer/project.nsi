@@ -91,6 +91,20 @@ ShowInstDetails show # This will always show the installation details.
 
 Function .onInit
    !insertmacro wails.checkArchitecture
+
+   # Self-updated legacy installs have NO registry entry (those users never
+   # ran an NSIS build — the app replaced its own binary in place), so
+   # InstallDirRegKey finds nothing and the installer would default to the
+   # fresh svc folder, orphaning the old copy. Detect the old default
+   # location and pre-select it so this installer upgrades the self-updated
+   # copy in place (the Section retires the old-named executable).
+   ReadRegStr $0 HKLM "${UNINST_KEY}" "InstallLocation"
+   ReadRegStr $1 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
+   ${If} $0 == ""
+   ${AndIf} $1 == ""
+       IfFileExists "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}\${LEGACY_EXECUTABLE}" 0 +2
+           StrCpy $INSTDIR "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}"
+   ${EndIf}
 FunctionEnd
 
 # Skip the directory page on upgrade: if a previous install location of THIS
@@ -156,20 +170,20 @@ Section
     # Write InstallLocation so the next upgrade can detect + skip the dir page.
     WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
 
-    # Rename migration cleanup: whenever a legacy ("SDK Version Control")
-    # install is registered, fully retire it — delete its shortcuts, its
-    # Apps & Features entry and its WebView2 datapath. The old program
-    # directory is removed too (the legacy app was taskkilled above; SDK
-    # data lives in ~/.svc, which is NOT inside the install dir), so the
-    # rename is complete: new folder, new shortcuts, one registry entry.
-    # Guard: never remove a directory that equals the new $INSTDIR (a user
-    # could have picked the old location manually as the install target).
+    # Rename migration cleanup. Legacy shortcuts and the legacy WebView2
+    # datapath are removed unconditionally (Delete/RMDir are no-ops when
+    # absent) so SELF-UPDATED legacy installs — which have no registry
+    # entry at all — also get their old artifacts cleared. The uninstall
+    # registry key and the old program directory are only removed when the
+    # legacy key actually exists (installer-based legacy installs).
+    Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
+    Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
+    RMDir /r "$AppData\${LEGACY_EXECUTABLE}"
     ReadRegStr $1 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
     ${If} $1 != ""
-        Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
-        Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
         DeleteRegKey HKLM "${LEGACY_UNINST_KEY}"
-        RMDir /r "$AppData\${LEGACY_EXECUTABLE}"
+        # Guard: never remove a directory that equals the new $INSTDIR (a
+        # user could have picked the old location as the install target).
         ${If} $1 != "$INSTDIR"
             RMDir /r "$1"
         ${EndIf}
