@@ -18,6 +18,8 @@ import (
 	"sdk_version_control/internal/settings"
 	"sdk_version_control/internal/shimmanager"
 	"sdk_version_control/internal/storage"
+	"sdk_version_control/internal/update"
+	"sdk_version_control/internal/wailsrt"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -52,7 +54,8 @@ type App struct {
 	proxySvc     *proxy.Service
 	settingsSvc  *settings.Service
 	storageMgr   *storage.Manager
-	appInfo      AppInfo
+	updater      *update.Updater
+	appInfo      update.AppInfo
 	cancelMu     sync.Mutex
 	cancelFuncs  map[string]cancelEntry
 	nextCancelID uint64
@@ -84,6 +87,30 @@ func (a *App) fetcherLock(key string) *sync.Mutex {
 	return m
 }
 
+// runtimeAdapter implements wailsrt.Runtime on top of the Wails runtime so
+// the internal service packages stay free of any Wails dependency.
+type runtimeAdapter struct{ ctx context.Context }
+
+func (r *runtimeAdapter) Context() context.Context { return r.ctx }
+
+func (r *runtimeAdapter) EventsEmit(eventName string, data ...any) {
+	wailsRuntime.EventsEmit(r.ctx, eventName, data...)
+}
+
+func (r *runtimeAdapter) OpenFileDialog(title string, filters []wailsrt.FileFilter) (string, error) {
+	fs := make([]wailsRuntime.FileFilter, len(filters))
+	for i, f := range filters {
+		fs[i] = wailsRuntime.FileFilter{DisplayName: f.DisplayName, Pattern: f.Pattern}
+	}
+	return wailsRuntime.OpenFileDialog(r.ctx, wailsRuntime.OpenDialogOptions{Title: title, Filters: fs})
+}
+
+func (r *runtimeAdapter) OpenDirectoryDialog(title string) (string, error) {
+	return wailsRuntime.OpenDirectoryDialog(r.ctx, wailsRuntime.OpenDialogOptions{Title: title})
+}
+
+func (r *runtimeAdapter) Quit() { wailsRuntime.Quit(r.ctx) }
+
 // NewApp creates an App instance
 func NewApp() *App {
 	cfg, err := config.NewConfig()
@@ -110,7 +137,7 @@ func NewApp() *App {
 		downloader:  downloader.NewDownloader(),
 		cancelFuncs: make(map[string]cancelEntry),
 	}
-	app.loadAboutInfo()
+	app.appInfo = update.ParseAppInfo(aboutJSON)
 	return app
 }
 
@@ -125,6 +152,7 @@ func (a *App) startup(ctx context.Context) {
 	a.registry = sdk.NewRegistry(a.cfg, a.settings)
 	logger.Info("SDK registry initialized with %d SDK types", len(a.registry.All()))
 	a.storageMgr = storage.NewManager(a.cfg, a.registry, a.pathMgr, a.shimMgr, a.settings)
+	a.updater = update.NewUpdater(a.appInfo, a.settings, a.downloader, a.proxySvc, &runtimeAdapter{ctx: ctx})
 
 	// Seed ~/.svc/mirrors.json (the editable "easter egg" GitHub mirror list)
 	// and point the version cache at ~/.svc/cache. Both must be (re)initialised
@@ -279,4 +307,29 @@ func (a *App) GetInstallPath() string {
 // MigrateInstallPath moves the SVC install to a new directory.
 func (a *App) MigrateInstallPath(newPath string) error {
 	return a.storageMgr.MigrateInstallPath(newPath)
+}
+
+// GetAppInfo returns the embedded about.json metadata.
+func (a *App) GetAppInfo() update.AppInfo {
+	return a.appInfo
+}
+
+// CheckUpdate queries the release endpoint for a newer stable version.
+func (a *App) CheckUpdate() (update.UpdateInfo, error) {
+	return a.updater.CheckUpdate()
+}
+
+// DownloadUpdate fetches the update asset and verifies its checksum.
+func (a *App) DownloadUpdate(downloadURL, expectedSha256 string) error {
+	return a.updater.DownloadUpdate(downloadURL, expectedSha256)
+}
+
+// ApplyUpdate swaps in the downloaded update and restarts.
+func (a *App) ApplyUpdate() error {
+	return a.updater.ApplyUpdate()
+}
+
+// RollbackUpdate restores the previous binary from the .bak backup.
+func (a *App) RollbackUpdate() error {
+	return a.updater.RollbackUpdate()
 }

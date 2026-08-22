@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package update
 
 import (
 	"fmt"
@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 
 	"sdk_version_control/internal/helpers"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func getUpdateFilePath() string {
@@ -29,7 +27,7 @@ func backupPath(currentExe string) string {
 // relaunches. The hash is computed in Go BEFORE writing the script so the
 // .bat only needs certutil (a built-in Windows tool) for the post-copy check;
 // certutil output is parsed in-bat to compare against the embedded hash.
-func (a *App) ApplyUpdate() error {
+func (u *Updater) ApplyUpdate() error {
 	currentExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get current program path: %w", err)
@@ -65,7 +63,7 @@ func (a *App) ApplyUpdate() error {
 		return fmt.Errorf("failed to launch update script: %w", err)
 	}
 
-	wailsRuntime.Quit(a.ctx)
+	u.rt.Quit()
 	return nil
 }
 
@@ -144,7 +142,7 @@ del "%%~f0"
 // Fails with a clear message if no backup exists (first install or user deleted it).
 // Uses the same wait-then-rename pattern as ApplyUpdate because the running
 // .exe is locked by Windows until the process exits.
-func (a *App) RollbackUpdate() error {
+func (u *Updater) RollbackUpdate() error {
 	currentExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get current program path: %w", err)
@@ -168,7 +166,7 @@ func (a *App) RollbackUpdate() error {
 		return fmt.Errorf("failed to launch rollback script: %w", err)
 	}
 
-	wailsRuntime.Quit(a.ctx)
+	u.rt.Quit()
 	return nil
 }
 

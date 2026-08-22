@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package update
 
 import (
 	"fmt"
@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	"sdk_version_control/internal/helpers"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func getUpdateFilePath() string {
@@ -186,7 +184,7 @@ rm -f "$0"
 // Both the script and the payload it references get unpredictable
 // CreateTemp-based names (see writeTempScript / secureUpdatePayload) instead
 // of the old fixed /tmp paths, which were a symlink/TOCTOU hazard.
-func (a *App) ApplyUpdate() error {
+func (u *Updater) ApplyUpdate() error {
 	currentExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get current program path: %w", err)
@@ -233,7 +231,7 @@ func (a *App) ApplyUpdate() error {
 		return fmt.Errorf("failed to launch update script: %w", err)
 	}
 
-	wailsRuntime.Quit(a.ctx)
+	u.rt.Quit()
 	return nil
 }
 
@@ -243,7 +241,7 @@ func (a *App) ApplyUpdate() error {
 // because the running binary cannot be overwritten on Unix while it's executing
 // (the kernel keeps the inode alive, but copy semantics differ across FSes).
 // The script gets an unpredictable CreateTemp-based name (see writeTempScript).
-func (a *App) RollbackUpdate() error {
+func (u *Updater) RollbackUpdate() error {
 	currentExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get current program path: %w", err)
@@ -268,6 +266,6 @@ func (a *App) RollbackUpdate() error {
 		return fmt.Errorf("failed to launch rollback script: %w", err)
 	}
 
-	wailsRuntime.Quit(a.ctx)
+	u.rt.Quit()
 	return nil
 }

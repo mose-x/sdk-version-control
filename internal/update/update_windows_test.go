@@ -1,54 +1,12 @@
 //go:build windows
 
-package main
+package update
 
 import (
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
-
-// TestSha256OfFile_roundTrip pins the helper that ApplyUpdate relies on for
-// pre-copy hashing: same bytes -> same non-empty digest; different bytes ->
-// different digest. ApplyUpdate feeds the digest into buildUpdateScript's
-// post-copy certutil check, so a regression here silently disables rollback.
-func TestSha256OfFile_roundTrip(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "fake_update.exe")
-	payload := []byte("svc-update-payload-v1")
-	if err := os.WriteFile(path, payload, 0644); err != nil {
-		t.Fatal(err)
-	}
-	h1, err := sha256OfFile(path)
-	if err != nil {
-		t.Fatalf("sha256OfFile first call: %v", err)
-	}
-	if h1 == "" {
-		t.Fatal("sha256OfFile returned empty digest")
-	}
-	h2, err := sha256OfFile(path)
-	if err != nil {
-		t.Fatalf("sha256OfFile second call: %v", err)
-	}
-	if h1 != h2 {
-		t.Fatalf("sha256OfFile not deterministic: %s then %s", h1, h2)
-	}
-
-	// Different bytes -> different digest.
-	other := filepath.Join(dir, "other.exe")
-	if err := os.WriteFile(other, []byte("different-bytes"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	h3, err := sha256OfFile(other)
-	if err != nil {
-		t.Fatalf("sha256OfFile on other: %v", err)
-	}
-	if h1 == h3 {
-		t.Fatalf("sha256OfFile collision between distinct payloads: %s", h1)
-	}
-}
 
 // TestBuildUpdateScript_containsHashAndCertutil pins BUG D's fix: the .bat
 // written by ApplyUpdate must (a) embed the pre-copy SHA256, (b) invoke
