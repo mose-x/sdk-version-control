@@ -34,7 +34,8 @@ func TestBuildLegacyRenamePs(t *testing.T) {
 		{"legacy shortcut matched by name pattern", "-like 'SDK Version Control*'"},
 		{"legacy shortcut matched by target path", "-like '*SDK Version Control*'"},
 		{"new shortcut name created", "'svc.lnk'"},
-		{"relaunches the new executable", "Start-Process -FilePath $newExe"},
+		{"relaunch guarded by svc.exe existence", "if (Test-Path -LiteralPath (Join-Path $newDir 'svc.exe'))"},
+		{"relaunches svc.exe", "Start-Process -FilePath (Join-Path $newDir 'svc.exe')"},
 	}
 	for _, c := range checks {
 		t.Run(c.desc, func(t *testing.T) {

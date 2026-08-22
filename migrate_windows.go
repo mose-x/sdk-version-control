@@ -119,7 +119,13 @@ try {
     }
 } catch {}
 
-Start-Process -FilePath $newExe
+# Relaunch only if the migration actually produced svc.exe. If the rename
+# failed, relaunching the old exe would re-trigger this migration on the next
+# launch and flash on every startup; leave the app closed for the user to
+# relaunch manually instead.
+if (Test-Path -LiteralPath (Join-Path $newDir 'svc.exe')) {
+    Start-Process -FilePath (Join-Path $newDir 'svc.exe')
+}
 exit 0
 `, pid, strings.ReplaceAll(currentExe, "'", "''"))
 }

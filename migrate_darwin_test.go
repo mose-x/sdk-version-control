@@ -30,6 +30,7 @@ func TestBuildLegacyRenameSh(t *testing.T) {
 		{"inner executable renamed to svc", `mv "$MACOS_NEW/$INNER_OLD" "$MACOS_NEW/svc"`},
 		{"updates CFBundleName", `plutil -replace CFBundleName -string "svc"`},
 		{"updates CFBundleExecutable", `plutil -replace CFBundleExecutable -string "svc"`},
+		{"relaunch guarded by svc existence", `if [ -f "$MACOS_NEW/svc" ]; then`},
 		{"relaunches via open", `open "$NEW_BUNDLE"`},
 	}
 	for _, c := range checks {

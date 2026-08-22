@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"svc/internal/config"
 	"svc/internal/downloader"
@@ -147,5 +148,50 @@ func TestParseAppInfo(t *testing.T) {
 	}
 	if fb := ParseAppInfo(nil); fb.Version != "0.1.0" {
 		t.Errorf("ParseAppInfo(nil).Version = %q; want 0.1.0 fallback", fb.Version)
+	}
+}
+
+// TestFindBackupPath verifies the rollback backup lookup: it prefers the
+// canonical <exe>.bak, and falls back to the newest *.bak in the directory
+// when the canonical name is absent (the rename migration leaves the backup
+// under the OLD executable name).
+func TestFindBackupPath(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "svc")
+
+	// No backup at all -> returns canonical path (caller then errors cleanly).
+	if got := findBackupPath(exe); got != exe+".bak" {
+		t.Errorf("no backup: got %q, want %q", got, exe+".bak")
+	}
+
+	// Canonical <exe>.bak present -> preferred.
+	canonical := exe + ".bak"
+	if err := os.WriteFile(canonical, []byte("c"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got := findBackupPath(exe); got != canonical {
+		t.Errorf("canonical present: got %q, want %q", got, canonical)
+	}
+
+	// Remove canonical; an old-named .bak remains -> fallback finds it.
+	os.Remove(canonical)
+	oldBak := filepath.Join(dir, "SDK Version Control.bak")
+	if err := os.WriteFile(oldBak, []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got := findBackupPath(exe); got != oldBak {
+		t.Errorf("old-named fallback: got %q, want %q", got, oldBak)
+	}
+
+	// Multiple .bak -> newest wins.
+	newer := filepath.Join(dir, "zz.bak")
+	if err := os.WriteFile(newer, []byte("new"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Ensure newer has a later modtime.
+	future := time.Now().Add(10 * time.Minute)
+	os.Chtimes(newer, future, future)
+	if got := findBackupPath(exe); got != newer {
+		t.Errorf("newest .bak: got %q, want %q", got, newer)
 	}
 }

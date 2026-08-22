@@ -147,7 +147,7 @@ func (u *Updater) RollbackUpdate() error {
 	if err != nil {
 		return fmt.Errorf("failed to get current program path: %w", err)
 	}
-	bak := backupPath(currentExe)
+	bak := findBackupPath(currentExe)
 	if _, err := os.Stat(bak); err != nil {
 		return fmt.Errorf("no backup found at %s: %w", bak, err)
 	}

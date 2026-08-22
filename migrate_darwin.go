@@ -105,8 +105,13 @@ if [ -f "$PLIST" ]; then
     /usr/bin/plutil -replace CFBundleExecutable -string "svc" "$PLIST" 2>/dev/null
 fi
 
-# Relaunch.
-open "$NEW_BUNDLE" 2>/dev/null || nohup "$MACOS_NEW/svc" >/dev/null 2>&1 &
+# Relaunch only if the migration actually produced the svc executable. If
+# the rename failed (e.g. insufficient permission), relaunching would just
+# re-trigger this migration on the next launch and flash on every startup;
+# leaving the app closed for the user to relaunch manually is safer.
+if [ -f "$MACOS_NEW/svc" ]; then
+    open "$NEW_BUNDLE" 2>/dev/null || nohup "$MACOS_NEW/svc" >/dev/null 2>&1 &
+fi
 exit 0
 `, pid, currentExe)
 }

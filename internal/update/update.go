@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -44,6 +45,45 @@ type Updater struct {
 // progress events or Quit (CheckUpdate, sha256 helpers).
 func NewUpdater(info AppInfo, settings *config.SettingsManager, dl *downloader.Downloader, proxySvc *proxy.Service, rt wailsrt.Runtime) *Updater {
 	return &Updater{info: info, settings: settings, dl: dl, proxy: proxySvc, rt: rt}
+}
+
+// findBackupPath returns the rollback backup for currentExe. It prefers the
+// canonical <exe>.bak, but falls back to the NEWEST *.bak in the same
+// directory. This matters after the rename migration renamed the executable:
+// a backup created by an EARLIER self-update still carries the OLD executable
+// name (e.g. "SDK Version Control.exe.bak"), so <exe>.bak would not exist and
+// rollback would wrongly report "no backup found". Picking the newest *.bak
+// recovers the real previous version. If nothing is found it returns the
+// canonical <exe>.bak so the caller's error message stays accurate.
+func findBackupPath(currentExe string) string {
+	canonical := backupPath(currentExe)
+	if _, err := os.Stat(canonical); err == nil {
+		return canonical
+	}
+	dir := filepath.Dir(currentExe)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return canonical
+	}
+	var newest string
+	var newestTime time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".bak") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if newest == "" || info.ModTime().After(newestTime) {
+			newest = filepath.Join(dir, e.Name())
+			newestTime = info.ModTime()
+		}
+	}
+	if newest != "" {
+		return newest
+	}
+	return canonical
 }
 
 // ParseAppInfo decodes about.json content into AppInfo, falling back to safe
