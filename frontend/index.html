@@ -13,6 +13,54 @@
     <title>SDK Version Control</title>
   </head>
   <body>
+    <style>
+      /* Inline boot screen: paints on the WebView's first frame so the window
+         never shows a blank/transparent flash. Background matches the app
+         theme; React removes #boot once it mounts. */
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #141414;
+        color: #888;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      @media (prefers-color-scheme: light) {
+        #boot {
+          background: #f5f5f5;
+          color: #999;
+        }
+      }
+      #boot .boot-spin {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 3px solid rgba(22, 119, 255, 0.25);
+        border-top-color: #1677ff;
+        animation: boot-spin 0.9s linear infinite;
+      }
+      #boot .boot-txt {
+        font-size: 13px;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+    <div id="boot">
+      <div class="boot-spin"></div>
+      <div class="boot-txt">正在加载…</div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
