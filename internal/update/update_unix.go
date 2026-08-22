@@ -106,6 +106,13 @@ while kill -0 %d 2>/dev/null; do
         exit 1
     fi
 done
+echo "Cleaning stale backups..."
+bak_dir=$(dirname %s)
+for oldbak in "$bak_dir"/*.bak; do
+    [ -e "$oldbak" ] || continue
+    [ "$oldbak" = %s ] && continue
+    rm -f "$oldbak"
+done
 echo "Backing up current binary..."
 if ! mv -f %s %s 2>/dev/null; then
     # Cross-device: fall back to cp+rm. mv is atomic on same FS only.
@@ -136,7 +143,7 @@ fi
 echo "Starting new version..."
 nohup %s > /dev/null 2>&1 &
 rm -f "$0"
-`, hashQ, pid, exeQ, bakQ, exeQ, bakQ, exeQ, newQ, exeQ, newQ, exeQ, newQ, bakQ, exeQ, bakQ, exeQ, exeQ, exeQ, exeQ, bakQ, exeQ, bakQ, exeQ, exeQ)
+`, hashQ, pid, bakQ, bakQ, exeQ, bakQ, exeQ, bakQ, exeQ, newQ, exeQ, newQ, exeQ, newQ, bakQ, exeQ, bakQ, exeQ, exeQ, exeQ, exeQ, bakQ, exeQ, bakQ, exeQ, exeQ)
 }
 
 // buildUnixRollbackScript renders the /bin/sh body for RollbackUpdate.

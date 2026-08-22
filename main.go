@@ -58,6 +58,10 @@ func main() {
 		Height:           800,
 		DisableResize:    true,
 		BackgroundColour: bg,
+		// Disallow a second instance: a duplicate launch would open a second
+		// window over the first. The lock is held for the process lifetime on
+		// all platforms (win/mac/linux).
+		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: "svc"},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

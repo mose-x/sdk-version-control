@@ -31,6 +31,8 @@ func TestBuildUpdateScript_containsHashAndCertutil(t *testing.T) {
 		{"uses move for replacement", `move /Y "` + newExe + `" "` + currentExe + `"`},
 		{"has copy fallback", `copy /Y "` + newExe + `" "` + currentExe + `"`},
 		{"rolls back to bak", `copy /Y "` + bak + `" "` + currentExe + `"`},
+		{"cleans stale backups before backup", "echo Cleaning stale backups..."},
+		{"removes old-named bak files", `*.bak") do if /i not`},
 		{"exits non-zero on mismatch", "exit /b 1"},
 		// Wait-loop PID match: `findstr /C:" <pid> "` matches the PID as an
 		// in-line literal surrounded by spaces (tasklist /NH pads the PID
