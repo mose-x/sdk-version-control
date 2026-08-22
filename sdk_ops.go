@@ -9,6 +9,7 @@ import (
 
 	"sdk_version_control/internal/downloader"
 	"sdk_version_control/internal/extractor"
+	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/sdk"
 
@@ -58,7 +59,7 @@ func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
 		}
 		if status.PathConfigured && status.PathVersion == "" {
 			cmd, args := f.VerifyCommand()
-			status.PathVersion = extractVersionFromOutput(cmd, args)
+			status.PathVersion = helpers.ExtractVersionFromOutput(cmd, args)
 		}
 		// Filter the transient "<version>.old"/"<version>.new" byproducts of
 		// the rename-old-first atomic replace (left behind briefly by a
@@ -77,7 +78,7 @@ func (a *App) GetSdkStatus(sdkType string) (*sdk.SdkStatus, error) {
 	if a.registry == nil {
 		return nil, fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
@@ -91,7 +92,7 @@ func (a *App) CheckSystemConflicts(sdkType string) ([]string, error) {
 	if a.registry == nil {
 		return nil, fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
@@ -111,7 +112,7 @@ func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
 	if a.registry == nil {
 		return nil, fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
 	t := sdk.SdkType(sdkType)
@@ -198,10 +199,10 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	if a.registry == nil {
 		return fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkTypeStr); err != nil {
+	if err := helpers.ValidatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}
-	if err := validatePathSegment(version); err != nil {
+	if err := helpers.ValidatePathSegment(version); err != nil {
 		return err
 	}
 	sdkType := sdk.SdkType(sdkTypeStr)
@@ -233,7 +234,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get download URL: %w", err)
 	}
-	if err := validatePathSegment(fileName); err != nil {
+	if err := helpers.ValidatePathSegment(fileName); err != nil {
 		return fmt.Errorf("invalid download filename: %w", err)
 	}
 	downloadURL = a.applyGithubMirror(downloadURL)
@@ -451,7 +452,7 @@ func (a *App) CancelInstall(sdkType string) {
 }
 
 func (a *App) GetInstallDir(sdkType string) string {
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return ""
 	}
 	return a.cfg.SdkDir(sdkType)
@@ -461,10 +462,10 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 	if a.registry == nil {
 		return fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkTypeStr); err != nil {
+	if err := helpers.ValidatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}
-	if err := validatePathSegment(version); err != nil {
+	if err := helpers.ValidatePathSegment(version); err != nil {
 		return err
 	}
 	sdkType := sdk.SdkType(sdkTypeStr)
@@ -508,10 +509,10 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 	if a.registry == nil {
 		return "", fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return "", err
 	}
-	if err := validatePathSegment(version); err != nil {
+	if err := helpers.ValidatePathSegment(version); err != nil {
 		return "", err
 	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
@@ -546,7 +547,7 @@ func (a *App) DetectPathVersion(sdkType string) string {
 		return ""
 	}
 	cmd, args := f.VerifyCommand()
-	return extractVersionFromOutput(cmd, args)
+	return helpers.ExtractVersionFromOutput(cmd, args)
 }
 
 // filterResidualVersionDirs drops leftover atomic-replace directories

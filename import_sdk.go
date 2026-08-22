@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"sdk_version_control/internal/extractor"
+	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/pathmgr"
 	"sdk_version_control/internal/sdk"
@@ -207,7 +208,7 @@ func (a *App) ImportLocalSdk(sdkTypeStr string, localPath string) error {
 	if a.registry == nil {
 		return fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkTypeStr); err != nil {
+	if err := helpers.ValidatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}
 	sdkType := sdk.SdkType(sdkTypeStr)
@@ -305,7 +306,7 @@ func (a *App) ImportSdk(externalPath string, sdkType string) error {
 	if a.registry == nil {
 		return fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return err
 	}
 	f := a.registry.Get(sdk.SdkType(sdkType))
@@ -363,7 +364,7 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 	if a.registry == nil {
 		return fmt.Errorf("application not fully initialized")
 	}
-	if err := validatePathSegment(sdkTypeStr); err != nil {
+	if err := helpers.ValidatePathSegment(sdkTypeStr); err != nil {
 		return err
 	}
 	logger.Info("Importing SDK from system PATH: %s", sdkTypeStr)
@@ -374,7 +375,7 @@ func (a *App) ImportPathSdk(sdkTypeStr string) error {
 	}
 
 	cmdName, _ := f.VerifyCommand()
-	binPath := resolveCommand(cmdName)
+	binPath := helpers.ResolveCommand(cmdName)
 	if binPath == "" {
 		return fmt.Errorf("%s not found in system PATH", cmdName)
 	}

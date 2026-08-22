@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/sdk"
 )
@@ -19,10 +20,10 @@ type StorageInfo struct {
 }
 
 func (a *App) UninstallVersion(sdkType string, version string) error {
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return err
 	}
-	if err := validatePathSegment(version); err != nil {
+	if err := helpers.ValidatePathSegment(version); err != nil {
 		return err
 	}
 
@@ -177,7 +178,7 @@ func (a *App) CleanTmpCache() error {
 }
 
 func (a *App) CleanInactiveVersions(sdkType string) error {
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return err
 	}
 

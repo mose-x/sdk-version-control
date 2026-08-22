@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"sdk_version_control/internal/helpers"
+
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -223,7 +225,7 @@ func (a *App) ApplyUpdate() error {
 		return fmt.Errorf("failed to create update script: %w", err)
 	}
 
-	cmd := createCmd("/bin/sh", scriptPath)
+	cmd := helpers.CreateCmd("/bin/sh", scriptPath)
 	cmd.Dir = os.TempDir()
 	if err := cmd.Start(); err != nil {
 		os.Remove(scriptPath)
@@ -259,7 +261,7 @@ func (a *App) RollbackUpdate() error {
 		return fmt.Errorf("failed to create rollback script: %w", err)
 	}
 
-	cmd := createCmd("/bin/sh", scriptPath)
+	cmd := helpers.CreateCmd("/bin/sh", scriptPath)
 	cmd.Dir = os.TempDir()
 	if err := cmd.Start(); err != nil {
 		os.Remove(scriptPath)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/logger"
 )
 
@@ -9,7 +10,7 @@ func (a *App) GetLogFiles() ([]logger.LogFileInfo, error) {
 }
 
 func (a *App) GetLogContent(filename string) (string, error) {
-	if err := validatePathSegment(filename); err != nil {
+	if err := helpers.ValidatePathSegment(filename); err != nil {
 		return "", err
 	}
 	return logger.GetLogContent(filename)
@@ -27,7 +28,7 @@ func (a *App) CleanLogs() error {
 }
 
 func (a *App) DeleteLogFile(filename string) error {
-	if err := validatePathSegment(filename); err != nil {
+	if err := helpers.ValidatePathSegment(filename); err != nil {
 		return err
 	}
 	logger.Info("Deleting log file: %s", filename)

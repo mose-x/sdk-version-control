@@ -10,11 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/sdk"
 )
 
 func (a *App) GetPackageManagers(sdkType string) []sdk.PackageManagerInfo {
-	if err := validatePathSegment(sdkType); err != nil {
+	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return nil
 	}
 	active := a.cfg.GetActiveVersion(sdkType)
@@ -56,8 +57,8 @@ func (a *App) detectPM(name, cmd string, args []string, parent sdk.SdkType) sdk.
 	// H3: Bound version detection so a hung package manager doesn't block.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c := createCmdContext(ctx, fullPath, args...)
-	c.Env = replacePathEnv(os.Environ(), scopedPath)
+	c := helpers.CreateCmdContext(ctx, fullPath, args...)
+	c.Env = helpers.ReplacePathEnv(os.Environ(), scopedPath)
 	out, err := c.CombinedOutput()
 	if err != nil {
 		return sdk.PackageManagerInfo{Name: name, Installed: false, ParentSdk: parent}
@@ -247,9 +248,9 @@ func (a *App) runScopedCommand(name string, parent sdk.SdkType, args ...string) 
 	// H3: Bound install/update commands so a hung process doesn't block forever.
 	ctx, cancel := newScopedCommandContext()
 	defer cancel()
-	cmd := createCmdContext(ctx, fullPath, args...)
+	cmd := helpers.CreateCmdContext(ctx, fullPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = replacePathEnv(os.Environ(), scopedPath)
+	cmd.Env = helpers.ReplacePathEnv(os.Environ(), scopedPath)
 	return cmd.Run()
 }
