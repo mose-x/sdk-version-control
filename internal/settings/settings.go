@@ -1,4 +1,7 @@
-package main
+// Package settings owns the user-facing settings policy on top of
+// config.SettingsManager: token masking, the stale-snapshot guards in Save,
+// and the endpoint accessors.
+package settings
 
 import (
 	"encoding/base64"
@@ -9,16 +12,28 @@ import (
 	"sdk_version_control/internal/sdk"
 )
 
-func (a *App) GetSettings() config.AppSettings {
-	// Never ship the raw GitHub token to the frontend -- it is a secret.
-	// Replace it with the masked form (first6***last6) for display; the real
-	// value is only ever written back via SaveGithubToken.
-	s := a.settings.Get()
-	s.GitHubToken = sdk.MaskGithubToken(a.settings)
-	return s
+// Service wraps the settings manager with the binding-layer policy.
+type Service struct {
+	sm *config.SettingsManager
 }
 
-func (a *App) SaveSettings(settings config.AppSettings) error {
+// New builds a Service on the given settings manager.
+func New(sm *config.SettingsManager) *Service {
+	return &Service{sm: sm}
+}
+
+// Get returns the settings with the GitHub token masked. Never ships the raw
+// token to the frontend -- it is a secret. The masked form (first6***last6)
+// is for display; the real value is only ever written back via
+// SaveGithubToken.
+func (s *Service) Get() config.AppSettings {
+	st := s.sm.Get()
+	st.GitHubToken = sdk.MaskGithubToken(s.sm)
+	return st
+}
+
+// Save persists a settings snapshot from the frontend.
+func (s *Service) Save(settings config.AppSettings) error {
 	logger.Info("Saving settings: theme=%s, language=%s, downloadThreads=%d",
 		settings.Theme, settings.Language, settings.DownloadThreads)
 	// The general SaveSettings flow spreads the existing settings object
@@ -37,47 +52,50 @@ func (a *App) SaveSettings(settings config.AppSettings) error {
 	//     stale snapshot would silently revert the migration.
 	// So here we always preserve the stored values and ignore whatever the
 	// frontend echoed back for these three fields.
-	existing := a.settings.Get()
+	existing := s.sm.Get()
 	settings.GitHubToken = existing.GitHubToken
 	settings.Endpoints = existing.Endpoints
 	settings.InstallPath = existing.InstallPath
-	return a.settings.Update(settings)
+	return s.sm.Update(settings)
 }
 
 // SaveGithubToken stores a GitHub PAT after base64-encoding it (a light
 // obfuscation so the token is not plaintext in settings.json). An empty token
 // clears the stored value. The plaintext is never persisted and never returned
-// to the frontend (GetSettings returns the masked form).
-func (a *App) SaveGithubToken(token string) error {
+// to the frontend (Get returns the masked form).
+func (s *Service) SaveGithubToken(token string) error {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		s := a.settings.Get()
-		s.GitHubToken = ""
+		st := s.sm.Get()
+		st.GitHubToken = ""
 		logger.Info("Cleared GitHub token")
-		return a.settings.Update(s)
+		return s.sm.Update(st)
 	}
-	s := a.settings.Get()
-	s.GitHubToken = base64.StdEncoding.EncodeToString([]byte(token))
+	st := s.sm.Get()
+	st.GitHubToken = base64.StdEncoding.EncodeToString([]byte(token))
 	logger.Warn("GitHub token stored as base64 (reversible, not encrypted). Consider using a token with minimal scopes.")
-	logger.Info("Saved GitHub token (masked=%s)", sdk.MaskGithubToken(a.settings))
-	return a.settings.Update(s)
+	logger.Info("Saved GitHub token (masked=%s)", sdk.MaskGithubToken(s.sm))
+	return s.sm.Update(st)
 }
 
-func (a *App) GetDefaultEndpoints() []sdk.EndpointInfo {
+// GetDefaultEndpoints lists the built-in endpoint presets.
+func (s *Service) GetDefaultEndpoints() []sdk.EndpointInfo {
 	return sdk.DefaultEndpoints()
 }
 
-func (a *App) GetEndpoints() map[string]string {
-	s := a.settings.Get()
-	if s.Endpoints == nil {
+// GetEndpoints returns the custom endpoint overrides (never nil).
+func (s *Service) GetEndpoints() map[string]string {
+	st := s.sm.Get()
+	if st.Endpoints == nil {
 		return map[string]string{}
 	}
-	return s.Endpoints
+	return st.Endpoints
 }
 
-func (a *App) SaveEndpoints(endpoints map[string]string) error {
+// SaveEndpoints replaces the custom endpoint overrides.
+func (s *Service) SaveEndpoints(endpoints map[string]string) error {
 	logger.Info("Saving %d custom endpoints", len(endpoints))
-	s := a.settings.Get()
-	s.Endpoints = endpoints
-	return a.settings.Update(s)
+	st := s.sm.Get()
+	st.Endpoints = endpoints
+	return s.sm.Update(st)
 }

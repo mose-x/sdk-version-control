@@ -1,22 +1,28 @@
-package main
+// Package logmgr exposes the application log files (listing, reading,
+// cleaning, deleting) with path-segment validation on every user-supplied
+// filename.
+package logmgr
 
 import (
 	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/logger"
 )
 
-func (a *App) GetLogFiles() ([]logger.LogFileInfo, error) {
+// GetLogFiles lists the log files in the active log directory.
+func GetLogFiles() ([]logger.LogFileInfo, error) {
 	return logger.ListLogFiles()
 }
 
-func (a *App) GetLogContent(filename string) (string, error) {
+// GetLogContent returns the content of one log file.
+func GetLogContent(filename string) (string, error) {
 	if err := helpers.ValidatePathSegment(filename); err != nil {
 		return "", err
 	}
 	return logger.GetLogContent(filename)
 }
 
-func (a *App) CleanLogs() error {
+// CleanLogs removes all log files and reopens today's file.
+func CleanLogs() error {
 	logger.Info("Cleaning log files...")
 	err := logger.CleanLogs()
 	if err != nil {
@@ -27,7 +33,8 @@ func (a *App) CleanLogs() error {
 	return nil
 }
 
-func (a *App) DeleteLogFile(filename string) error {
+// DeleteLogFile removes a single log file.
+func DeleteLogFile(filename string) error {
 	if err := helpers.ValidatePathSegment(filename); err != nil {
 		return err
 	}
@@ -40,6 +47,7 @@ func (a *App) DeleteLogFile(filename string) error {
 	return nil
 }
 
-func (a *App) GetLogDir() string {
+// GetLogDir returns the active log directory path.
+func GetLogDir() string {
 	return logger.LogDir()
 }

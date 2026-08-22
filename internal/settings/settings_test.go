@@ -1,4 +1,4 @@
-package main
+package settings
 
 import (
 	"testing"
@@ -6,29 +6,29 @@ import (
 	"sdk_version_control/internal/config"
 )
 
-// TestSaveSettingsPreservesEndpointsAndInstallPath pins the stale-snapshot
+// TestSavePreservesEndpointsAndInstallPath pins the stale-snapshot
 // fix: SettingsManager.Update replaces the WHOLE object, and the frontend
 // echoes back a snapshot that can predate SaveEndpoints / MigrateInstallPath
-// writes. SaveSettings must preserve GitHubToken, Endpoints and InstallPath
+// writes. Save must preserve GitHubToken, Endpoints and InstallPath
 // from the stored settings instead of letting the snapshot clobber them,
 // while still applying the fields the user actually edited (theme etc.).
-func TestSaveSettingsPreservesEndpointsAndInstallPath(t *testing.T) {
+func TestSavePreservesEndpointsAndInstallPath(t *testing.T) {
 	sm := config.NewSettingsManager(t.TempDir())
-	app := &App{settings: sm}
+	svc := New(sm)
 
 	// Endpoints written via the dedicated flow.
 	endpoints := map[string]string{"go": "https://goproxy.cn", "jdk": "https://mirrors.example/adoptium"}
-	if err := app.SaveEndpoints(endpoints); err != nil {
+	if err := svc.SaveEndpoints(endpoints); err != nil {
 		t.Fatalf("SaveEndpoints: %v", err)
 	}
 
 	// Token written via the dedicated flow (stored base64-encoded).
-	if err := app.SaveGithubToken("ghp_secrettoken123"); err != nil {
+	if err := svc.SaveGithubToken("ghp_secrettoken123"); err != nil {
 		t.Fatalf("SaveGithubToken: %v", err)
 	}
 
 	// InstallPath written the same way MigrateInstallPath persists it:
-	// a direct SettingsManager.Update bypassing SaveSettings.
+	// a direct SettingsManager.Update bypassing Save.
 	migrated := sm.Get()
 	migrated.InstallPath = "/custom/svc-install"
 	if err := sm.Update(migrated); err != nil {
@@ -42,18 +42,18 @@ func TestSaveSettingsPreservesEndpointsAndInstallPath(t *testing.T) {
 		Theme:           "dark",
 		Language:        "en",
 		DownloadThreads: 8,
-		GitHubToken:     "ghp_se***3123", // masked junk from GetSettings
+		GitHubToken:     "ghp_se***3123", // masked junk from Get
 		Endpoints:       nil,
 		InstallPath:     "",
 	}
-	if err := app.SaveSettings(stale); err != nil {
-		t.Fatalf("SaveSettings: %v", err)
+	if err := svc.Save(stale); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
 	got := sm.Get()
 	// The edited fields are applied.
 	if got.Theme != "dark" {
-		t.Errorf("Theme = %q; want %q (SaveSettings must apply real edits)", got.Theme, "dark")
+		t.Errorf("Theme = %q; want %q (Save must apply real edits)", got.Theme, "dark")
 	}
 	if got.Language != "en" {
 		t.Errorf("Language = %q; want %q", got.Language, "en")
@@ -73,15 +73,15 @@ func TestSaveSettingsPreservesEndpointsAndInstallPath(t *testing.T) {
 	}
 }
 
-// TestSaveSettingsPersistsToEndpointsReload checks the preserved values
+// TestSavePersistsToEndpointsReload checks the preserved values
 // survive a fresh SettingsManager load from disk (they were actually written
 // to settings.json, not just kept in memory).
-func TestSaveSettingsPersistsToEndpointsReload(t *testing.T) {
+func TestSavePersistsToEndpointsReload(t *testing.T) {
 	home := t.TempDir()
 	sm := config.NewSettingsManager(home)
-	app := &App{settings: sm}
+	svc := New(sm)
 
-	if err := app.SaveEndpoints(map[string]string{"go": "https://goproxy.cn"}); err != nil {
+	if err := svc.SaveEndpoints(map[string]string{"go": "https://goproxy.cn"}); err != nil {
 		t.Fatalf("SaveEndpoints: %v", err)
 	}
 	migrated := sm.Get()
@@ -90,8 +90,8 @@ func TestSaveSettingsPersistsToEndpointsReload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := app.SaveSettings(config.AppSettings{Theme: "light", Language: "zh"}); err != nil {
-		t.Fatalf("SaveSettings: %v", err)
+	if err := svc.Save(config.AppSettings{Theme: "light", Language: "zh"}); err != nil {
+		t.Fatalf("Save: %v", err)
 	}
 
 	// Reload from disk.
@@ -105,5 +105,29 @@ func TestSaveSettingsPersistsToEndpointsReload(t *testing.T) {
 	}
 	if got.Theme != "light" {
 		t.Errorf("reloaded Theme = %q; want light", got.Theme)
+	}
+}
+
+// TestGetMasksToken verifies the binding never returns the raw token.
+func TestGetMasksToken(t *testing.T) {
+	sm := config.NewSettingsManager(t.TempDir())
+	svc := New(sm)
+	if err := svc.SaveGithubToken("ghp_abcdef123456"); err != nil {
+		t.Fatal(err)
+	}
+	got := svc.Get()
+	if got.GitHubToken == "ghp_abcdef123456" || got.GitHubToken == "" {
+		t.Errorf("Get().GitHubToken = %q; want masked form", got.GitHubToken)
+	}
+	if stored := sm.Get().GitHubToken; stored == got.GitHubToken {
+		t.Error("stored token equals the masked display value")
+	}
+}
+
+// TestGetEndpointsNeverNil pins the non-nil contract the frontend relies on.
+func TestGetEndpointsNeverNil(t *testing.T) {
+	svc := New(config.NewSettingsManager(t.TempDir()))
+	if got := svc.GetEndpoints(); got == nil {
+		t.Error("GetEndpoints returned nil; want empty map")
 	}
 }

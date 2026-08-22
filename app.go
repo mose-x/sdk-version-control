@@ -11,9 +11,11 @@ import (
 	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/downloader"
 	"sdk_version_control/internal/logger"
+	"sdk_version_control/internal/logmgr"
 	"sdk_version_control/internal/pathmgr"
 	"sdk_version_control/internal/proxy"
 	"sdk_version_control/internal/sdk"
+	"sdk_version_control/internal/settings"
 	"sdk_version_control/internal/shimmanager"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -47,6 +49,7 @@ type App struct {
 	shimMgr      *shimmanager.Manager
 	settings     *config.SettingsManager
 	proxySvc     *proxy.Service
+	settingsSvc  *settings.Service
 	appInfo      AppInfo
 	cancelMu     sync.Mutex
 	cancelFuncs  map[string]cancelEntry
@@ -94,11 +97,12 @@ func NewApp() *App {
 	pathMgr := pathmgr.NewPathManager(cfg)
 	pathMgr.SetShimManager(shimMgr)
 
-	settings := config.NewSettingsManager(cfg.HomeDir())
+	sm := config.NewSettingsManager(cfg.HomeDir())
 	app := &App{
 		cfg:         cfg,
-		settings:    settings,
-		proxySvc:    proxy.New(settings),
+		settings:    sm,
+		proxySvc:    proxy.New(sm),
+		settingsSvc: settings.New(sm),
 		pathMgr:     pathMgr,
 		shimMgr:     shimMgr,
 		downloader:  downloader.NewDownloader(),
@@ -177,4 +181,59 @@ func (a *App) GetPathEntries() ([]pathmgr.PathEntry, error) {
 // CheckProxy verifies that the configured proxy can reach the given URL.
 func (a *App) CheckProxy(targetURL string) error {
 	return a.proxySvc.CheckProxy(targetURL)
+}
+
+// GetSettings returns the settings with the GitHub token masked.
+func (a *App) GetSettings() config.AppSettings {
+	return a.settingsSvc.Get()
+}
+
+// SaveSettings persists a settings snapshot (owned fields are preserved).
+func (a *App) SaveSettings(s config.AppSettings) error {
+	return a.settingsSvc.Save(s)
+}
+
+// SaveGithubToken stores (or clears, when empty) the GitHub PAT.
+func (a *App) SaveGithubToken(token string) error {
+	return a.settingsSvc.SaveGithubToken(token)
+}
+
+// GetDefaultEndpoints lists the built-in endpoint presets.
+func (a *App) GetDefaultEndpoints() []sdk.EndpointInfo {
+	return a.settingsSvc.GetDefaultEndpoints()
+}
+
+// GetEndpoints returns the custom endpoint overrides.
+func (a *App) GetEndpoints() map[string]string {
+	return a.settingsSvc.GetEndpoints()
+}
+
+// SaveEndpoints replaces the custom endpoint overrides.
+func (a *App) SaveEndpoints(endpoints map[string]string) error {
+	return a.settingsSvc.SaveEndpoints(endpoints)
+}
+
+// GetLogFiles lists the application log files.
+func (a *App) GetLogFiles() ([]logger.LogFileInfo, error) {
+	return logmgr.GetLogFiles()
+}
+
+// GetLogContent returns the content of one log file.
+func (a *App) GetLogContent(filename string) (string, error) {
+	return logmgr.GetLogContent(filename)
+}
+
+// CleanLogs removes all log files.
+func (a *App) CleanLogs() error {
+	return logmgr.CleanLogs()
+}
+
+// DeleteLogFile removes a single log file.
+func (a *App) DeleteLogFile(filename string) error {
+	return logmgr.DeleteLogFile(filename)
+}
+
+// GetLogDir returns the active log directory.
+func (a *App) GetLogDir() string {
+	return logmgr.GetLogDir()
 }
