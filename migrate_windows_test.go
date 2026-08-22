@@ -9,28 +9,29 @@ import (
 	"testing"
 )
 
-// TestBuildLegacyRenameScript pins the structure of the migration script:
-// PID wait loop, folder rename with fallback, exe rename with
-// rollback-compatible backup, shortcut recreation, relaunch.
-func TestBuildLegacyRenameScript(t *testing.T) {
+// TestBuildLegacyRenamePs pins the structure of the migration script: PID
+// wait loop, folder rename with fallback, exe rename with rollback-compatible
+// backup, shortcut recreation, relaunch.
+func TestBuildLegacyRenamePs(t *testing.T) {
 	const pid = 4242
 	currentExe := `C:\Program Files\SDK Version Control\SDK Version Control.exe`
-	script := buildLegacyRenameScript(pid, currentExe)
+	script := buildLegacyRenamePs(pid, currentExe)
 
 	checks := []struct {
 		desc string
 		want string
 	}{
 		{"embeds the current exe path", currentExe},
-		{"PID wait loop uses space-delimited match", `findstr /C:" 4242 "`},
-		{"wait loop aborts on timeout", "Migration aborted: application did not exit in time"},
-		{"folder rename to svc", `set "NEW_DIR=%PARENT_DIR%\svc"`},
-		{"folder rename fallback on failure", `if errorlevel 1 set "NEW_DIR=%OLD_DIR%"`},
-		{"executable renamed to svc.exe", `ren "%NEW_DIR%\%OLD_NAME%" "svc.exe"`},
-		{"backup named for RollbackUpdate compatibility", `copy /Y "%NEW_DIR%\%OLD_NAME%" "%NEW_DIR%\svc.exe.bak"`},
-		{"legacy shortcut name handled", `'SDK Version Control.lnk'`},
-		{"new shortcut name created", `'svc.lnk'`},
-		{"relaunches the new executable", `start "" "%NEW_EXE%"`},
+		{"embeds the PID to wait on", "$targetPid = 4242"},
+		{"waits via Get-Process polling", "Get-Process -Id $targetPid"},
+		{"wait loop bounded by timeout", "$timeout = 60"},
+		{"folder renamed to svc", "Rename-Item -LiteralPath $oldDir -NewName 'svc'"},
+		{"folder rename fallback keeps old dir", "if (-not (Test-Path -LiteralPath $newDir)) { $newDir = $oldDir }"},
+		{"executable renamed to svc.exe", "Rename-Item -LiteralPath $legacyExe -NewName 'svc.exe'"},
+		{"backup named for RollbackUpdate compatibility", "'svc.exe.bak'"},
+		{"legacy shortcut name handled", "'SDK Version Control.lnk'"},
+		{"new shortcut name created", "'svc.lnk'"},
+		{"relaunches the new executable", "Start-Process -FilePath $newExe"},
 	}
 	for _, c := range checks {
 		t.Run(c.desc, func(t *testing.T) {
@@ -38,6 +39,15 @@ func TestBuildLegacyRenameScript(t *testing.T) {
 				t.Errorf("script missing %q\n--- script ---\n%s", c.want, script)
 			}
 		})
+	}
+}
+
+// TestBuildLegacyRenamePsEscapesQuotes ensures a single quote in the exe path
+// is doubled so the generated PowerShell stays syntactically valid.
+func TestBuildLegacyRenamePsEscapesQuotes(t *testing.T) {
+	script := buildLegacyRenamePs(1, `C:\we'ird\SDK Version Control.exe`)
+	if !strings.Contains(script, `C:\we''ird\SDK Version Control.exe`) {
+		t.Errorf("single quote not doubled in path\n--- script ---\n%s", script)
 	}
 }
 

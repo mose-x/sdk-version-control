@@ -1,14 +1,10 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package main
 
-import (
-	"context"
+import "context"
 
-	"svc/internal/config"
-)
-
-// maybeShowLegacyMigrationPrompt is a no-op off Windows: the rename
-// migration only concerns old Windows install folders; macOS/Linux builds
-// never used the "SDK Version Control" install layout.
-func maybeShowLegacyMigrationPrompt(ctx context.Context, sm *config.SettingsManager) {}
+// maybeShowLegacyMigrationPrompt is a no-op on platforms other than
+// Windows/macOS: the rename migration only concerns old self-updated
+// installs on those two platforms.
+func maybeShowLegacyMigrationPrompt(ctx context.Context) {}
