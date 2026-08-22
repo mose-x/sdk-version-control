@@ -59,7 +59,7 @@ mv -f resource resource.syso
 # PATH. If makensis is absent, wails skips the installer and the guard below
 # ships the bare .exe (self-update asset) without failing the build.
 if command -v makensis >/dev/null 2>&1; then
-  makensis /VERSION
+  makensis -VERSION
 else
   echo "warning: makensis not on PATH; installer will be skipped" >&2
 fi
