@@ -27,11 +27,11 @@ export namespace config {
 	    githubMirror: string;
 	    githubToken: string;
 	    downloadThreads: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new AppSettings(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.theme = source["theme"];
@@ -81,75 +81,6 @@ export namespace logger {
 	        this.name = source["name"];
 	        this.size = source["size"];
 	        this.modTime = source["modTime"];
-	    }
-	}
-
-}
-
-export namespace main {
-	
-	export class AppInfo {
-	    version: string;
-	    goVersion: string;
-	    license: string;
-	    repoUrl: string;
-	    updateUrl: string;
-
-	    static createFrom(source: any = {}) {
-	        return new AppInfo(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.version = source["version"];
-	        this.goVersion = source["goVersion"];
-	        this.license = source["license"];
-	        this.repoUrl = source["repoUrl"];
-	        this.updateUrl = source["updateUrl"];
-	    }
-	}
-	export class StorageInfo {
-	    sdkType: string;
-	    displayName: string;
-	    sdkDir: string;
-	    totalSize: number;
-	    versionCount: number;
-	    activeVer: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new StorageInfo(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.sdkType = source["sdkType"];
-	        this.displayName = source["displayName"];
-	        this.sdkDir = source["sdkDir"];
-	        this.totalSize = source["totalSize"];
-	        this.versionCount = source["versionCount"];
-	        this.activeVer = source["activeVer"];
-	    }
-	}
-	export class UpdateInfo {
-	    hasUpdate: boolean;
-	    latestVersion: string;
-	    changelog: string;
-	    downloadUrl: string;
-	    filename: string;
-	    sha256: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new UpdateInfo(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.hasUpdate = source["hasUpdate"];
-	        this.latestVersion = source["latestVersion"];
-	        this.changelog = source["changelog"];
-	        this.downloadUrl = source["downloadUrl"];
-	        this.filename = source["filename"];
-	        this.sha256 = source["sha256"];
 	    }
 	}
 
@@ -266,6 +197,80 @@ export namespace sdk {
 	        this.fileName = source["fileName"];
 	        this.isLts = source["isLts"];
 	        this.releaseDate = source["releaseDate"];
+	    }
+	}
+
+}
+
+export namespace storage {
+	
+	export class StorageInfo {
+	    sdkType: string;
+	    displayName: string;
+	    sdkDir: string;
+	    totalSize: number;
+	    versionCount: number;
+	    activeVer: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StorageInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sdkType = source["sdkType"];
+	        this.displayName = source["displayName"];
+	        this.sdkDir = source["sdkDir"];
+	        this.totalSize = source["totalSize"];
+	        this.versionCount = source["versionCount"];
+	        this.activeVer = source["activeVer"];
+	    }
+	}
+
+}
+
+export namespace update {
+	
+	export class AppInfo {
+	    version: string;
+	    goVersion: string;
+	    license: string;
+	    repoUrl: string;
+	    updateUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.goVersion = source["goVersion"];
+	        this.license = source["license"];
+	        this.repoUrl = source["repoUrl"];
+	        this.updateUrl = source["updateUrl"];
+	    }
+	}
+	export class UpdateInfo {
+	    hasUpdate: boolean;
+	    latestVersion: string;
+	    changelog: string;
+	    downloadUrl: string;
+	    filename: string;
+	    sha256: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hasUpdate = source["hasUpdate"];
+	        this.latestVersion = source["latestVersion"];
+	        this.changelog = source["changelog"];
+	        this.downloadUrl = source["downloadUrl"];
+	        this.filename = source["filename"];
+	        this.sha256 = source["sha256"];
 	    }
 	}
 
