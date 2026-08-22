@@ -63,11 +63,12 @@ func TestProjectNSI_UpgradeInPlace(t *testing.T) {
 		{"legacy WebView2 datapath cleanup", `RMDir /r "$AppData\${LEGACY_EXECUTABLE}"`},
 		{"legacy directory removal", `RMDir /r "$1"`},
 		{"same-dir guard for legacy removal", `${If} $1 != "$INSTDIR"`},
-		// Self-updated legacy installs have no registry entry; .onInit must
-		// detect the old default folder and the Section must retire the
-		// old-named executable found inside the chosen install directory.
+		// Self-updated legacy installs have no registry entry; the Section's
+		// else-branch detects the legacy executable at the default old
+		// location and removes that folder, and retires any old-named exe
+		// found inside the chosen install directory.
 		{"self-update legacy folder detection", `IfFileExists "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}\${LEGACY_EXECUTABLE}"`},
-		{"self-update legacy dir pre-select", `StrCpy $INSTDIR "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}"`},
+		{"self-update legacy folder removal", `RMDir /r "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}"`},
 		{"legacy exe in-place retirement", `Delete "$INSTDIR\${LEGACY_EXECUTABLE}"`},
 	}
 
