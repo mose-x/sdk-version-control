@@ -45,11 +45,19 @@ func main() {
 	// 3. Default: launch the Wails GUI application.
 	app := NewApp()
 
+	// Match the native window background to the saved theme so the frame shown
+	// before the WebView's first paint is theme-coloured, not a blank flash.
+	bg := &options.RGBA{R: 0x14, G: 0x14, B: 0x14, A: 0xff}
+	if app.settings != nil && app.settings.Get().Theme == "light" {
+		bg = &options.RGBA{R: 0xf5, G: 0xf5, B: 0xf5, A: 0xff}
+	}
+
 	err := wails.Run(&options.App{
-		Title:         "svc",
-		Width:         1200,
-		Height:        800,
-		DisableResize: true,
+		Title:            "svc",
+		Width:            1200,
+		Height:           800,
+		DisableResize:    true,
+		BackgroundColour: bg,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
