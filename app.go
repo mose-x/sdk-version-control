@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/downloader"
+	"sdk_version_control/internal/installer"
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/logmgr"
 	"sdk_version_control/internal/pathmgr"
@@ -28,22 +28,14 @@ import (
 //go:embed about.json
 var aboutJSON []byte
 
-// cancelEntry pairs a cancel func with a monotonic install ID so the deferred
-// cleanup in InstallSdk only deletes the map entry when it still belongs to
-// THIS install (not a newer concurrent install of the same SDK type).
-//
-// done is closed by the owning install's deferred cleanup when it has FULLY
-// exited. A newer InstallSdk for the same SDK cancels the old entry and then
-// waits (bounded) on done: without that wait the old download goroutine could
-// still be writing the shared tmp download file (or its deferred cleanup
-// could delete it) after the new install has re-created the same file.
-type cancelEntry struct {
-	cancel context.CancelFunc
-	id     uint64
-	done   chan struct{}
-}
+// errUninitialized is returned by bindings whose backing service is only
+// created in startup (registry-dependent). The message matches the original
+// inline error text.
+var errUninitialized = fmt.Errorf("application not fully initialized")
 
-// App struct - Wails bound core structure
+// App struct - Wails bound core structure. It is a thin facade: all business
+// logic lives in internal service packages; App wires them together and
+// exposes their methods to the Wails frontend.
 type App struct {
 	ctx          context.Context
 	cfg          *config.Config
@@ -57,36 +49,8 @@ type App struct {
 	storageMgr   *storage.Manager
 	updater      *update.Updater
 	pkgmgrSvc    *pkgmgr.Service
+	installerSvc *installer.Service
 	appInfo      update.AppInfo
-	cancelMu     sync.Mutex
-	cancelFuncs  map[string]cancelEntry
-	nextCancelID uint64
-
-	// fetcherMu guards fetcherLocks (NOT the fetchers themselves). The
-	// registry hands out shared fetcher singletons whose HTTP client is a
-	// bare field set via SetHTTPClient; the per-SDK mutexes returned by
-	// fetcherLock serialize "SetHTTPClient + the calls that must observe it"
-	// (FetchRemoteVersions / GetDownloadURL / FetchChecksum) so a background
-	// version refresh and an install of the same SDK cannot race on it.
-	fetcherMu    sync.Mutex
-	fetcherLocks map[string]*sync.Mutex
-}
-
-// fetcherLock returns the per-SDK mutex used to serialize SetHTTPClient and
-// the HTTP calls that depend on it. Lazily initialized so tests can use a
-// bare &App{}.
-func (a *App) fetcherLock(key string) *sync.Mutex {
-	a.fetcherMu.Lock()
-	defer a.fetcherMu.Unlock()
-	if a.fetcherLocks == nil {
-		a.fetcherLocks = make(map[string]*sync.Mutex)
-	}
-	m, ok := a.fetcherLocks[key]
-	if !ok {
-		m = &sync.Mutex{}
-		a.fetcherLocks[key] = m
-	}
-	return m
 }
 
 // runtimeAdapter implements wailsrt.Runtime on top of the Wails runtime so
@@ -137,7 +101,6 @@ func NewApp() *App {
 		pathMgr:     pathMgr,
 		shimMgr:     shimMgr,
 		downloader:  downloader.NewDownloader(),
-		cancelFuncs: make(map[string]cancelEntry),
 	}
 	app.appInfo = update.ParseAppInfo(aboutJSON)
 	return app
@@ -154,8 +117,10 @@ func (a *App) startup(ctx context.Context) {
 	a.registry = sdk.NewRegistry(a.cfg, a.settings)
 	logger.Info("SDK registry initialized with %d SDK types", len(a.registry.All()))
 	a.storageMgr = storage.NewManager(a.cfg, a.registry, a.pathMgr, a.shimMgr, a.settings)
-	a.updater = update.NewUpdater(a.appInfo, a.settings, a.downloader, a.proxySvc, &runtimeAdapter{ctx: ctx})
+	rt := &runtimeAdapter{ctx: ctx}
+	a.updater = update.NewUpdater(a.appInfo, a.settings, a.downloader, a.proxySvc, rt)
 	a.pkgmgrSvc = pkgmgr.New(a.cfg, a.registry)
+	a.installerSvc = installer.New(a.cfg, a.registry, a.downloader, a.pathMgr, a.shimMgr, a.settings, a.proxySvc, rt)
 
 	// Seed ~/.svc/mirrors.json (the editable "easter egg" GitHub mirror list)
 	// and point the version cache at ~/.svc/cache. Both must be (re)initialised
@@ -184,27 +149,10 @@ func (a *App) startup(ctx context.Context) {
 // shutdown called on application exit
 func (a *App) shutdown(ctx context.Context) {
 	logger.Info("Application shutting down...")
-	a.cancelMu.Lock()
-	for sdkType, entry := range a.cancelFuncs {
-		logger.Info("Cancelling ongoing install: %s", sdkType)
-		entry.cancel()
+	if a.installerSvc != nil {
+		a.installerSvc.CancelAll()
 	}
-	a.cancelMu.Unlock()
 	logger.Info("Application shutdown complete")
-}
-
-func (a *App) emitProgress(sdkType sdk.SdkType, version, stage string, percent int, message string, downloadedBytes, totalBytes, speedBytesPerSec int64, downloadURL string) {
-	wailsRuntime.EventsEmit(a.ctx, "install:progress", sdk.InstallProgress{
-		SdkType:          sdkType,
-		Version:          version,
-		Stage:            stage,
-		Percent:          percent,
-		Message:          message,
-		DownloadedBytes:  downloadedBytes,
-		TotalBytes:       totalBytes,
-		SpeedBytesPerSec: speedBytesPerSec,
-		DownloadURL:      downloadURL,
-	})
 }
 
 // GetPathEntries retrieves all PATH entries
@@ -350,4 +298,83 @@ func (a *App) InstallPackageManager(name string) error {
 // UpdatePackageManager updates a package manager to the latest version.
 func (a *App) UpdatePackageManager(name string) error {
 	return a.pkgmgrSvc.UpdatePackageManager(name)
+}
+
+// GetAllSdkStatus returns the local status of every known SDK.
+func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
+	if a.installerSvc == nil {
+		return nil
+	}
+	return a.installerSvc.GetAllSdkStatus()
+}
+
+// GetSdkStatus returns the local status of one SDK.
+func (a *App) GetSdkStatus(sdkType string) (*sdk.SdkStatus, error) {
+	if a.installerSvc == nil {
+		return nil, errUninitialized
+	}
+	return a.installerSvc.GetSdkStatus(sdkType)
+}
+
+// CheckSystemConflicts reports system PATH/env conflicts for an SDK.
+func (a *App) CheckSystemConflicts(sdkType string) ([]string, error) {
+	if a.installerSvc == nil {
+		return nil, errUninitialized
+	}
+	return a.installerSvc.CheckSystemConflicts(sdkType)
+}
+
+// GetRemoteVersions returns the installable versions of an SDK.
+func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
+	if a.installerSvc == nil {
+		return nil, errUninitialized
+	}
+	return a.installerSvc.GetRemoteVersions(sdkType)
+}
+
+// InstallSdk downloads, verifies and installs an SDK version.
+func (a *App) InstallSdk(sdkType string, version string) error {
+	if a.installerSvc == nil {
+		return errUninitialized
+	}
+	return a.installerSvc.InstallSdk(sdkType, version)
+}
+
+// CancelInstall requests cancellation of an in-flight install.
+func (a *App) CancelInstall(sdkType string) {
+	if a.installerSvc != nil {
+		a.installerSvc.CancelInstall(sdkType)
+	}
+}
+
+// GetInstallDir returns the install directory of an SDK.
+func (a *App) GetInstallDir(sdkType string) string {
+	if a.installerSvc == nil {
+		return ""
+	}
+	return a.installerSvc.GetInstallDir(sdkType)
+}
+
+// SwitchVersion activates an installed SDK version.
+func (a *App) SwitchVersion(sdkType string, version string) error {
+	if a.installerSvc == nil {
+		return errUninitialized
+	}
+	return a.installerSvc.SwitchVersion(sdkType, version)
+}
+
+// GetSdkDownloadURL resolves the download URL of an SDK version.
+func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) {
+	if a.installerSvc == nil {
+		return "", errUninitialized
+	}
+	return a.installerSvc.GetSdkDownloadURL(sdkType, version)
+}
+
+// DetectPathVersion detects the version of an SDK found on the system PATH.
+func (a *App) DetectPathVersion(sdkType string) string {
+	if a.installerSvc == nil {
+		return ""
+	}
+	return a.installerSvc.DetectPathVersion(sdkType)
 }

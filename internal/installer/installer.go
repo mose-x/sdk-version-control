@@ -1,25 +1,80 @@
-package main
+package installer
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/downloader"
 	"sdk_version_control/internal/extractor"
 	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/logger"
+	"sdk_version_control/internal/pathmgr"
+	"sdk_version_control/internal/proxy"
 	"sdk_version_control/internal/sdk"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"sdk_version_control/internal/shimmanager"
+	"sdk_version_control/internal/wailsrt"
 
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"strings"
 )
+
+// Service implements SDK installation lifecycle operations: status queries,
+// remote version discovery, install/switch/cancel, and download URL
+// resolution. It is the largest service; all Wails install bindings on App
+// delegate here.
+type Service struct {
+	cfg      *config.Config
+	registry *sdk.Registry
+	dl       *downloader.Downloader
+	pathMgr  pathmgr.PathManager
+	shimMgr  *shimmanager.Manager
+	settings *config.SettingsManager
+	proxy    *proxy.Service
+	rt       wailsrt.Runtime
+	cancels  *cancelTracker
+	locks    *fetcherLocks
+}
+
+// New wires an install Service. registry/rt must be non-nil in production
+// (registry is created in startup; rt wraps the Wails context).
+func New(cfg *config.Config, registry *sdk.Registry, dl *downloader.Downloader, pathMgr pathmgr.PathManager, shimMgr *shimmanager.Manager, settings *config.SettingsManager, proxySvc *proxy.Service, rt wailsrt.Runtime) *Service {
+	return &Service{
+		cfg:      cfg,
+		registry: registry,
+		dl:       dl,
+		pathMgr:  pathMgr,
+		shimMgr:  shimMgr,
+		settings: settings,
+		proxy:    proxySvc,
+		rt:       rt,
+		cancels:  newCancelTracker(),
+		locks:    &fetcherLocks{},
+	}
+}
+
+// CancelAll requests cancellation of every in-flight install (app shutdown).
+func (s *Service) CancelAll() {
+	s.cancels.cancelAll()
+}
+
+func (s *Service) emitProgress(sdkType sdk.SdkType, version, stage string, percent int, message string, downloadedBytes, totalBytes, speedBytesPerSec int64, downloadURL string) {
+	s.rt.EventsEmit("install:progress", sdk.InstallProgress{
+		SdkType:          sdkType,
+		Version:          version,
+		Stage:            stage,
+		Percent:          percent,
+		Message:          message,
+		DownloadedBytes:  downloadedBytes,
+		TotalBytes:       totalBytes,
+		SpeedBytesPerSec: speedBytesPerSec,
+		DownloadURL:      downloadURL,
+	})
+}
 
 // verifyFileSHA256 computes the SHA256 hash of a file and compares it to the
 // expected hex-encoded checksum. Returns nil if they match, an error otherwise.
@@ -42,12 +97,12 @@ func verifyFileSHA256(filePath, expectedSHA256 string) error {
 	return nil
 }
 
-func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
-	if a.registry == nil {
+func (s *Service) GetAllSdkStatus() []sdk.SdkStatus {
+	if s.registry == nil {
 		return nil
 	}
 	var statuses []sdk.SdkStatus
-	for _, f := range a.registry.All() {
+	for _, f := range s.registry.All() {
 		status, err := f.GetLocalStatus()
 		if err != nil {
 			statuses = append(statuses, sdk.SdkStatus{
@@ -74,28 +129,28 @@ func (a *App) GetAllSdkStatus() []sdk.SdkStatus {
 	return statuses
 }
 
-func (a *App) GetSdkStatus(sdkType string) (*sdk.SdkStatus, error) {
-	if a.registry == nil {
+func (s *Service) GetSdkStatus(sdkType string) (*sdk.SdkStatus, error) {
+	if s.registry == nil {
 		return nil, fmt.Errorf("application not fully initialized")
 	}
 	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
-	f := a.registry.Get(sdk.SdkType(sdkType))
+	f := s.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
 		return nil, fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
 	return f.GetLocalStatus()
 }
 
-func (a *App) CheckSystemConflicts(sdkType string) ([]string, error) {
-	if a.registry == nil {
+func (s *Service) CheckSystemConflicts(sdkType string) ([]string, error) {
+	if s.registry == nil {
 		return nil, fmt.Errorf("application not fully initialized")
 	}
 	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
-	f := a.registry.Get(sdk.SdkType(sdkType))
+	f := s.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
 		return nil, fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
@@ -105,18 +160,18 @@ func (a *App) CheckSystemConflicts(sdkType string) ([]string, error) {
 		keys = append(keys, k)
 	}
 
-	return a.pathMgr.DetectSystemConflicts(sdkType, keys), nil
+	return s.pathMgr.DetectSystemConflicts(sdkType, keys), nil
 }
 
-func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
-	if a.registry == nil {
+func (s *Service) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
+	if s.registry == nil {
 		return nil, fmt.Errorf("application not fully initialized")
 	}
 	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return nil, err
 	}
 	t := sdk.SdkType(sdkType)
-	f := a.registry.Get(t)
+	f := s.registry.Get(t)
 	if f == nil {
 		return nil, fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
@@ -130,11 +185,11 @@ func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
 	// so the user sees a real list on the first open instead of an empty panel
 	// that only fills in seconds later via the event.
 	if cached, ok := sdk.GetCachedVersions(t); ok {
-		a.refreshVersionsInBackground(t, f)
+		s.refreshVersionsInBackground(t, f)
 		return cached, nil
 	}
 
-	versions, err := a.fetchAndCacheVersions(t, f)
+	versions, err := s.fetchAndCacheVersions(t, f)
 	if err != nil {
 		return nil, err
 	}
@@ -144,15 +199,15 @@ func (a *App) GetRemoteVersions(sdkType string) ([]sdk.VersionInfo, error) {
 // fetchAndCacheVersions fetches the remote version list through f, stores it in
 // the version cache (memory + disk), and returns it. Used both by the
 // synchronous cache-miss path and by the background refresh goroutine.
-func (a *App) fetchAndCacheVersions(t sdk.SdkType, f sdk.VersionFetcher) ([]sdk.VersionInfo, error) {
-	proxyCfg := a.proxySvc.Config()
+func (s *Service) fetchAndCacheVersions(t sdk.SdkType, f sdk.VersionFetcher) ([]sdk.VersionInfo, error) {
+	proxyCfg := s.proxy.Config()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
 	// Serialize SetHTTPClient + the fetch that must observe it under the
 	// per-SDK lock: registry fetchers are shared singletons holding the
 	// client in a bare field, so a concurrent install of the same SDK would
 	// race this background refresh on that field otherwise.
-	lk := a.fetcherLock(string(t))
+	lk := s.locks.get(string(t))
 	lk.Lock()
 	f.SetHTTPClient(client)
 	versions, err := f.FetchRemoteVersions()
@@ -175,12 +230,12 @@ func (a *App) fetchAndCacheVersions(t sdk.SdkType, f sdk.VersionFetcher) ([]sdk.
 //
 // The goroutine is fire-and-forget; it is not cancelled on app shutdown
 // (Wails tears down the runtime, so a late EventsEmit is a no-op).
-func (a *App) refreshVersionsInBackground(t sdk.SdkType, f sdk.VersionFetcher) {
+func (s *Service) refreshVersionsInBackground(t sdk.SdkType, f sdk.VersionFetcher) {
 	if !sdk.ShouldRefreshVersions(t) {
 		return
 	}
 	go func() {
-		fresh, err := a.fetchAndCacheVersions(t, f)
+		fresh, err := s.fetchAndCacheVersions(t, f)
 		if err != nil {
 			logger.Warn("Background version refresh failed for %s: %v", t, err)
 			return
@@ -188,15 +243,15 @@ func (a *App) refreshVersionsInBackground(t sdk.SdkType, f sdk.VersionFetcher) {
 		// Emit even when the list is identical to the cached one: the UI uses
 		// the event as a "refresh done" signal too (e.g. to clear a stale
 		// loading state from a manual refresh click). Cheap and idempotent.
-		wailsRuntime.EventsEmit(a.ctx, "install:versions-refreshed", map[string]any{
+		s.rt.EventsEmit("install:versions-refreshed", map[string]any{
 			"sdkType":  string(t),
 			"versions": fresh,
 		})
 	}()
 }
 
-func (a *App) InstallSdk(sdkTypeStr string, version string) error {
-	if a.registry == nil {
+func (s *Service) InstallSdk(sdkTypeStr string, version string) error {
+	if s.registry == nil {
 		return fmt.Errorf("application not fully initialized")
 	}
 	if err := helpers.ValidatePathSegment(sdkTypeStr); err != nil {
@@ -206,7 +261,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		return err
 	}
 	sdkType := sdk.SdkType(sdkTypeStr)
-	f := a.registry.Get(sdkType)
+	f := s.registry.Get(sdkType)
 	if f == nil {
 		return fmt.Errorf("unknown SDK type: %s", sdkTypeStr)
 	}
@@ -220,13 +275,13 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	// used the bare constructor client and bypassed the user's proxy, so
 	// resolving the URL failed in proxy-only networks even though the actual
 	// file download (below) correctly used the proxy.
-	proxyCfg := a.proxySvc.Config()
+	proxyCfg := s.proxy.Config()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
 	// Serialize SetHTTPClient + the call that must observe it under the
 	// per-SDK lock (shared fetcher singletons hold the client in a bare
 	// field; the background version refresh would race it otherwise).
-	lk := a.fetcherLock(sdkTypeStr)
+	lk := s.locks.get(sdkTypeStr)
 	lk.Lock()
 	f.SetHTTPClient(client)
 	downloadURL, fileName, err := f.GetDownloadURL(version)
@@ -237,26 +292,16 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	if err := helpers.ValidatePathSegment(fileName); err != nil {
 		return fmt.Errorf("invalid download filename: %w", err)
 	}
-	downloadURL = a.proxySvc.ApplyGithubMirror(downloadURL)
+	downloadURL = s.proxy.ApplyGithubMirror(downloadURL)
 
-	tmpFile := filepath.Join(a.cfg.TmpDir(), fileName)
+	tmpFile := filepath.Join(s.cfg.TmpDir(), fileName)
 	logger.Info("Download URL: %s", downloadURL)
-	a.emitProgress(sdkType, version, "downloading", 0, "Downloading...", 0, 0, 0, downloadURL)
+	s.emitProgress(sdkType, version, "downloading", 0, "Downloading...", 0, 0, 0, downloadURL)
 
 	defer os.Remove(tmpFile)
 
-	installCtx, cancel := context.WithCancel(a.ctx)
-	done := make(chan struct{})
-	a.cancelMu.Lock()
-	var prevDone chan struct{}
-	if old, ok := a.cancelFuncs[sdkTypeStr]; ok {
-		old.cancel()
-		prevDone = old.done
-	}
-	myID := a.nextCancelID
-	a.nextCancelID++
-	a.cancelFuncs[sdkTypeStr] = cancelEntry{cancel: cancel, id: myID, done: done}
-	a.cancelMu.Unlock()
+	installCtx, prevDone, _, cleanup := s.cancels.register(s.rt.Context(), sdkTypeStr)
+	defer cleanup()
 
 	// Wait (bounded) for the cancelled previous install of the SAME SDK to
 	// fully exit before this install starts downloading. Cancelling the old
@@ -270,31 +315,21 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 			sdkTypeStr, installExitWaitTimeout)
 	}
 
-	defer func() {
-		cancel()
-		a.cancelMu.Lock()
-		if entry, ok := a.cancelFuncs[sdkTypeStr]; ok && entry.id == myID {
-			delete(a.cancelFuncs, sdkTypeStr)
-		}
-		a.cancelMu.Unlock()
-		close(done)
-	}()
-
-	threads := a.settings.Get().DownloadThreads
+	threads := s.settings.Get().DownloadThreads
 	if threads <= 0 {
 		threads = 4
 	}
-	err = a.downloader.Download(installCtx, downloadURL, tmpFile, func(downloaded, total, speed int64) {
+	err = s.dl.Download(installCtx, downloadURL, tmpFile, func(downloaded, total, speed int64) {
 		if total > 0 {
 			percent := int(downloaded * 100 / total)
 			msg := fmt.Sprintf("Downloading... %d%%", percent)
-			a.emitProgress(sdkType, version, "downloading", percent, msg, downloaded, total, speed, downloadURL)
+			s.emitProgress(sdkType, version, "downloading", percent, msg, downloaded, total, speed, downloadURL)
 		} else {
-			a.emitProgress(sdkType, version, "downloading", 0, "Downloading...", downloaded, 0, speed, downloadURL)
+			s.emitProgress(sdkType, version, "downloading", 0, "Downloading...", downloaded, 0, speed, downloadURL)
 		}
 	}, proxyCfg, threads)
 	if err != nil {
-		a.emitProgress(sdkType, version, "error", 0, fmt.Sprintf("Download failed: %v", err), 0, 0, 0, downloadURL)
+		s.emitProgress(sdkType, version, "error", 0, fmt.Sprintf("Download failed: %v", err), 0, 0, 0, downloadURL)
 		return fmt.Errorf("download failed: %w", err)
 	}
 
@@ -303,7 +338,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		// Re-assert the client under the per-SDK lock: FetchChecksum reads
 		// the same bare client field, which a concurrent background refresh
 		// may have swapped since the GetDownloadURL call above.
-		lk := a.fetcherLock(sdkTypeStr)
+		lk := s.locks.get(sdkTypeStr)
 		lk.Lock()
 		f.SetHTTPClient(client)
 		expected, err := cf.FetchChecksum(version)
@@ -311,9 +346,9 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 		if err != nil {
 			logger.Warn("Failed to fetch checksum for %s %s: %v (skipping verification)", sdkTypeStr, version, err)
 		} else if expected != "" {
-			a.emitProgress(sdkType, version, "verifying", 0, "Verifying checksum...", 0, 0, 0, downloadURL)
+			s.emitProgress(sdkType, version, "verifying", 0, "Verifying checksum...", 0, 0, 0, downloadURL)
 			if err := verifyFileSHA256(tmpFile, expected); err != nil {
-				a.emitProgress(sdkType, version, "error", 0, fmt.Sprintf("Checksum verification failed: %v", err), 0, 0, 0, downloadURL)
+				s.emitProgress(sdkType, version, "error", 0, fmt.Sprintf("Checksum verification failed: %v", err), 0, 0, 0, downloadURL)
 				return fmt.Errorf("checksum verification failed: %w", err)
 			}
 			logger.Info("Checksum verified for %s %s", sdkTypeStr, version)
@@ -327,13 +362,13 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	// extract/replace phases had no effect. Check before each expensive phase
 	// and bail out cleanly (deferred cleanup removes tmpFile).
 	if err := installCtx.Err(); err != nil {
-		a.emitProgress(sdkType, version, "error", 0, "Installation cancelled", 0, 0, 0, downloadURL)
+		s.emitProgress(sdkType, version, "error", 0, "Installation cancelled", 0, 0, 0, downloadURL)
 		return fmt.Errorf("installation cancelled: %w", err)
 	}
 
 	logger.Info("Download completed, extracting...")
-	a.emitProgress(sdkType, version, "extracting", 0, "Extracting...", 0, 0, 0, downloadURL)
-	versionDir := a.cfg.SdkVersionDir(string(sdkType), version)
+	s.emitProgress(sdkType, version, "extracting", 0, "Extracting...", 0, 0, 0, downloadURL)
+	versionDir := s.cfg.SdkVersionDir(string(sdkType), version)
 
 	// Extract to a temporary sibling directory first, then atomically replace
 	// the old version on success. This preserves the previously-working version
@@ -378,7 +413,7 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	// archive can take a long time, and the user may have cancelled during.
 	if err := installCtx.Err(); err != nil {
 		os.RemoveAll(tmpVersionDir)
-		a.emitProgress(sdkType, version, "error", 0, "Installation cancelled", 0, 0, 0, downloadURL)
+		s.emitProgress(sdkType, version, "error", 0, "Installation cancelled", 0, 0, 0, downloadURL)
 		return fmt.Errorf("installation cancelled: %w", err)
 	}
 
@@ -410,16 +445,16 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	}
 
 	logger.Info("Extraction completed, configuring environment...")
-	a.emitProgress(sdkType, version, "configuring_path", 0, "Configuring environment...", 0, 0, 0, downloadURL)
+	s.emitProgress(sdkType, version, "configuring_path", 0, "Configuring environment...", 0, 0, 0, downloadURL)
 
 	// M13: Set active version BEFORE ConfigureSdk. If SetActiveVersion fails,
 	// the config doesn't record this version — don't configure PATH for an
 	// unrecorded version (would leave inconsistent state on failure).
-	if err := a.cfg.SetActiveVersion(string(sdkType), version); err != nil {
+	if err := s.cfg.SetActiveVersion(string(sdkType), version); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	if err := a.pathMgr.ConfigureSdk(string(sdkType), versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
+	if err := s.pathMgr.ConfigureSdk(string(sdkType), versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
@@ -428,38 +463,28 @@ func (a *App) InstallSdk(sdkTypeStr string, version string) error {
 	// so its env vars pointed at the previous active version; this refresh fixes
 	// that. Non-fatal: the shim runtime reads config.json directly, so a stale
 	// .svc.rc only affects tools that source it directly.
-	if err := a.shimMgr.RefreshRcFile(); err != nil {
+	if err := s.shimMgr.RefreshRcFile(); err != nil {
 		logger.Warn("Failed to refresh .svc.rc after install: %v", err)
 	}
 
 	logger.Info("Installation complete: %s %s", sdkTypeStr, version)
-	a.emitProgress(sdkType, version, "done", 100, "Installation complete!", 0, 0, 0, downloadURL)
+	s.emitProgress(sdkType, version, "done", 100, "Installation complete!", 0, 0, 0, downloadURL)
 	return nil
 }
 
-func (a *App) CancelInstall(sdkType string) {
-	a.cancelMu.Lock()
-	if entry, ok := a.cancelFuncs[sdkType]; ok {
-		entry.cancel()
-		// Do NOT delete the entry: the install goroutine is still winding
-		// down, and a reinstall of the same SDK must still be able to find
-		// entry.done and wait for it to fully exit (otherwise the old
-		// download could keep writing the shared tmp file while the new one
-		// re-creates it). The install's deferred cleanup removes the entry
-		// (id-gated) and closes done.
-	}
-	a.cancelMu.Unlock()
+func (s *Service) CancelInstall(sdkType string) {
+	s.cancels.cancel(sdkType)
 }
 
-func (a *App) GetInstallDir(sdkType string) string {
+func (s *Service) GetInstallDir(sdkType string) string {
 	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return ""
 	}
-	return a.cfg.SdkDir(sdkType)
+	return s.cfg.SdkDir(sdkType)
 }
 
-func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
-	if a.registry == nil {
+func (s *Service) SwitchVersion(sdkTypeStr string, version string) error {
+	if s.registry == nil {
 		return fmt.Errorf("application not fully initialized")
 	}
 	if err := helpers.ValidatePathSegment(sdkTypeStr); err != nil {
@@ -469,14 +494,14 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 		return err
 	}
 	sdkType := sdk.SdkType(sdkTypeStr)
-	f := a.registry.Get(sdkType)
+	f := s.registry.Get(sdkType)
 	if f == nil {
 		return fmt.Errorf("unknown SDK type: %s", sdkTypeStr)
 	}
 
 	logger.Info("Switching %s version to: %s", sdkTypeStr, version)
 
-	versionDir := a.cfg.SdkVersionDir(sdkTypeStr, version)
+	versionDir := s.cfg.SdkVersionDir(sdkTypeStr, version)
 	if _, err := os.Stat(versionDir); err != nil {
 		logger.Error("Version directory does not exist: %s", versionDir)
 		return fmt.Errorf("version directory does not exist: %s", version)
@@ -486,18 +511,18 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 	// fix). If SetActiveVersion fails, the config doesn't record this version —
 	// don't configure PATH for an unrecorded version (would leave inconsistent
 	// state on failure).
-	if err := a.cfg.SetActiveVersion(sdkTypeStr, version); err != nil {
+	if err := s.cfg.SetActiveVersion(sdkTypeStr, version); err != nil {
 		logger.Error("Failed to save config for %s %s: %v", sdkTypeStr, version, err)
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	if err := a.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
+	if err := s.pathMgr.ConfigureSdk(sdkTypeStr, versionDir, f.GetBinDirs(), f.GetExtraEnvVars()); err != nil {
 		logger.Error("Failed to configure PATH for %s %s: %v", sdkTypeStr, version, err)
 		return fmt.Errorf("failed to configure PATH: %w", err)
 	}
 
 	// Refresh .svc.rc so env var lines reflect the newly-switched version.
-	if err := a.shimMgr.RefreshRcFile(); err != nil {
+	if err := s.shimMgr.RefreshRcFile(); err != nil {
 		logger.Warn("Failed to refresh .svc.rc after switch: %v", err)
 	}
 
@@ -505,8 +530,8 @@ func (a *App) SwitchVersion(sdkTypeStr string, version string) error {
 	return nil
 }
 
-func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) {
-	if a.registry == nil {
+func (s *Service) GetSdkDownloadURL(sdkType string, version string) (string, error) {
+	if s.registry == nil {
 		return "", fmt.Errorf("application not fully initialized")
 	}
 	if err := helpers.ValidatePathSegment(sdkType); err != nil {
@@ -515,19 +540,19 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 	if err := helpers.ValidatePathSegment(version); err != nil {
 		return "", err
 	}
-	f := a.registry.Get(sdk.SdkType(sdkType))
+	f := s.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
 		return "", fmt.Errorf("unknown SDK type: %s", sdkType)
 	}
 	// Same proxy injection as InstallSdk: GetDownloadURL may issue HTTP API
 	// calls that must honor the user's proxy configuration.
-	proxyCfg := a.proxySvc.Config()
+	proxyCfg := s.proxy.Config()
 	client := downloader.BuildClient(proxyCfg)
 	client.Timeout = 30 * time.Second
 	// Serialize SetHTTPClient + the call that must observe it under the
 	// per-SDK lock (shared fetcher singletons hold the client in a bare
 	// field; the background version refresh would race it otherwise).
-	lk := a.fetcherLock(sdkType)
+	lk := s.locks.get(sdkType)
 	lk.Lock()
 	f.SetHTTPClient(client)
 	url, _, err := f.GetDownloadURL(version)
@@ -535,14 +560,14 @@ func (a *App) GetSdkDownloadURL(sdkType string, version string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return a.proxySvc.ApplyGithubMirror(url), nil
+	return s.proxy.ApplyGithubMirror(url), nil
 }
 
-func (a *App) DetectPathVersion(sdkType string) string {
-	if a.registry == nil {
+func (s *Service) DetectPathVersion(sdkType string) string {
+	if s.registry == nil {
 		return ""
 	}
-	f := a.registry.Get(sdk.SdkType(sdkType))
+	f := s.registry.Get(sdk.SdkType(sdkType))
 	if f == nil {
 		return ""
 	}
@@ -564,22 +589,4 @@ func filterResidualVersionDirs(versions []string) []string {
 		filtered = append(filtered, v)
 	}
 	return filtered
-}
-
-// installExitWaitTimeout bounds how long a new InstallSdk waits for the
-// cancelled previous install of the same SDK to fully exit before proceeding.
-const installExitWaitTimeout = 5 * time.Second
-
-// waitForInstallExit blocks until done is closed (the install fully exited)
-// or timeout elapses, reporting whether the install exited in time. Pure
-// logic extracted from InstallSdk's reinstall-race fix for testability.
-func waitForInstallExit(done <-chan struct{}, timeout time.Duration) bool {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case <-done:
-		return true
-	case <-timer.C:
-		return false
-	}
 }

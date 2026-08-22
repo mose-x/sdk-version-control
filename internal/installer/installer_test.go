@@ -1,4 +1,4 @@
-package main
+package installer
 
 import (
 	"sync"
@@ -121,27 +121,27 @@ func TestWaitForInstallExit_EventualExit(t *testing.T) {
 // different keys -> different mutexes (so unrelated SDKs don't block each
 // other).
 func TestFetcherLockPerSdk(t *testing.T) {
-	app := &App{} // lazy init path; NewApp not required
+	var locks fetcherLocks // zero value usable: lazy init path
 
-	a1 := app.fetcherLock("go")
-	a2 := app.fetcherLock("go")
+	a1 := locks.get("go")
+	a2 := locks.get("go")
 	if a1 != a2 {
-		t.Fatal("fetcherLock returned different mutexes for the same SDK key")
+		t.Fatal("fetcherLocks.get returned different mutexes for the same SDK key")
 	}
-	b := app.fetcherLock("jdk")
+	b := locks.get("jdk")
 	if b == a1 {
-		t.Fatal("fetcherLock returned the same mutex for different SDK keys")
+		t.Fatal("fetcherLocks.get returned the same mutex for different SDK keys")
 	}
 
 	// The map must be safe for concurrent first-time access.
-	par := &App{}
+	var par fetcherLocks
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			par.fetcherLock("go").Lock()
-			par.fetcherLock("go").Unlock()
+			par.get("go").Lock()
+			par.get("go").Unlock()
 		}()
 	}
 	wg.Wait()
