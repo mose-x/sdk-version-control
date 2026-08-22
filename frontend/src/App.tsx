@@ -71,6 +71,12 @@ function App() {
       .catch((e) => console.error('Failed to load app info:', e))
   }, [])
 
+  useEffect(() => {
+    // The inline boot screen in index.html covers the WebView's first paint;
+    // drop it now that React has rendered so the app takes over seamlessly.
+    document.getElementById('boot')?.remove()
+  }, [])
+
   const refreshStatuses = useCallback(async () => {
     try {
       const statuses = await GetAllSdkStatus()
