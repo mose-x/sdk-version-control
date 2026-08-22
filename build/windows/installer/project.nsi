@@ -91,20 +91,6 @@ ShowInstDetails show # This will always show the installation details.
 
 Function .onInit
    !insertmacro wails.checkArchitecture
-
-   # Self-updated legacy installs have NO registry entry (those users never
-   # ran an NSIS build — the app replaced its own binary in place), so
-   # InstallDirRegKey finds nothing and the installer would default to the
-   # fresh svc folder, orphaning the old copy. Detect the old default
-   # location and pre-select it so this installer upgrades the self-updated
-   # copy in place (the Section retires the old-named executable).
-   ReadRegStr $0 HKLM "${UNINST_KEY}" "InstallLocation"
-   ReadRegStr $1 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
-   ${If} $0 == ""
-   ${AndIf} $1 == ""
-       IfFileExists "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}\${LEGACY_EXECUTABLE}" 0 +2
-           StrCpy $INSTDIR "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}"
-   ${EndIf}
 FunctionEnd
 
 # Skip the directory page on upgrade: if a previous install location of THIS
@@ -173,19 +159,27 @@ Section
     # Rename migration cleanup. Legacy shortcuts and the legacy WebView2
     # datapath are removed unconditionally (Delete/RMDir are no-ops when
     # absent) so SELF-UPDATED legacy installs — which have no registry
-    # entry at all — also get their old artifacts cleared. The uninstall
-    # registry key and the old program directory are only removed when the
-    # legacy key actually exists (installer-based legacy installs).
+    # entry at all — also get their old artifacts cleared.
     Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
     RMDir /r "$AppData\${LEGACY_EXECUTABLE}"
     ReadRegStr $1 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
     ${If} $1 != ""
+        # Installer-based legacy install: drop its Apps & Features entry and
+        # remove its program directory. Guard: never remove a directory that
+        # equals the new $INSTDIR (a user could have picked the old location
+        # as the install target).
         DeleteRegKey HKLM "${LEGACY_UNINST_KEY}"
-        # Guard: never remove a directory that equals the new $INSTDIR (a
-        # user could have picked the old location as the install target).
         ${If} $1 != "$INSTDIR"
             RMDir /r "$1"
+        ${EndIf}
+    ${Else}
+        # Self-updated legacy install (no registry entry). If the default old
+        # location still holds the legacy executable, remove that folder too —
+        # but never the directory we just installed into.
+        ${If} "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}" != "$INSTDIR"
+            IfFileExists "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}\${LEGACY_EXECUTABLE}" 0 +2
+                RMDir /r "$PROGRAMFILES64\${LEGACY_PRODUCTNAME}"
         ${EndIf}
     ${EndIf}
 SectionEnd
