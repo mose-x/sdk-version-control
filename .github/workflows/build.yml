@@ -78,7 +78,7 @@ jobs:
           }
           Add-Content $env:GITHUB_PATH $nsisDir
           Write-Host "NSIS dir: $nsisDir"
-          & "$nsisDir\makensis.exe" /VERSION
+          & "$nsisDir\makensis.exe" -VERSION
 
       - name: Build & package
         # The packaging logic (about.json bump, go-winres, console shim,
