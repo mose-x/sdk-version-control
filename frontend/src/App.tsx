@@ -43,6 +43,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showPathModal, setShowPathModal] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
+  const [minBootDone, setMinBootDone] = useState(false)
   const [appVersion, setAppVersion] = useState('')
 
   // Load settings + app version on mount
@@ -75,6 +76,12 @@ function App() {
     // The inline boot screen in index.html covers the WebView's first paint;
     // drop it now that React has rendered so the app takes over seamlessly.
     document.getElementById('boot')?.remove()
+
+    // Keep the loading state up for a minimum of MIN_LOADING_MS so startup
+    // reads as a steady, deliberate loading screen instead of a brief flash.
+    const MIN_LOADING_MS = 800
+    const t = setTimeout(() => setMinBootDone(true), MIN_LOADING_MS)
+    return () => clearTimeout(t)
   }, [])
 
   const refreshStatuses = useCallback(async () => {
@@ -179,7 +186,7 @@ function App() {
       }}
     >
       <AntApp>
-        {initialLoading ? (
+        {initialLoading || !minBootDone ? (
           <div
             className={`app-container ${isDark ? 'dark' : 'light'}`}
             style={{
