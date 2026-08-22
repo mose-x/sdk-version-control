@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -147,7 +148,7 @@ func (l *Logger) write(level LogLevel, format string, args ...interface{}) {
 		levelStr = "ERROR"
 	}
 
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
 	msg := fmt.Sprintf(format, args...)
 	line := fmt.Sprintf("[%s] [%s] %s\n", timestamp, levelStr, msg)
 
@@ -215,6 +216,9 @@ func ListLogFiles() ([]LogFileInfo, error) {
 			ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
 		})
 	}
+
+	// Newest first: filenames embed the date, so name-descending = date-descending.
+	sort.Slice(files, func(i, j int) bool { return files[i].Name > files[j].Name })
 
 	return files, nil
 }

@@ -15,6 +15,36 @@ func todayLogFile(logsDir string) string {
 	return filepath.Join(logsDir, fmt.Sprintf("svc-%s.log", time.Now().Format("2006-01-02")))
 }
 
+// TestListLogFiles_Descending verifies logs are listed newest-first so the
+// most recent day is at the top for troubleshooting.
+func TestListLogFiles_Descending(t *testing.T) {
+	base := t.TempDir()
+	if err := Reinit(base); err != nil {
+		t.Fatal(err)
+	}
+	closeSingleton(t)
+	logsDir := filepath.Join(base, "logs")
+	// A few older dated files plus today's (created by Reinit).
+	for _, d := range []string{"2026-01-01", "2026-01-02", "2026-01-03"} {
+		if err := os.WriteFile(filepath.Join(logsDir, "svc-"+d+".log"), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, err := ListLogFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < len(files); i++ {
+		if files[i-1].Name < files[i].Name {
+			t.Errorf("logs not descending: %q before %q", files[i-1].Name, files[i].Name)
+		}
+	}
+	if len(files) == 0 || !strings.HasPrefix(files[0].Name, "svc-") {
+		t.Errorf("expected newest log first, got %v", files)
+	}
+}
+
 // closeSingleton registers a cleanup that closes the singleton's open log
 // file so t.TempDir cleanup can remove the logs directory on Windows (open
 // handles block deletion there).
