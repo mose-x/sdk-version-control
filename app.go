@@ -13,6 +13,7 @@ import (
 	"svc/internal/installer"
 	"svc/internal/logger"
 	"svc/internal/logmgr"
+	"svc/internal/migrate"
 	"svc/internal/pathmgr"
 	"svc/internal/pkgmgr"
 	"svc/internal/proxy"
@@ -148,9 +149,19 @@ func (a *App) startup(ctx context.Context) {
 
 	logger.Info("Application startup complete")
 
+	// Remove stale old-named rollback backups (e.g. mac SDKVersionControl.bak)
+	// left by pre-rename versions; the canonical backup is kept for rollback.
+	if exe, err := os.Executable(); err == nil {
+		update.CleanStaleBackups(exe)
+	}
+
+	// Re-point any svc/legacy shortcut whose icon/target still references the
+	// old renamed folder (Windows only; no-op elsewhere).
+	migrate.RepairShortcutIcons()
+
 	// One-time rename migration for pre-rename self-updated installs. No-op
 	// off Windows and for installs that already run under the svc name.
-	maybeShowLegacyMigrationPrompt(ctx)
+	migrate.MaybeShowLegacyMigrationPrompt(ctx, rt)
 }
 
 // shutdown called on application exit

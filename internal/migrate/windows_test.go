@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package migrate
 
 import (
 	"os"
@@ -70,5 +70,32 @@ func TestIsLegacyWindowsInstall(t *testing.T) {
 	}
 	if strings.EqualFold(filepath.Base(exe), legacyExeName) {
 		t.Errorf("unexpected: test binary is named %s", legacyExeName)
+	}
+}
+
+// TestBuildShortcutIconRepairPs pins the startup icon/target repair script so
+// shortcuts left pointing at the old renamed folder get their logo back.
+func TestBuildShortcutIconRepairPs(t *testing.T) {
+	exe := `C:\Program Files\svc\svc.exe`
+	script := buildShortcutIconRepairPs(exe)
+
+	checks := []struct {
+		desc string
+		want string
+	}{
+		{"embeds the current exe path", exe},
+		{"icon from migrated install", "icon-white.ico"},
+		{"icon falls back to exe", "$icon = $exe"},
+		{"retargets shortcut to current exe", "$s.TargetPath = $exe"},
+		{"re-points icon location", `$s.IconLocation = "$icon, 0"`},
+		{"matches svc.lnk", "'svc.lnk'"},
+		{"matches legacy target", "*SDK Version Control*"},
+	}
+	for _, c := range checks {
+		t.Run(c.desc, func(t *testing.T) {
+			if !strings.Contains(script, c.want) {
+				t.Errorf("script missing %q\n--- script ---\n%s", c.want, script)
+			}
+		})
 	}
 }
