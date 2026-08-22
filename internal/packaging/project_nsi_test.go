@@ -1,4 +1,4 @@
-package main
+package packaging
 
 import (
 	"os"
@@ -7,12 +7,34 @@ import (
 	"testing"
 )
 
+// findRepoRoot walks up from the test's working directory (the package dir)
+// until it finds go.mod, returning the repository root. go test runs with
+// cwd = package directory, so a relative path like "build/..." must be
+// anchored at the root explicitly now that this test lives in a subpackage.
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not locate repository root (go.mod not found)")
+		}
+		dir = parent
+	}
+}
+
 // TestProjectNSI_UpgradeInPlace verifies the NSIS installer template has the
 // four upgrade-in-place features: InstallDirRegKey (detect previous),
 // SkipDirIfInstalled (skip dir page), taskkill (kill running app), and
 // CopyFiles + .bak (backup old version).
 func TestProjectNSI_UpgradeInPlace(t *testing.T) {
-	nsiPath := filepath.Join("build", "windows", "installer", "project.nsi")
+	nsiPath := filepath.Join(findRepoRoot(t), "build", "windows", "installer", "project.nsi")
 	data, err := os.ReadFile(nsiPath)
 	if err != nil {
 		t.Skipf("project.nsi not found (not on Windows?): %v", err)
