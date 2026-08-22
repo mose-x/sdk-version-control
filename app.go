@@ -147,6 +147,10 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	logger.Info("Application startup complete")
+
+	// One-time rename migration for pre-rename self-updated installs. No-op
+	// off Windows and for installs that already run under the svc name.
+	maybeShowLegacyMigrationPrompt(ctx, a.settings)
 }
 
 // shutdown called on application exit
