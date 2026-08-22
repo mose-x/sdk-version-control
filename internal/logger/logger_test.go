@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -129,8 +130,11 @@ func TestReinit_ConcurrentWrites(t *testing.T) {
 	}
 
 	done := make(chan struct{})
+	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for {
 				select {
 				case <-done:
@@ -149,6 +153,10 @@ func TestReinit_ConcurrentWrites(t *testing.T) {
 		}
 	}
 	close(done)
+	// Block until every writer has exited; otherwise a goroutine still in
+	// Info() during t.Cleanup reopens the log file and TempDir cleanup fails
+	// on Windows (file in use).
+	wg.Wait()
 	Info("final marker")
 	if Get() == nil {
 		t.Fatal("singleton nil after concurrent Reinit")
