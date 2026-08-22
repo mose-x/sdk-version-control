@@ -73,8 +73,17 @@ jobs:
           )
           $nsisDir = $candidates | Where-Object { Test-Path "$_\makensis.exe" } | Select-Object -First 1
           if (-not $nsisDir) {
-            choco install nsis -y --no-progress
-            $nsisDir = "C:\Program Files (x86)\NSIS"
+            # community.chocolatey.org intermittently 504s; retry with backoff
+            # and re-probe after each attempt instead of failing the build.
+            for ($i = 1; $i -le 4 -and -not $nsisDir; $i++) {
+              Write-Host "choco install nsis (attempt $i)..."
+              choco install nsis -y --no-progress
+              Start-Sleep -Seconds ($i * 10)
+              $nsisDir = $candidates | Where-Object { Test-Path "$_\makensis.exe" } | Select-Object -First 1
+            }
+            if (-not $nsisDir) {
+              throw "NSIS unavailable: makensis.exe not found after 4 choco attempts"
+            }
           }
           Add-Content $env:GITHUB_PATH $nsisDir
           Write-Host "NSIS dir: $nsisDir"
