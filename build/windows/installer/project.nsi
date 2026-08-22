@@ -34,12 +34,12 @@ Unicode true
 ####
 !include "wails_tools.nsh"
 
-# Rename migration: installs of the old product ("SDK Version Control",
-# binary SDKVersionControl.exe) registered under a different uninstall key.
-# Define the legacy values so this installer can detect, upgrade in place,
-# and clean up the old product instead of installing a second copy.
+# Rename migration: installs of the old product ("SDK Version Control")
+# registered under a different uninstall key. Note the INSTALLED executable
+# was named after the old wails project name (spaces included); the
+# SDKVersionControl-* spelling only ever appeared in release asset names.
 !define LEGACY_PRODUCTNAME "SDK Version Control"
-!define LEGACY_EXECUTABLE  "SDKVersionControl.exe"
+!define LEGACY_EXECUTABLE  "SDK Version Control.exe"
 !define LEGACY_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${INFO_COMPANYNAME}${LEGACY_PRODUCTNAME}"
 
 # The version information for this two must consist of 4 parts
@@ -93,15 +93,14 @@ Function .onInit
    !insertmacro wails.checkArchitecture
 FunctionEnd
 
-# Skip the directory page on upgrade: if a previous install location is
-# found in the registry, set $INSTDIR to it and Abort (skip) the page.
-# Also checks the LEGACY product's key so pre-rename installs
-# ("SDK Version Control") upgrade in place instead of a second copy.
+# Skip the directory page on upgrade: if a previous install location of THIS
+# product is found in the registry, set $INSTDIR to it and Abort (skip) the
+# page. Legacy ("SDK Version Control") locations are deliberately NOT reused:
+# the rename migration installs into the fresh default directory
+# ($PROGRAMFILES64\svc) and removes the old location in the Section below,
+# so folder name, shortcuts and registry entries all carry the new name.
 Function SkipDirIfInstalled
     ReadRegStr $0 HKLM "${UNINST_KEY}" "InstallLocation"
-    ${If} $0 == ""
-        ReadRegStr $0 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
-    ${EndIf}
     ${If} $0 != ""
         StrCpy $INSTDIR $0
         Abort
@@ -157,15 +156,23 @@ Section
     # Write InstallLocation so the next upgrade can detect + skip the dir page.
     WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
 
-    # Rename migration cleanup: if the legacy product was installed at this
-    # same location, drop its now-stale uninstall entry and shortcuts so
-    # Apps & Features does not list both products. (If the legacy install
-    # lives elsewhere, its own entry/uninstaller stays untouched.)
+    # Rename migration cleanup: whenever a legacy ("SDK Version Control")
+    # install is registered, fully retire it — delete its shortcuts, its
+    # Apps & Features entry and its WebView2 datapath. The old program
+    # directory is removed too (the legacy app was taskkilled above; SDK
+    # data lives in ~/.svc, which is NOT inside the install dir), so the
+    # rename is complete: new folder, new shortcuts, one registry entry.
+    # Guard: never remove a directory that equals the new $INSTDIR (a user
+    # could have picked the old location manually as the install target).
     ReadRegStr $1 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"
-    ${If} $1 == "$INSTDIR"
-        DeleteRegKey HKLM "${LEGACY_UNINST_KEY}"
+    ${If} $1 != ""
         Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
         Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
+        DeleteRegKey HKLM "${LEGACY_UNINST_KEY}"
+        RMDir /r "$AppData\${LEGACY_EXECUTABLE}"
+        ${If} $1 != "$INSTDIR"
+            RMDir /r "$1"
+        ${EndIf}
     ${EndIf}
 SectionEnd
 
