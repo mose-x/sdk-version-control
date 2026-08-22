@@ -26,7 +26,7 @@ func TestBuildLegacyRenamePs(t *testing.T) {
 		{"waits via Get-Process polling", "Get-Process -Id $targetPid"},
 		{"wait loop bounded by timeout", "$timeout = 60"},
 		{"folder renamed to svc", "Rename-Item -LiteralPath $oldDir -NewName 'svc'"},
-		{"folder rename fallback keeps old dir", "if (-not (Test-Path -LiteralPath $newDir)) { $newDir = $oldDir }"},
+		{"folder rename fallback keeps old dir", "$newDir = $oldDir"},
 		{"executable renamed to svc.exe", "Rename-Item -LiteralPath $legacyExe -NewName 'svc.exe'"},
 		{"backup named for RollbackUpdate compatibility", "'svc.exe.bak'"},
 		{"rollback backup prefers the self-update backup", "Move-Item -LiteralPath $legacyBak -Destination $newBak -Force"},
@@ -34,7 +34,8 @@ func TestBuildLegacyRenamePs(t *testing.T) {
 		{"legacy shortcut matched by name pattern", "-like 'SDK Version Control*'"},
 		{"legacy shortcut matched by target path", "-like '*SDK Version Control*'"},
 		{"new shortcut name created", "'svc.lnk'"},
-		{"relaunches the new executable", "Start-Process -FilePath $newExe"},
+		{"relaunch guarded by svc.exe existence", "if (Test-Path -LiteralPath (Join-Path $newDir 'svc.exe'))"},
+		{"relaunches svc.exe", "Start-Process -FilePath (Join-Path $newDir 'svc.exe')"},
 	}
 	for _, c := range checks {
 		t.Run(c.desc, func(t *testing.T) {

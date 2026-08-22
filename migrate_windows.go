@@ -48,6 +48,9 @@ func buildLegacyRenamePs(pid int, currentExe string) string {
 	return fmt.Sprintf(`$ErrorActionPreference = 'SilentlyContinue'
 $targetPid = %d
 $oldExe = '%s'
+$log = Join-Path $env:USERPROFILE 'svc_migration.log'
+function Log($m) { Add-Content -LiteralPath $log -Value ("[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m) }
+Log "=== migration start (pid=$targetPid, exe=$oldExe) ==="
 
 # Wait for the application to exit (it quits right after launching this
 # script). Poll; if it already exited, proceed immediately.
@@ -56,19 +59,21 @@ while ((Get-Process -Id $targetPid -ErrorAction SilentlyContinue) -and $timeout 
     Start-Sleep -Seconds 1
     $timeout--
 }
-if ($timeout -le 0) { exit 1 }
+if ($timeout -le 0) { Log "ABORT: app did not exit in 60s"; exit 1 }
 
 $oldDir  = Split-Path -Parent $oldExe
 $parent  = Split-Path -Parent $oldDir
 $newDir  = Join-Path $parent 'svc'
 $oldName = 'SDK Version Control.exe'
+Log "oldDir=$oldDir newDir=$newDir"
 
 # Rename the install folder when the parent directory is writable (needs the
 # same privileges the app already has; a non-elevated app in Program Files
 # cannot rename the folder, so this silently falls back to exe-only rename).
 if ($oldDir -ne $newDir) {
     Rename-Item -LiteralPath $oldDir -NewName 'svc' -ErrorAction SilentlyContinue
-    if (-not (Test-Path -LiteralPath $newDir)) { $newDir = $oldDir }
+    if (Test-Path -LiteralPath $newDir) { Log "folder renamed -> $newDir" }
+    else { Log "folder rename FAILED (keeping $oldDir)"; $newDir = $oldDir }
 }
 
 # Rename the executable and set up the rollback backup RollbackUpdate expects
@@ -84,11 +89,15 @@ $newBak    = Join-Path $newDir 'svc.exe.bak'
 if (Test-Path -LiteralPath $legacyExe) {
     if (Test-Path -LiteralPath $legacyBak) {
         Move-Item -LiteralPath $legacyBak -Destination $newBak -Force
+        Log "rollback backup moved -> svc.exe.bak"
     } else {
         Copy-Item -LiteralPath $legacyExe -Destination $newBak -Force
+        Log "rollback backup copied -> svc.exe.bak"
     }
-    Rename-Item -LiteralPath $legacyExe -NewName 'svc.exe'
-}
+    Rename-Item -LiteralPath $legacyExe -NewName 'svc.exe' -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $newExe) { Log "exe renamed -> svc.exe" }
+    else { Log "exe rename FAILED" }
+} else { Log "legacy exe not found at $legacyExe" }
 if (-not (Test-Path -LiteralPath $newExe)) { $newExe = $legacyExe }
 
 # Recreate shortcuts only where legacy ones exist (never add shortcuts where
@@ -119,7 +128,13 @@ try {
     }
 } catch {}
 
-Start-Process -FilePath $newExe
+# Relaunch only if the migration actually produced svc.exe. If the rename
+# failed, relaunching the old exe would re-trigger this migration on the next
+# launch and flash on every startup; leave the app closed for the user to
+# relaunch manually instead.
+if (Test-Path -LiteralPath (Join-Path $newDir 'svc.exe')) {
+    Start-Process -FilePath (Join-Path $newDir 'svc.exe')
+}
 exit 0
 `, pid, strings.ReplaceAll(currentExe, "'", "''"))
 }

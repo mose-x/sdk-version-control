@@ -62,6 +62,9 @@ func buildLegacyRenameSh(pid int, currentExe string) string {
 	return fmt.Sprintf(`#!/bin/bash
 PID="%d"
 OLD_EXE="%s"
+LOG="$HOME/svc_migration.log"
+log() { echo "[$(date '+%%H:%%M:%%S')] $*" >> "$LOG"; }
+log "=== migration start (pid=$PID, exe=$OLD_EXE) ==="
 
 # Wait for the application to exit.
 timeout=60
@@ -69,7 +72,7 @@ while kill -0 "$PID" 2>/dev/null && [ "$timeout" -gt 0 ]; do
     sleep 1
     timeout=$((timeout-1))
 done
-[ "$timeout" -le 0 ] && exit 1
+[ "$timeout" -le 0 ] && { log "ABORT: app did not exit in 60s"; exit 1; }
 
 # Bundle is three levels up from the executable (<bundle>/Contents/MacOS/bin).
 MACOS_DIR=$(dirname "$OLD_EXE")
@@ -77,12 +80,18 @@ CONTENTS=$(dirname "$MACOS_DIR")
 BUNDLE=$(dirname "$CONTENTS")
 APPDIR=$(dirname "$BUNDLE")
 NEW_BUNDLE="$APPDIR/svc.app"
+log "bundle=$BUNDLE new_bundle=$NEW_BUNDLE"
 
 # Rename the bundle when the parent directory is writable (needs the same
 # privileges the app already has; a non-elevated app in /Applications cannot
 # rename the bundle, so this silently falls back to keeping it in place).
 if [ "$BUNDLE" != "$NEW_BUNDLE" ]; then
-    mv "$BUNDLE" "$NEW_BUNDLE" 2>/dev/null || NEW_BUNDLE="$BUNDLE"
+    if mv "$BUNDLE" "$NEW_BUNDLE" 2>>"$LOG"; then
+        log "bundle renamed -> $NEW_BUNDLE"
+    else
+        log "bundle rename FAILED (keeping $BUNDLE)"
+        NEW_BUNDLE="$BUNDLE"
+    fi
 fi
 
 # Self-update replaces the inner executable's CONTENTS but not its FILE NAME,
@@ -91,8 +100,15 @@ fi
 # is unsigned — the build strips the signature — so renaming is safe.)
 INNER_OLD=$(basename "$OLD_EXE")
 MACOS_NEW="$NEW_BUNDLE/Contents/MacOS"
+log "inner_old=$INNER_OLD macos_new=$MACOS_NEW"
 if [ "$INNER_OLD" != "svc" ] && [ -f "$MACOS_NEW/$INNER_OLD" ]; then
-    mv "$MACOS_NEW/$INNER_OLD" "$MACOS_NEW/svc" 2>/dev/null
+    if mv "$MACOS_NEW/$INNER_OLD" "$MACOS_NEW/svc" 2>>"$LOG"; then
+        log "inner executable renamed -> svc"
+    else
+        log "inner executable rename FAILED"
+    fi
+else
+    log "inner rename skipped (already svc or source missing)"
 fi
 
 # Update the displayed bundle name and the executable name in Info.plist.
@@ -100,13 +116,18 @@ fi
 # CFBundleExecutable must match the renamed inner binary. Best-effort.
 PLIST="$NEW_BUNDLE/Contents/Info.plist"
 if [ -f "$PLIST" ]; then
-    /usr/bin/plutil -replace CFBundleName -string "svc" "$PLIST" 2>/dev/null
-    /usr/bin/plutil -replace CFBundleDisplayName -string "svc" "$PLIST" 2>/dev/null
-    /usr/bin/plutil -replace CFBundleExecutable -string "svc" "$PLIST" 2>/dev/null
+    /usr/bin/plutil -replace CFBundleName -string "svc" "$PLIST" 2>>"$LOG" && log "CFBundleName=svc"
+    /usr/bin/plutil -replace CFBundleDisplayName -string "svc" "$PLIST" 2>>"$LOG"
+    /usr/bin/plutil -replace CFBundleExecutable -string "svc" "$PLIST" 2>>"$LOG" && log "CFBundleExecutable=svc"
 fi
 
-# Relaunch.
-open "$NEW_BUNDLE" 2>/dev/null || nohup "$MACOS_NEW/svc" >/dev/null 2>&1 &
+# Relaunch only if the migration actually produced the svc executable. If
+# the rename failed (e.g. insufficient permission), relaunching would just
+# re-trigger this migration on the next launch and flash on every startup;
+# leaving the app closed for the user to relaunch manually is safer.
+if [ -f "$MACOS_NEW/svc" ]; then
+    open "$NEW_BUNDLE" 2>/dev/null || nohup "$MACOS_NEW/svc" >/dev/null 2>&1 &
+fi
 exit 0
 `, pid, currentExe)
 }
