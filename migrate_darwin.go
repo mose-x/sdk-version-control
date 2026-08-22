@@ -20,15 +20,37 @@ import (
 // "svc.app".
 const legacyAppBundleName = "SDK Version Control.app"
 
-// isLegacyDarwinInstall reports whether the running binary sits inside the
-// old-named .app bundle.
+// isLegacyDarwinInstall reports whether there is still something left to rename
+// to "svc". It must NOT only look at the bundle folder name: the 2.0.0
+// migration renamed the bundle to svc.app but not the inner executable
+// (self-update replaces the executable's CONTENTS, not its FILE NAME), so an
+// install can have a svc.app bundle whose Contents/MacOS binary still carries
+// the old name. Detect legacy when EITHER the inner executable is not "svc"
+// OR the bundle folder is still the old name — covering fresh self-updated
+// installs, partially-migrated installs, and the already-renamed-bundle case.
 func isLegacyDarwinInstall() bool {
 	exe, err := os.Executable()
 	if err != nil {
 		return false
 	}
-	// exe = <bundle>/Contents/MacOS/<binary>; the bundle is 3 levels up.
+	// exe = <bundle>/Contents/MacOS/<binary>; the bundle is 3 levels up. It
+	// must actually be a .app bundle — a real install. The Go test binary is
+	// not inside a .app, so this returns false under `go test` and the
+	// migration never triggers in tests.
 	bundle := filepath.Dir(filepath.Dir(filepath.Dir(exe)))
+	if !strings.HasSuffix(strings.ToLower(bundle), ".app") {
+		return false
+	}
+	// A fresh install's inner executable is named "svc" (wails build -o svc).
+	// Any other name means it is a self-updated pre-rename executable. This
+	// catches installs whose bundle is already svc.app but whose inner binary
+	// still carries the old name.
+	if filepath.Base(exe) != "svc" {
+		return true
+	}
+	// Fallback: inner executable is already "svc" but the bundle folder is
+	// still the old name (a prior migration renamed the binary but not the
+	// bundle).
 	return strings.EqualFold(filepath.Base(bundle), legacyAppBundleName)
 }
 
