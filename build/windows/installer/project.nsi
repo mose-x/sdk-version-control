@@ -116,10 +116,10 @@ Section
     # Windows locks a running .exe; without this, the File step fails.
     # Also kill the LEGACY executable name: pre-rename installs run
     # SDKVersionControl.exe, which would lock files in the same directory.
-    # powershell -WindowStyle Hidden (not a bare taskkill/ExecWait) so no
-    # console window flashes during install; nsExec is unavailable in CI NSIS.
-    ExecWait 'powershell.exe -NoProfile -WindowStyle Hidden -Command "Stop-Process -Name ${INFO_PROJECTNAME} -Force -ErrorAction SilentlyContinue"'
-    ExecWait 'powershell.exe -NoProfile -WindowStyle Hidden -Command "Stop-Process -Name \"${LEGACY_PRODUCTNAME}\" -Force -ErrorAction SilentlyContinue"'
+    # wscript.exe is a GUI-subsystem host and the VBS uses WMI, so NO console
+    # window can ever flash (a bare taskkill/ExecWait/powershell would).
+    File /oname:$PLUGINSDIR\svckill.vbs "svckill.vbs"
+    ExecWait 'wscript.exe //B //nologo "$PLUGINSDIR\svckill.vbs"'
 
     # Backup the previous version before overwriting (for manual rollback).
     IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}" 0 skipBackup
@@ -149,6 +149,8 @@ Section
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon-white.ico"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon-white.ico"
+    # Refresh the shell so the new shortcuts show without a manual refresh.
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
@@ -208,6 +210,8 @@ Section "uninstall"
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}*.lnk"
     Delete "$DESKTOP\${LEGACY_PRODUCTNAME}*.lnk"
     Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}*.lnk"
+    # Refresh the shell so removed shortcuts disappear without a manual refresh.
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 
     !insertmacro wails.unassociateFiles
     !insertmacro wails.unassociateCustomProtocols
