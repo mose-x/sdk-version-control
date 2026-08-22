@@ -1,6 +1,6 @@
 //go:build darwin
 
-package main
+package migrate
 
 import (
 	"context"
@@ -11,8 +11,7 @@ import (
 	"strings"
 
 	"svc/internal/logger"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"svc/internal/wailsrt"
 )
 
 // legacyAppBundleName is the pre-rename .app bundle folder name. Self-updated
@@ -170,7 +169,7 @@ func launchLegacyRenameMigration(currentExe string) error {
 // startup when the app detects it is still inside the old-named .app bundle.
 // No dialog and no elevation prompt. Idempotent — once the bundle is
 // svc.app, isLegacyDarwinInstall is false and this is a no-op.
-func maybeShowLegacyMigrationPrompt(ctx context.Context) {
+func MaybeShowLegacyMigrationPrompt(ctx context.Context, rt wailsrt.Runtime) {
 	if !isLegacyDarwinInstall() {
 		return
 	}
@@ -184,5 +183,9 @@ func maybeShowLegacyMigrationPrompt(ctx context.Context) {
 		return
 	}
 	// The script waits for this process to exit before touching anything.
-	wailsRuntime.Quit(ctx)
+	rt.Quit()
 }
+
+// RepairShortcutIcons is a no-op on macOS: there are no .lnk shortcuts to
+// repair (the Dock/Launchpad resolve the bundle automatically).
+func RepairShortcutIcons() {}

@@ -195,3 +195,64 @@ func TestFindBackupPath(t *testing.T) {
 		t.Errorf("newest .bak: got %q, want %q", got, newer)
 	}
 }
+
+// TestCleanStaleBackups verifies proactive cleanup of old-named backups while
+// preserving a rollback source (promoting the newest old .bak to canonical
+// when no canonical backup exists).
+func TestCleanStaleBackups(t *testing.T) {
+	t.Run("promotes newest old bak when canonical missing", func(t *testing.T) {
+		dir := t.TempDir()
+		exe := filepath.Join(dir, "svc")
+		old1 := filepath.Join(dir, "SDK Version Control.bak")
+		old2 := filepath.Join(dir, "zz.bak")
+		for _, f := range []string{old1, old2} {
+			if err := os.WriteFile(f, []byte("x"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		future := time.Now().Add(10 * time.Minute)
+		os.Chtimes(old2, future, future)
+
+		CleanStaleBackups(exe)
+
+		// newest (old2) promoted to canonical; old1 removed.
+		if _, err := os.Stat(exe + ".bak"); err != nil {
+			t.Errorf("canonical backup not created from newest old bak: %v", err)
+		}
+		if _, err := os.Stat(old1); err == nil {
+			t.Errorf("stale old bak %q not removed", old1)
+		}
+		if _, err := os.Stat(old2); err == nil {
+			t.Errorf("promoted bak should no longer exist under old name")
+		}
+	})
+
+	t.Run("removes old baks when canonical present", func(t *testing.T) {
+		dir := t.TempDir()
+		exe := filepath.Join(dir, "svc")
+		canonical := exe + ".bak"
+		old := filepath.Join(dir, "SDK Version Control.bak")
+		for _, f := range []string{canonical, old} {
+			if err := os.WriteFile(f, []byte("x"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		CleanStaleBackups(exe)
+		if _, err := os.Stat(canonical); err != nil {
+			t.Errorf("canonical backup should be kept: %v", err)
+		}
+		if _, err := os.Stat(old); err == nil {
+			t.Errorf("stale old bak %q not removed", old)
+		}
+	})
+
+	t.Run("no-op without backups", func(t *testing.T) {
+		dir := t.TempDir()
+		exe := filepath.Join(dir, "svc")
+		CleanStaleBackups(exe) // must not panic or create anything
+		entries, _ := os.ReadDir(dir)
+		if len(entries) != 0 {
+			t.Errorf("expected empty dir, got %d entries", len(entries))
+		}
+	})
+}

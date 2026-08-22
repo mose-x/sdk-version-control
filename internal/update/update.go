@@ -86,6 +86,61 @@ func findBackupPath(currentExe string) string {
 	return canonical
 }
 
+// CleanStaleBackups removes old-named *.bak leftovers (e.g. a mac
+// "SDKVersionControl.bak" from a pre-rename version) sitting next to
+// currentExe, so an upgrade does not leave historical backups behind. It is
+// safe for rollback: when the canonical <exe>.bak is absent, the NEWEST old
+// .bak is renamed to the canonical name first (preserving the rollback
+// source); any other old-named backups are deleted. Called at startup.
+func CleanStaleBackups(currentExe string) {
+	canonical := backupPath(currentExe)
+	dir := filepath.Dir(currentExe)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	var olds []string
+	var newest string
+	var newestTime time.Time
+	_, canonicalErr := os.Stat(canonical)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".bak") {
+			continue
+		}
+		full := filepath.Join(dir, e.Name())
+		if full == canonical {
+			continue
+		}
+		olds = append(olds, full)
+		if info, err := e.Info(); err == nil && (newest == "" || info.ModTime().After(newestTime)) {
+			newest, newestTime = full, info.ModTime()
+		}
+	}
+	if len(olds) == 0 {
+		return
+	}
+	// Preserve rollback: promote the newest old backup to the canonical name
+	// when there is no canonical backup yet.
+	if canonicalErr != nil && newest != "" {
+		if os.Rename(newest, canonical) == nil {
+			olds = removeString(olds, newest)
+		}
+	}
+	for _, old := range olds {
+		os.Remove(old)
+	}
+}
+
+func removeString(list []string, s string) []string {
+	out := list[:0]
+	for _, v := range list {
+		if v != s {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // ParseAppInfo decodes about.json content into AppInfo, falling back to safe
 // defaults when the payload is missing or corrupt (dev builds without the
 // embed, hand-edited files). Pure so main.go and app.go can share it.

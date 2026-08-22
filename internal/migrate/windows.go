@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package migrate
 
 import (
 	"context"
@@ -12,8 +12,7 @@ import (
 	"syscall"
 
 	"svc/internal/logger"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"svc/internal/wailsrt"
 )
 
 // legacyExeName is the pre-rename executable name ("SDK Version Control"
@@ -100,6 +99,12 @@ if (Test-Path -LiteralPath $legacyExe) {
 } else { Log "legacy exe not found at $legacyExe" }
 if (-not (Test-Path -LiteralPath $newExe)) { $newExe = $legacyExe }
 
+# Icon for repaired shortcuts: the migrated install's white-plate icon, or the
+# exe itself when the icon file is absent. Prevents shortcuts from keeping an
+# IconLocation that points into the old (renamed) folder.
+$icon = Join-Path $newDir 'icon-white.ico'
+if (-not (Test-Path -LiteralPath $icon)) { $icon = $newExe }
+
 # Update shortcuts only where legacy ones exist (never add shortcuts where the
 # user had none). Each legacy .lnk is retargeted to the new exe and renamed to
 # svc.lnk IN PLACE, so the desktop icon keeps its position and we never end up
@@ -128,6 +133,7 @@ try {
             }
             $s = $ws.CreateShortcut($lnk.FullName)
             $s.TargetPath = $newExe
+            $s.IconLocation = "$icon, 0"
             $s.Save()
             Rename-Item -LiteralPath $lnk.FullName -NewName 'svc.lnk' -Force -ErrorAction SilentlyContinue
         }
@@ -184,7 +190,7 @@ func launchLegacyRenameMigration(currentExe string) error {
 // dialog and no UAC: the hidden migration script runs, the app quits, the
 // script renames what it can and relaunches svc.exe. Idempotent — once the
 // executable is svc.exe, isLegacyWindowsInstall is false and this is a no-op.
-func maybeShowLegacyMigrationPrompt(ctx context.Context) {
+func MaybeShowLegacyMigrationPrompt(ctx context.Context, rt wailsrt.Runtime) {
 	if !isLegacyWindowsInstall() {
 		return
 	}
@@ -198,5 +204,69 @@ func maybeShowLegacyMigrationPrompt(ctx context.Context) {
 		return
 	}
 	// The script waits for this process to exit before touching anything.
-	wailsRuntime.Quit(ctx)
+	rt.Quit()
+}
+
+// buildShortcutIconRepairPs renders a hidden PowerShell that repairs existing
+// svc / legacy shortcuts whose TargetPath or IconLocation still reference the
+// old (renamed) install folder — the cause of "cannot find icon-white.ico"
+// and a blank desktop logo after an upgrade. It only edits shortcuts that
+// already point at svc or the legacy product; it never creates new ones.
+func buildShortcutIconRepairPs(currentExe string) string {
+	return fmt.Sprintf(`$ErrorActionPreference = 'SilentlyContinue'
+$exe = '%s'
+$dir = Split-Path -Parent $exe
+$icon = Join-Path $dir 'icon-white.ico'
+if (-not (Test-Path -LiteralPath $icon)) { $icon = $exe }
+$ws = New-Object -ComObject WScript.Shell
+$bases = @(
+    [Environment]::GetFolderPath('Desktop'),
+    [Environment]::GetFolderPath('Programs'),
+    'C:\Users\Public\Desktop',
+    [Environment]::GetFolderPath('CommonPrograms')
+)
+foreach ($b in $bases) {
+    if (-not $b) { continue }
+    Get-ChildItem -Path $b -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object {
+        $t = ''
+        try { $t = ($ws.CreateShortcut($_.FullName)).TargetPath } catch {}
+        ($_.Name -eq 'svc.lnk') -or ($t -like '*svc.exe') -or ($t -like '*SDK Version Control*')
+    } | ForEach-Object {
+        $s = $ws.CreateShortcut($_.FullName)
+        $s.TargetPath = $exe
+        $s.IconLocation = "$icon, 0"
+        $s.Save()
+    }
+}
+`, strings.ReplaceAll(currentExe, "'", "''"))
+}
+
+// RepairShortcutIcons launches the hidden shortcut-icon repair on startup so
+// shortcuts left pointing at the pre-rename folder get their target and logo
+// re-pointed at the current install. Fire-and-forget; never blocks startup.
+func RepairShortcutIcons() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	f, err := os.CreateTemp(os.TempDir(), "svc_lnk_repair_*.ps1")
+	if err != nil {
+		return
+	}
+	scriptPath := f.Name()
+	if _, err := f.WriteString(buildShortcutIconRepairPs(exe)); err != nil {
+		f.Close()
+		os.Remove(scriptPath)
+		return
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(scriptPath)
+		return
+	}
+	cmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
+	if err := cmd.Start(); err != nil {
+		os.Remove(scriptPath)
+	}
+	// Fire-and-forget: the repair runs hidden in the background.
 }
