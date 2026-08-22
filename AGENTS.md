@@ -35,7 +35,12 @@ Key rules (full rules take precedence from the hook repo):
 
 - SDK fetchers: `internal/sdk/*_test.go` (rust, dotnet, flutter, perl, php, android, jdk, nodejs, dart, endpoint)
 - Shim system: `internal/shim/shim_test.go` + `internal/shimmanager/manager_test.go` + `rcfile_unix_test.go`
-- Version extraction: `helpers_test.go` (package main)
+- Install lifecycle: `internal/installer/*_test.go` (residual-dir filter, reinstall wait, fetcher locks, checksum, extractor failure)
+- Import flows: `internal/importer/importer_test.go` (atomic copy, layout alignment, critical files)
+- Storage/migration: `internal/storage/*_test.go`
+- Updater: `internal/update/*_test.go` (script rendering, sha256, ParseAppInfo)
+- Settings/proxy/helpers/pkgmgr/logmgr/wailsrt: `internal/<pkg>/*_test.go`
+- Installer template: `internal/packaging/project_nsi_test.go`
 - RC file (Unix): `internal/shimmanager/rcfile_unix_test.go`
 
 ## TODO Tracking

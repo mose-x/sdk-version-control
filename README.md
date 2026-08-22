@@ -101,22 +101,21 @@ No more memorizing CLI commands for each language, no more fiddling with shell c
 
 ```
 sdk_version_control/
-├── main.go                    # Entry point
-├── app.go                     # Wails App bindings
+├── main.go                    # Entry point (shim mode / CLI / GUI dispatch)
+├── app.go                     # Wails App facade + runtime adapter
 ├── about.json                 # App metadata (version, license, updateUrl)
-├── update.go                  # Update check + download + SHA256 verify
-├── update_unix.go             # Unix binary replace + rollback (.bak)
-├── update_windows.go          # Windows binary replace + rollback (.bak)
-├── sdk_ops.go                 # SDK install/switch/uninstall operations
-├── import_sdk.go              # SDK import from archive/folder/PATH
-├── migration.go               # Install-path migration with desktop backup
-├── pkgmgr.go                  # Package manager detection & install
-├── storage.go                 # Cache size + inactive version cleanup
-├── logmgr.go                  # Log file management
-├── proxy.go                   # Proxy transport builder
-├── helpers.go                 # Misc helpers
-├── cmd_unix.go / cmd_windows.go  # Cross-platform cmd launcher
 ├── internal/
+│   ├── installer/             # SDK install/switch/cancel + version status
+│   ├── importer/              # SDK import from archive/folder/PATH
+│   ├── storage/               # Uninstall, storage info, cache, path migration
+│   ├── update/                # Self-update check/download/apply/rollback
+│   ├── pkgmgr/                # Package manager detection & install
+│   ├── proxy/                 # Proxy config, GitHub mirror, SSRF-guarded check
+│   ├── settings/              # Settings policy (token masking, save guards)
+│   ├── logmgr/                # Log file management
+│   ├── helpers/               # Pure utils: cmd builders, env, version, paths
+│   ├── wailsrt/               # Wails runtime interface (decouples services)
+│   ├── packaging/             # Build-artifact content tests (NSIS template)
 │   ├── config/                # Settings, install path, shell detection
 │   ├── downloader/            # Multi-threaded HTTP downloader (proxy support)
 │   ├── extractor/             # Archive extraction (zip, tar.gz, 7z, etc.)
