@@ -48,9 +48,9 @@ func TestProjectNSI_UpgradeInPlace(t *testing.T) {
 		{"InstallDirRegKey for auto-detect", `InstallDirRegKey HKLM "${UNINST_KEY}" "InstallLocation"`},
 		{"SkipDirIfInstalled function", "Function SkipDirIfInstalled"},
 		{"Abort to skip dir page", "Abort"},
-		{"silent kill hides console", "-WindowStyle Hidden"},
-		{"kills current process", `Stop-Process -Name ${INFO_PROJECTNAME} -Force`},
-		{"kills legacy process", `Stop-Process -Name \"${LEGACY_PRODUCTNAME}\" -Force`},
+		{"silent kill via wscript (no console)", "wscript.exe //B //nologo"},
+		{"ships silent kill script", `File /oname:$PLUGINSDIR\svckill.vbs "svckill.vbs"`},
+		{"shell refresh after shortcuts", "SHChangeNotify"},
 		{"CopyFiles backup", `CopyFiles /SILENT "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.bak"`},
 		{"InstallLocation write to registry", `WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"`},
 		// Rename migration (SDK Version Control -> svc): legacy installs are
@@ -83,5 +83,26 @@ func TestProjectNSI_UpgradeInPlace(t *testing.T) {
 				t.Errorf("project.nsi missing %q\nin content:\n%s", c.substr, content)
 			}
 		})
+	}
+}
+
+// TestSvckillVbs verifies the installer's process-kill helper is fully silent:
+// it terminates the current/legacy app via WMI (no taskkill/cmd/powershell
+// console window can flash during install).
+func TestSvckillVbs(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(findRepoRoot(t), "build", "windows", "installer", "svckill.vbs"))
+	if err != nil {
+		t.Skipf("svckill.vbs not found: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{"Win32_Process", "Terminate", "svc", "SDK Version Control"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("svckill.vbs missing %q", want)
+		}
+	}
+	for _, bad := range []string{"taskkill", "cmd.exe", "powershell"} {
+		if strings.Contains(strings.ToLower(content), bad) {
+			t.Errorf("svckill.vbs must not spawn a console via %q", bad)
+		}
 	}
 }

@@ -123,11 +123,14 @@ func CleanStaleBackups(currentExe string) {
 	// when there is no canonical backup yet.
 	if canonicalErr != nil && newest != "" {
 		if os.Rename(newest, canonical) == nil {
+			logger.Info("CleanStaleBackups: promoted %s -> %s (preserve rollback)", newest, canonical)
 			olds = removeString(olds, newest)
 		}
 	}
 	for _, old := range olds {
-		os.Remove(old)
+		if os.Remove(old) == nil {
+			logger.Info("CleanStaleBackups: removed stale backup %s", old)
+		}
 	}
 }
 

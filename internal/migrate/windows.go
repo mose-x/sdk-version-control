@@ -140,6 +140,17 @@ try {
     }
 } catch {}
 
+# Notify the shell so renamed/removed shortcuts update on the desktop
+# immediately, without the user having to manually refresh (SHCNE_ASSOCCHANGED).
+try {
+    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class ShellRefresh { [DllImport("shell32.dll")] public static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2); }
+"@
+    [ShellRefresh]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
+} catch {}
+
 # Relaunch only if the migration actually produced svc.exe. If the rename
 # failed, relaunching the old exe would re-trigger this migration on the next
 # launch and flash on every startup; leave the app closed for the user to
@@ -238,6 +249,14 @@ foreach ($b in $bases) {
         $s.Save()
     }
 }
+try {
+    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class ShellRefresh2 { [DllImport("shell32.dll")] public static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2); }
+"@
+    [ShellRefresh2]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
+} catch {}
 `, strings.ReplaceAll(currentExe, "'", "''"))
 }
 
