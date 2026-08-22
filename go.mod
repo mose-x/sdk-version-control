@@ -1,4 +1,4 @@
-module sdk_version_control
+module svc
 
 go 1.25.0
 

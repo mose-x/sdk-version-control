@@ -9,9 +9,9 @@ import (
 	"runtime"
 	"strings"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/logger"
-	"sdk_version_control/internal/sdk"
+	"svc/internal/config"
+	"svc/internal/logger"
+	"svc/internal/sdk"
 )
 
 // UnixPathManager handles PATH management on Linux/macOS.

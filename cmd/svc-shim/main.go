@@ -18,7 +18,7 @@
 // small.
 package main
 
-import "sdk_version_control/internal/shim"
+import "svc/internal/shim"
 
 func main() {
 	shim.Run()

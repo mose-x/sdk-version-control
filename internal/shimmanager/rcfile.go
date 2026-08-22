@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/shim"
+	"svc/internal/config"
+	"svc/internal/shim"
 )
 
 // envVarEntry represents a single environment variable to write to .svc.rc

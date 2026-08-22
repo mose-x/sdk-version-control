@@ -29,10 +29,12 @@ func IsShimMode() bool {
 }
 
 // isAppName returns true if the given name matches the SVC application binary.
+// "sdkversioncontrol" / "sdk version control" cover the pre-rename executable
+// (SDKVersionControl.exe) so legacy installs keep working.
 func isAppName(name string) bool {
 	lower := strings.ToLower(name)
 	switch lower {
-	case "svc", "svc-shim", "sdk_version_control", "sdk version control":
+	case "svc", "svc-shim", "sdkversioncontrol", "sdk version control":
 		return true
 	}
 	return false

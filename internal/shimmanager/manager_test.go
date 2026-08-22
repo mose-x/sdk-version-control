@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/shim"
+	"svc/internal/config"
+	"svc/internal/shim"
 )
 
 // newTestManager returns a Manager backed by a temp SVC dir (shims dir +

@@ -3,7 +3,7 @@ package settings
 import (
 	"testing"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // TestSavePreservesEndpointsAndInstallPath pins the stale-snapshot

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // MavenFetcher Maven version fetcher

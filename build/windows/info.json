@@ -6,9 +6,9 @@
 		"0409": {
 			"ProductVersion": "0.1.0",
 			"CompanyName": "",
-			"FileDescription": "SDK Version Control",
+			"FileDescription": "svc",
 			"LegalCopyright": "MIT License",
-			"ProductName": "SDK Version Control",
+			"ProductName": "svc",
 			"Comments": "SDK Version Management Tool"
 		}
 	}

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build the Windows .exe (self-update) and NSIS installer for SDK Version Control.
+# Build the Windows .exe (self-update) and NSIS installer for svc.
 #
 # Usage:   ./scripts/build-windows.sh <version> [arch]
 #   version:  release version, e.g. 1.1.0
 #   arch:     amd64 | arm64  (default: native GOARCH)
 #
 # Produces in build/bin/:
-#   SDKVersionControl-<ver>-windows-<x64|arm64>.exe            (self-update)
-#   SDKVersionControl-<ver>-windows-<x64|arm64>-installer.exe  (first-install)
+#   svc-<ver>-windows-<x64|arm64>.exe            (self-update)
+#   svc-<ver>-windows-<x64|arm64>-installer.exe  (first-install)
 #
 # Prereqs: Go 1.25+, Node 18+, Wails CLI, jq, go-winres, NSIS (makensis).
 # Wails Windows builds are CGO-free (WebView2 loaded at runtime via COM), so
@@ -75,19 +75,19 @@ ls -la internal/shimmanager/svc-shim.windows.exe
 # --- Build the app + NSIS installer.
 # -nsis produces the installer alongside the bare .exe; the bare .exe stays the
 # self-update asset (ApplyUpdate swaps just the executable).
-wails build -nsis -nopackage -platform "windows/$ARCH" -o SDKVersionControl.exe
+wails build -nsis -nopackage -platform "windows/$ARCH" -o svc.exe
 
 # -o sets the exact output name (wails does NOT append an arch suffix when
-# -o is given), so build/bin/SDKVersionControl.exe is ready to rename as-is;
+# -o is given), so build/bin/svc.exe is ready to rename as-is;
 # each CI job starts from a fresh checkout, so no stale-file risk.
-ASSET_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}.exe"
-mv "build/bin/SDKVersionControl.exe" "build/bin/${ASSET_NAME}"
+ASSET_NAME="svc-${VERSION}-windows-${ASSET_ARCH}.exe"
+mv "build/bin/svc.exe" "build/bin/${ASSET_NAME}"
 
 # NSIS writes *-installer.exe next to the binary; the literal name varies with
 # INFO_PRODUCTNAME (wails.json "name" has spaces), so glob to a stable name.
 # Guard: if makensis was missing, wails produced no installer -- ship the bare
 # .exe (self-update asset) without failing the build.
-INSTALLER_NAME="SDKVersionControl-${VERSION}-windows-${ASSET_ARCH}-installer.exe"
+INSTALLER_NAME="svc-${VERSION}-windows-${ASSET_ARCH}-installer.exe"
 shopt -s nullglob
 installers=(build/bin/*-installer.exe)
 shopt -u nullglob

@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/logger"
-	"sdk_version_control/internal/shim"
+	"svc/internal/config"
+	"svc/internal/logger"
+	"svc/internal/shim"
 )
 
 // Manager handles shim creation/removal and .svc.rc file management.

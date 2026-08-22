@@ -7,9 +7,9 @@
 
 ## Overview / 概览
 
-These scripts build and package SDK Version Control for each platform. They are shared between CI (`build.yml`) and local builds — the same script produces identical artifacts in both environments.
+These scripts build and package svc for each platform. They are shared between CI (`build.yml`) and local builds — the same script produces identical artifacts in both environments.
 
-这些脚本为各平台构建和打包 SDK Version Control。CI(`build.yml`)和本地构建共用同一套脚本——同一脚本在两边产出逐字节一致的产物。
+这些脚本为各平台构建和打包 svc。CI(`build.yml`)和本地构建共用同一套脚本——同一脚本在两边产出逐字节一致的产物。
 
 | Script / 脚本 | Platform / 平台 | Output / 产物 |
 |---|---|---|
@@ -61,8 +61,8 @@ These scripts build and package SDK Version Control for each platform. They are 
 ```
 
 **Produces / 产出:**
-- `build/bin/SDKVersionControl-<version>-windows-x64.exe` — bare binary (for self-update)
-- `build/bin/SDKVersionControl-<version>-windows-x64-installer.exe` — NSIS installer (for first-time install)
+- `build/bin/svc-<version>-windows-x64.exe` — bare binary (for self-update)
+- `build/bin/svc-<version>-windows-x64-installer.exe` — NSIS installer (for first-time install)
 
 **Notes / 注意:**
 - `arch` defaults to `$(go env GOARCH)` (usually `amd64`).
@@ -83,8 +83,8 @@ These scripts build and package SDK Version Control for each platform. They are 
 ```
 
 **Produces / 产出:**
-- `build/bin/SDKVersionControl-<version>-macos-<arch>.dmg` — DMG installer
-- `build/bin/SDKVersionControl-<version>-macos-<arch>.bin` — bare inner binary (for self-update)
+- `build/bin/svc-<version>-macos-<arch>.dmg` — DMG installer
+- `build/bin/svc-<version>-macos-<arch>.bin` — bare inner binary (for self-update)
 
 **Notes / 注意:**
 - `arch` defaults to `$(go env GOARCH)`.
@@ -112,9 +112,9 @@ These scripts build and package SDK Version Control for each platform. They are 
 ```
 
 **Produces / 产出:**
-- `build/bin/SDKVersionControl-<version>-linux-x64` — bare binary (for self-update)
-- `build/bin/SDKVersionControl-<version>-linux-x64.deb` — Debian package
-- `build/bin/SDKVersionControl-<version>-linux-x64.rpm` — RPM package
+- `build/bin/svc-<version>-linux-x64` — bare binary (for self-update)
+- `build/bin/svc-<version>-linux-x64.deb` — Debian package
+- `build/bin/svc-<version>-linux-x64.rpm` — RPM package
 
 **Notes / 注意:**
 - `arch` defaults to `$(go env GOARCH)`.

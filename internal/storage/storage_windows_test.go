@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // TestCleanTmpCache_RemoveError (Windows): a file held open without

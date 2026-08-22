@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"sdk_version_control/internal/logger"
-	"sdk_version_control/internal/pathmgr"
-	"sdk_version_control/internal/sdk"
+	"svc/internal/logger"
+	"svc/internal/pathmgr"
+	"svc/internal/sdk"
 )
 
 // copyToTargetAtomically copies sourceDir to a temp sibling of targetDir,

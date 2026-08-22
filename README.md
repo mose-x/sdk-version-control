@@ -1,4 +1,4 @@
-# SDK Version Control
+# svc
 
 A cross-platform desktop application for unified management of multiple SDK versions (Node.js, JDK, Go, Python, Rust, etc.), including installation, switching, environment variable configuration, and self-update with integrity verification.
 
@@ -43,7 +43,7 @@ A cross-platform desktop application for unified management of multiple SDK vers
 - **SHA256 Verification**: Every downloaded binary is verified against the published checksum before being swapped in; corrupt or tampered payloads are rejected and deleted
 - **One-Shot Rollback**: Each upgrade backs up the previous binary to `<exe>.bak`; the in-app "Rollback" button restores the immediately previous version
 - **Cross-Platform Replace**: Unix uses a shell script (`pgrep` wait → backup → replace → relaunch); Windows uses a batch script (`tasklist` wait → backup → replace → relaunch) to handle running-binary locks
-- **Asset Naming**: `SDKVersionControl-{version}-{os}-{arch}.{ext}` (amd64 → x64), with a standalone `sha256sums.txt` shipped per release
+- **Asset Naming**: `svc-{version}-{os}-{arch}.{ext}` (amd64 → x64), with a standalone `sha256sums.txt` shipped per release
 
 ### User Experience
 - **Download Progress**: Real-time speed, progress, and size display
@@ -100,7 +100,7 @@ No more memorizing CLI commands for each language, no more fiddling with shell c
 ## Project Structure
 
 ```
-sdk_version_control/
+svc/
 ├── main.go                    # Entry point (shim mode / CLI / GUI dispatch)
 ├── app.go                     # Wails App facade + runtime adapter
 ├── about.json                 # App metadata (version, license, updateUrl)
@@ -167,7 +167,7 @@ wails dev
 wails build
 
 # Custom output filename
-wails build -o SDKVersionControl
+wails build -o svc
 ```
 
 ### Cross-Platform Build Notes
@@ -176,16 +176,16 @@ Wails v2 cannot cross-compile Linux (CGO links webkit2gtk/gtk) — use a native 
 
 ## Installation
 
-Download the latest release for your platform from [Releases](https://github.com/mose-x/sdk-version-control/releases/latest):
+Download the latest release for your platform from [Releases](https://github.com/mose-x/svc/releases/latest):
 
 | Platform | Asset |
 |---|---|
-| Windows x64 | `SDKVersionControl-{ver}-windows-x64.exe` |
-| Windows arm64 | `SDKVersionControl-{ver}-windows-arm64.exe` |
-| macOS x64 | `SDKVersionControl-{ver}-macos-x64.dmg` |
-| macOS arm64 (Apple Silicon) | `SDKVersionControl-{ver}-macos-arm64.dmg` |
-| Linux x64 | `SDKVersionControl-{ver}-linux-x64` |
-| Linux arm64 | `SDKVersionControl-{ver}-linux-arm64` |
+| Windows x64 | `svc-{ver}-windows-x64.exe` |
+| Windows arm64 | `svc-{ver}-windows-arm64.exe` |
+| macOS x64 | `svc-{ver}-macos-x64.dmg` |
+| macOS arm64 (Apple Silicon) | `svc-{ver}-macos-arm64.dmg` |
+| Linux x64 | `svc-{ver}-linux-x64` |
+| Linux arm64 | `svc-{ver}-linux-arm64` |
 
 Verify integrity with the published checksums:
 
@@ -195,7 +195,7 @@ sha256sum -c sha256sums.txt --ignore-missing
 
 ## Self-Update Mechanism
 
-The app checks `https://github.com/mose-x/sdk-version-control/releases/latest/download/version.json` (configured in [about.json](about.json)). Each release ships a `version.json` describing per-platform download URLs and SHA256 checksums, plus a standalone `sha256sums.txt`.
+The app checks `https://github.com/mose-x/svc/releases/latest/download/version.json` (configured in [about.json](about.json)). Each release ships a `version.json` describing per-platform download URLs and SHA256 checksums, plus a standalone `sha256sums.txt`.
 
 ### Update Flow
 
@@ -215,13 +215,13 @@ See [version.json.example](version.json.example) for a full sample. The `downloa
   "changelog": "Release v1.0.0 — see ... for details",
   "downloads": {
     "windows-amd64": {
-      "url": ".../SDKVersionControl-1.0.0-windows-x64.exe",
-      "filename": "SDKVersionControl-1.0.0-windows-x64.exe",
+      "url": ".../svc-1.0.0-windows-x64.exe",
+      "filename": "svc-1.0.0-windows-x64.exe",
       "sha256": "abc123..."
     },
     "darwin-arm64": {
-      "url": ".../SDKVersionControl-1.0.0-macos-arm64.bin",
-      "filename": "SDKVersionControl",
+      "url": ".../svc-1.0.0-macos-arm64.bin",
+      "filename": "svc",
       "sha256": "def456..."
     }
   }

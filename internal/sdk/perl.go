@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // PerlFetcher fetches Perl versions.

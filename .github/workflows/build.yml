@@ -93,7 +93,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}-assets
-          path: build/bin/SDKVersionControl-${{ env.VERSION }}-*
+          path: build/bin/svc-${{ env.VERSION }}-*
 
   # ====== macOS ======
   build-macos:
@@ -143,7 +143,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}-assets
-          path: build/bin/SDKVersionControl-${{ env.VERSION }}-*
+          path: build/bin/svc-${{ env.VERSION }}-*
 
   # ====== Linux ======
   build-linux:
@@ -202,7 +202,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.arch }}-assets
-          path: build/bin/SDKVersionControl-${{ env.VERSION }}-*
+          path: build/bin/svc-${{ env.VERSION }}-*
 
   # ====== Release ======
   release:
@@ -217,8 +217,8 @@ jobs:
           path: staging
           # Flatten all artifacts into staging/ instead of one subdirectory per
           # artifact (download-artifact's default). Without this, an asset named
-          # `SDKVersionControl-1.0.0-windows-x64.exe` would land at
-          # `staging/SDKVersionControl-1.0.0-windows-x64.exe/SDKVersionControl-1.0.0-windows-x64.exe`,
+          # `svc-1.0.0-windows-x64.exe` would land at
+          # `staging/svc-1.0.0-windows-x64.exe/svc-1.0.0-windows-x64.exe`,
           # and the sha256sum glob would match the outer directory rather than the
           # file, breaking checksum generation.
           merge-multiple: true
@@ -247,12 +247,12 @@ jobs:
         # sha256sums.txt is shipped as a standalone release asset so the in-app
         # updater can verify each download against a recorded hash. Only binary
         # assets are hashed -- sha256sums.txt itself is excluded by the
-        # SDKVersionControl-* prefix glob.
+        # svc-* prefix glob.
         shell: bash
         run: |
           set -eu
           cd staging
-          sha256sum SDKVersionControl-* > sha256sums.txt
+          sha256sum svc-* > sha256sums.txt
           echo "---sha256sums.txt---"
           cat sha256sums.txt
 
@@ -264,7 +264,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            staging/SDKVersionControl-*
+            staging/svc-*
             staging/sha256sums.txt
           draft: false
           prerelease: ${{ env.IS_PRERELEASE }}

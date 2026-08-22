@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // TestNoVersionsLeft_MissingDir: a non-existent SDK dir is the normal "no

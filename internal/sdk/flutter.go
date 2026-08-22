@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/logger"
+	"svc/internal/config"
+	"svc/internal/logger"
 )
 
 type FlutterFetcher struct {

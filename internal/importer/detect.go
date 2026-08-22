@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"sdk_version_control/internal/helpers"
-	"sdk_version_control/internal/sdk"
+	"svc/internal/helpers"
+	"svc/internal/sdk"
 )
 
 // detectVersionFromDir runs the fetcher's verify command against an SDK

@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "SDK Version Control",
+    "title": "svc",
     "configured": "Configured",
     "notConfigured": "Not Configured",
     "inPathOnly": "In PATH Only",
@@ -216,7 +216,7 @@
     "applyUpdateFail": "Failed to apply update: {{error}}"
   },
   "home": {
-    "welcome": "SDK Version Control",
+    "welcome": "svc",
     "subtitle": "Manage your development environment in one place. Install, switch, and configure SDK versions with ease.",
     "totalSdks": "Total SDKs",
     "configured": "Configured",
