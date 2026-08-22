@@ -196,19 +196,19 @@ Section "uninstall"
     RMDir /r $INSTDIR
 
     # Remove shortcuts from BOTH shell contexts (current user and all users)
-    # and for BOTH the new and legacy names. The rename migration creates
-    # shortcuts wherever legacy ones existed (current-user OR all-users
-    # desktop/programs), so deleting only one context/name left leftovers.
+    # and for BOTH the new and legacy names. Wildcards also catch renamed or
+    # duplicated variants (e.g. "svc (2).lnk"). The rename migration creates
+    # shortcuts wherever legacy ones existed, so scan both contexts.
     SetShellVarContext current
-    Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
-    Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
-    Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
-    Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
+    Delete "$DESKTOP\${INFO_PRODUCTNAME}*.lnk"
+    Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}*.lnk"
+    Delete "$DESKTOP\${LEGACY_PRODUCTNAME}*.lnk"
+    Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}*.lnk"
     SetShellVarContext all
-    Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
-    Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
-    Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"
-    Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}.lnk"
+    Delete "$DESKTOP\${INFO_PRODUCTNAME}*.lnk"
+    Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}*.lnk"
+    Delete "$DESKTOP\${LEGACY_PRODUCTNAME}*.lnk"
+    Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}*.lnk"
 
     !insertmacro wails.unassociateFiles
     !insertmacro wails.unassociateCustomProtocols
