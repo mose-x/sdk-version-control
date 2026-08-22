@@ -179,6 +179,7 @@ function App() {
     <ConfigProvider
       locale={antLocale}
       theme={{
+        cssVar: true,
         algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#1677ff',
