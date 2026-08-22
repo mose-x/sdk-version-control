@@ -48,7 +48,9 @@ func TestProjectNSI_UpgradeInPlace(t *testing.T) {
 		{"InstallDirRegKey for auto-detect", `InstallDirRegKey HKLM "${UNINST_KEY}" "InstallLocation"`},
 		{"SkipDirIfInstalled function", "Function SkipDirIfInstalled"},
 		{"Abort to skip dir page", "Abort"},
-		{"taskkill running app", `taskkill /F /IM "${PRODUCT_EXECUTABLE}"`},
+		{"silent kill hides console", "-WindowStyle Hidden"},
+		{"kills current process", `Stop-Process -Name ${INFO_PROJECTNAME} -Force`},
+		{"kills legacy process", `Stop-Process -Name \"${LEGACY_PRODUCTNAME}\" -Force`},
 		{"CopyFiles backup", `CopyFiles /SILENT "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.bak"`},
 		{"InstallLocation write to registry", `WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"`},
 		// Rename migration (SDK Version Control -> svc): legacy installs are
@@ -57,7 +59,6 @@ func TestProjectNSI_UpgradeInPlace(t *testing.T) {
 		{"legacy product name define", `!define LEGACY_PRODUCTNAME "SDK Version Control"`},
 		{"legacy executable define", `!define LEGACY_EXECUTABLE  "SDK Version Control.exe"`},
 		{"legacy uninstall key define", `!define LEGACY_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${INFO_COMPANYNAME}${LEGACY_PRODUCTNAME}"`},
-		{"taskkill legacy executable", `taskkill /F /IM "${LEGACY_EXECUTABLE}"`},
 		{"legacy shortcuts removal", `Delete "$DESKTOP\${LEGACY_PRODUCTNAME}.lnk"`},
 		{"uninstall deletes new desktop shortcuts via wildcard", `Delete "$DESKTOP\${INFO_PRODUCTNAME}*.lnk"`},
 		{"uninstall deletes legacy desktop shortcuts via wildcard", `Delete "$DESKTOP\${LEGACY_PRODUCTNAME}*.lnk"`},

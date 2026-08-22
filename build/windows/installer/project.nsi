@@ -116,11 +116,10 @@ Section
     # Windows locks a running .exe; without this, the File step fails.
     # Also kill the LEGACY executable name: pre-rename installs run
     # SDKVersionControl.exe, which would lock files in the same directory.
-    # nsExec (not ExecWait) so no console window flashes during install.
-    nsExec::ExecWait 'taskkill /F /IM "${PRODUCT_EXECUTABLE}" /T'
-    Pop $0
-    nsExec::ExecWait 'taskkill /F /IM "${LEGACY_EXECUTABLE}" /T'
-    Pop $0
+    # powershell -WindowStyle Hidden (not a bare taskkill/ExecWait) so no
+    # console window flashes during install; nsExec is unavailable in CI NSIS.
+    ExecWait 'powershell.exe -NoProfile -WindowStyle Hidden -Command "Stop-Process -Name ${INFO_PROJECTNAME} -Force -ErrorAction SilentlyContinue"'
+    ExecWait 'powershell.exe -NoProfile -WindowStyle Hidden -Command "Stop-Process -Name \"${LEGACY_PRODUCTNAME}\" -Force -ErrorAction SilentlyContinue"'
 
     # Backup the previous version before overwriting (for manual rollback).
     IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}" 0 skipBackup
