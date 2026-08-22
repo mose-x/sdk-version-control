@@ -104,6 +104,9 @@ if not errorlevel 1 (
     )
     goto waitloop
 )
+echo Cleaning stale backups...
+for %%%%I in ("%s") do set "BAKDIR=%%%%~dpI"
+for %%%%f in ("%%BAKDIR%%*.bak") do if /i not "%%%%f"=="%s" del /F /Q "%%%%f"
 echo Backing up current binary...
 copy /Y "%s" "%s" >NUL
 if errorlevel 1 (
@@ -135,7 +138,7 @@ if /i not "%%actual%%"=="%%expected%%" (
 echo Starting new version...
 start "" "%s"
 del "%%~f0"
-`, pid, pid, currentExe, bak, newExe, currentExe, newExe, currentExe, newExe, expectedHash, currentExe, bak, currentExe, currentExe)
+`, pid, pid, bak, bak, currentExe, bak, newExe, currentExe, newExe, currentExe, newExe, expectedHash, currentExe, bak, currentExe, currentExe)
 }
 
 // RollbackUpdate restores the .bak binary created by the previous ApplyUpdate.

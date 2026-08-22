@@ -100,10 +100,11 @@ if (Test-Path -LiteralPath $legacyExe) {
 } else { Log "legacy exe not found at $legacyExe" }
 if (-not (Test-Path -LiteralPath $newExe)) { $newExe = $legacyExe }
 
-# Recreate shortcuts only where legacy ones exist (never add shortcuts where
-# the user had none). Scan every .lnk and remove any that belong to the old
-# product — matched by the old shortcut name OR by a target path pointing
-# into the old install — so leftovers are removed regardless of exact naming.
+# Update shortcuts only where legacy ones exist (never add shortcuts where the
+# user had none). Each legacy .lnk is retargeted to the new exe and renamed to
+# svc.lnk IN PLACE, so the desktop icon keeps its position and we never end up
+# with a duplicate shortcut. A legacy .lnk is only deleted when a svc.lnk
+# already exists in the same folder.
 try {
     $ws = New-Object -ComObject WScript.Shell
     $bases = @(
@@ -119,11 +120,16 @@ try {
             try { $t = ($ws.CreateShortcut($_.FullName)).TargetPath } catch {}
             ($_.Name -like 'SDK Version Control*') -or ($t -like '*SDK Version Control*')
         }
-        if ($legacy) {
-            $legacy | Remove-Item -Force
-            $s = $ws.CreateShortcut((Join-Path $b 'svc.lnk'))
+        foreach ($lnk in $legacy) {
+            $svcLnk = Join-Path $lnk.DirectoryName 'svc.lnk'
+            if (Test-Path -LiteralPath $svcLnk) {
+                Remove-Item -LiteralPath $lnk.FullName -Force
+                continue
+            }
+            $s = $ws.CreateShortcut($lnk.FullName)
             $s.TargetPath = $newExe
             $s.Save()
+            Rename-Item -LiteralPath $lnk.FullName -NewName 'svc.lnk' -Force -ErrorAction SilentlyContinue
         }
     }
 } catch {}
