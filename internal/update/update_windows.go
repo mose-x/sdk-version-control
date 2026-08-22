@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"sdk_version_control/internal/helpers"
+	"svc/internal/helpers"
 )
 
 func getUpdateFilePath() string {

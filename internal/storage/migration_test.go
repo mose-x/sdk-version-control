@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // TestValidateMigrationPaths is the table-driven guard test for migration
@@ -158,7 +158,7 @@ func TestIsSystemPath(t *testing.T) {
 				t.Errorf("isSystemPath(%q) = false; want true", p)
 			}
 		}
-		validPaths := []string{`C:\Users\mose\.svc`, `D:\SDKs`, `C:\dev\sdk-version-control`}
+		validPaths := []string{`C:\Users\mose\.svc`, `D:\SDKs`, `C:\dev\svc`}
 		for _, p := range validPaths {
 			if isSystemPath(p) {
 				t.Errorf("isSystemPath(%q) = true; want false", p)

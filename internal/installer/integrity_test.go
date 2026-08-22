@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sdk_version_control/internal/extractor"
+	"svc/internal/extractor"
 )
 
 // TestVerifyFileSHA256Match tests that verifyFileSHA256 returns nil when the

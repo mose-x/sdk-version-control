@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // TestRemoveSourceLineFromFile_preservesComments pins BUG E: the broad

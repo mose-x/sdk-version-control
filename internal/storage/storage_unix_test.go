@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // TestCleanTmpCache_RemoveError (Unix): when a cache entry cannot be removed

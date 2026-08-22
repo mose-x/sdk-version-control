@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // githubReleasesUserAgent is sent on every GitHub API request. GitHub rejects
 // requests without a User-Agent with 403, which is indistinguishable from a
 // rate-limit 403 unless we set one.
-const githubReleasesUserAgent = "sdk-version-control"
+const githubReleasesUserAgent = "svc"
 
 // DecodeGithubToken returns the plaintext GitHub PAT stored (base64-encoded)
 // in settings, or "" when none is configured. A malformed base64 value is

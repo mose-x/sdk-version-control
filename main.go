@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/logger"
-	"sdk_version_control/internal/shim"
-	"sdk_version_control/internal/shimmanager"
-	"sdk_version_control/internal/update"
+	"svc/internal/config"
+	"svc/internal/logger"
+	"svc/internal/shim"
+	"svc/internal/shimmanager"
+	"svc/internal/update"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -46,7 +46,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:         "SDK Version Control",
+		Title:         "svc",
 		Width:         1200,
 		Height:        800,
 		DisableResize: true,
@@ -112,7 +112,7 @@ func printVersion() {
 }
 
 func printHelp() {
-	fmt.Fprintln(os.Stdout, "SVC - SDK Version Control")
+	fmt.Fprintln(os.Stdout, "svc - SDK version control")
 	fmt.Fprintln(os.Stdout, "")
 	fmt.Fprintln(os.Stdout, "Usage:")
 	fmt.Fprintln(os.Stdout, "  svc            Launch the GUI application")

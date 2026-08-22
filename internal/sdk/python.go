@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // PythonFetcher Python version fetcher using astral-sh/python-build-standalone

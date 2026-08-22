@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"sdk_version_control/internal/logger"
+	"svc/internal/logger"
 )
 
 // installExitWaitTimeout bounds how long a new InstallSdk waits for the

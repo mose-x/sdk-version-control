@@ -5,12 +5,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/helpers"
-	"sdk_version_control/internal/logger"
-	"sdk_version_control/internal/pathmgr"
-	"sdk_version_control/internal/sdk"
-	"sdk_version_control/internal/shimmanager"
+	"svc/internal/config"
+	"svc/internal/helpers"
+	"svc/internal/logger"
+	"svc/internal/pathmgr"
+	"svc/internal/sdk"
+	"svc/internal/shimmanager"
 )
 
 // Manager owns the SVC on-disk data lifecycle: version uninstall, storage

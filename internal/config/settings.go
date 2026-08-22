@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"sdk_version_control/internal/logger"
+	"svc/internal/logger"
 )
 
 const settingsFile = "settings.json"

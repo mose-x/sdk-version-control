@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // JdkFetcher JDK version fetcher (based on Adoptium/Eclipse Temurin)

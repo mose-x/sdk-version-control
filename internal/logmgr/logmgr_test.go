@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"sdk_version_control/internal/logger"
+	"svc/internal/logger"
 )
 
 // initLogger points the package logger singleton at a temp dir once per test

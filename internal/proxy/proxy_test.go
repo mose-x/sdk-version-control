@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/downloader"
+	"svc/internal/config"
+	"svc/internal/downloader"
 )
 
 // TestValidateCheckURL covers the SSRF validation of proxy-check target

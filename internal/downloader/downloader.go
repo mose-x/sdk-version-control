@@ -15,7 +15,7 @@ import (
 	"time"
 
 	xproxy "golang.org/x/net/proxy"
-	"sdk_version_control/internal/logger"
+	"svc/internal/logger"
 )
 
 // ProgressCallback is the download progress callback function

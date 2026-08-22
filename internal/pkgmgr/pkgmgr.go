@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/helpers"
-	"sdk_version_control/internal/sdk"
+	"svc/internal/config"
+	"svc/internal/helpers"
+	"svc/internal/sdk"
 )
 
 // Service detects and manages SDK package managers (npm/yarn/pnpm,

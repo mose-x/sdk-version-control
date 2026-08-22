@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 const (

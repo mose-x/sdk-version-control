@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"sdk_version_control/internal/logger"
+	"svc/internal/logger"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"

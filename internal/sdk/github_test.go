@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 func TestIsGithubAPIHost(t *testing.T) {

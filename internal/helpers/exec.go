@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 
-	"sdk_version_control/internal/sdk"
+	"svc/internal/sdk"
 )
 
 // FindExecutable looks for name (plus platform extensions on Windows) inside

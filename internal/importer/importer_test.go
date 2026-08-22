@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"sdk_version_control/internal/sdk"
+	"svc/internal/sdk"
 )
 
 // goExeNames returns the platform-specific executable basenames for the Go

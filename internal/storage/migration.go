@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"strings"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/logger"
-	"sdk_version_control/internal/pathmgr"
-	"sdk_version_control/internal/sdk"
+	"svc/internal/config"
+	"svc/internal/logger"
+	"svc/internal/pathmgr"
+	"svc/internal/sdk"
 )
 
 // isSystemPath returns true if the path is a known OS system directory

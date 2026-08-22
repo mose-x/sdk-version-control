@@ -4,8 +4,8 @@
 package logmgr
 
 import (
-	"sdk_version_control/internal/helpers"
-	"sdk_version_control/internal/logger"
+	"svc/internal/helpers"
+	"svc/internal/logger"
 )
 
 // GetLogFiles lists the log files in the active log directory.

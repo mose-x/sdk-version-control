@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/downloader"
-	"sdk_version_control/internal/logger"
+	"svc/internal/config"
+	"svc/internal/downloader"
+	"svc/internal/logger"
 )
 
 // Service reads proxy/mirror policy from the user settings.

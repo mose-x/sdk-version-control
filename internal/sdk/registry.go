@@ -1,7 +1,7 @@
 package sdk
 
 import (
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // Registry holds all SDK fetchers

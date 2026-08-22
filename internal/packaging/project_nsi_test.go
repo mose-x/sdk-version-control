@@ -51,6 +51,16 @@ func TestProjectNSI_UpgradeInPlace(t *testing.T) {
 		{"taskkill running app", `taskkill /F /IM "${PRODUCT_EXECUTABLE}"`},
 		{"CopyFiles backup", `CopyFiles /SILENT "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.bak"`},
 		{"InstallLocation write to registry", `WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"`},
+		// Rename migration (SDK Version Control -> svc): upgrades from the
+		// pre-rename product must happen in place, not as a second install.
+		{"legacy product name define", `!define LEGACY_PRODUCTNAME "SDK Version Control"`},
+		{"legacy executable define", `!define LEGACY_EXECUTABLE  "SDKVersionControl.exe"`},
+		{"legacy uninstall key define", `!define LEGACY_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\${INFO_COMPANYNAME}${LEGACY_PRODUCTNAME}"`},
+		{"legacy InstallLocation fallback", `ReadRegStr $0 HKLM "${LEGACY_UNINST_KEY}" "InstallLocation"`},
+		{"taskkill legacy executable", `taskkill /F /IM "${LEGACY_EXECUTABLE}"`},
+		{"legacy exe removal on upgrade", `Delete "$INSTDIR\${LEGACY_EXECUTABLE}"`},
+		{"legacy uninstall key cleanup", `DeleteRegKey HKLM "${LEGACY_UNINST_KEY}"`},
+		{"legacy WebView2 datapath cleanup", `RMDir /r "$AppData\${LEGACY_EXECUTABLE}"`},
 	}
 
 	for _, c := range checks {

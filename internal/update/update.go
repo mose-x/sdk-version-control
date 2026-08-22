@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/downloader"
-	"sdk_version_control/internal/logger"
-	"sdk_version_control/internal/proxy"
-	"sdk_version_control/internal/sdk"
-	"sdk_version_control/internal/wailsrt"
+	"svc/internal/config"
+	"svc/internal/downloader"
+	"svc/internal/logger"
+	"svc/internal/proxy"
+	"svc/internal/sdk"
+	"svc/internal/wailsrt"
 )
 
 type AppInfo struct {
@@ -56,7 +56,7 @@ func ParseAppInfo(data []byte) AppInfo {
 			Version:   "0.1.0",
 			GoVersion: "1.25",
 			License:   "MIT License",
-			RepoURL:   "https://github.com/example/sdk-version-control",
+			RepoURL:   "https://github.com/example/svc",
 			UpdateURL: "",
 		}
 	}
@@ -121,7 +121,7 @@ func (u *Updater) CheckUpdate() (UpdateInfo, error) {
 		return UpdateInfo{}, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "SDKVersionControl")
+	req.Header.Set("User-Agent", "svc")
 	if useToken {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -200,7 +200,7 @@ func (u *Updater) CheckUpdate() (UpdateInfo, error) {
 }
 
 // matchPlatformAsset picks the release asset for the current OS/arch.
-// Asset names follow the build convention SDKVersionControl-<ver>-<os>-<arch><ext>:
+// Asset names follow the build convention svc-<ver>-<os>-<arch><ext>:
 //
 //	windows-x64.exe / windows-arm64.exe
 //	macos-x64.bin   / macos-arm64.bin   (bare binary for in-place self-update, NOT .dmg)

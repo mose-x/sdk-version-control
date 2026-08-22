@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"sdk_version_control/internal/config"
+	"svc/internal/config"
 )
 
 // NodejsFetcher Node.js version fetcher

@@ -7,9 +7,9 @@ import (
 	"encoding/base64"
 	"strings"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/logger"
-	"sdk_version_control/internal/sdk"
+	"svc/internal/config"
+	"svc/internal/logger"
+	"svc/internal/sdk"
 )
 
 // Service wraps the settings manager with the binding-layer policy.

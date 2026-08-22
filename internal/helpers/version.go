@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"time"
 
-	"sdk_version_control/internal/sdk"
+	"svc/internal/sdk"
 )
 
 // versionPattern matches a version string like "1.2" or "1.2.3". Hoisted to a

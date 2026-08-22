@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/downloader"
-	"sdk_version_control/internal/proxy"
+	"svc/internal/config"
+	"svc/internal/downloader"
+	"svc/internal/proxy"
 )
 
 // newTestUpdater wires an Updater against an httptest releases endpoint with

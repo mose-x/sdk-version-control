@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"sdk_version_control/internal/logger"
+	"svc/internal/logger"
 )
 
 const (

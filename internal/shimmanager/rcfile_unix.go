@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"sdk_version_control/internal/config"
-	"sdk_version_control/internal/logger"
+	"svc/internal/config"
+	"svc/internal/logger"
 )
 
 // shellSingleQuote wraps s in single quotes for POSIX shells; an embedded

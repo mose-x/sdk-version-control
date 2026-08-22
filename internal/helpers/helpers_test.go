@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sdk_version_control/internal/sdk"
+	"svc/internal/sdk"
 )
 
 func TestExtractVersionFromString(t *testing.T) {
