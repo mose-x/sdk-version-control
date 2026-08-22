@@ -1,4 +1,4 @@
-package main
+package pkgmgr
 
 import (
 	"context"
@@ -10,15 +10,30 @@ import (
 	"strings"
 	"time"
 
+	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/helpers"
 	"sdk_version_control/internal/sdk"
 )
 
-func (a *App) GetPackageManagers(sdkType string) []sdk.PackageManagerInfo {
+// Service detects and manages SDK package managers (npm/yarn/pnpm,
+// composer, pip): version detection, installation and updates, all run
+// with the owning SDK scoped to the front of PATH.
+type Service struct {
+	cfg      *config.Config
+	registry *sdk.Registry
+}
+
+// New wires a Service. registry may be nil in tests that only exercise the
+// pure helpers (parsePipVersion, nodeSupportsCorepack, scoped contexts).
+func New(cfg *config.Config, registry *sdk.Registry) *Service {
+	return &Service{cfg: cfg, registry: registry}
+}
+
+func (s *Service) GetPackageManagers(sdkType string) []sdk.PackageManagerInfo {
 	if err := helpers.ValidatePathSegment(sdkType); err != nil {
 		return nil
 	}
-	active := a.cfg.GetActiveVersion(sdkType)
+	active := s.cfg.GetActiveVersion(sdkType)
 	if active == "" {
 		return nil
 	}
@@ -26,30 +41,30 @@ func (a *App) GetPackageManagers(sdkType string) []sdk.PackageManagerInfo {
 	switch sdk.SdkType(sdkType) {
 	case sdk.NodeJS:
 		return []sdk.PackageManagerInfo{
-			a.detectPM("npm", "npm", []string{"--version"}, sdk.NodeJS),
-			a.detectPM("yarn", "yarn", []string{"--version"}, sdk.NodeJS),
-			a.detectPM("pnpm", "pnpm", []string{"--version"}, sdk.NodeJS),
+			s.detectPM("npm", "npm", []string{"--version"}, sdk.NodeJS),
+			s.detectPM("yarn", "yarn", []string{"--version"}, sdk.NodeJS),
+			s.detectPM("pnpm", "pnpm", []string{"--version"}, sdk.NodeJS),
 		}
 	case sdk.PHP:
 		return []sdk.PackageManagerInfo{
-			a.detectPM("composer", "composer", []string{"--version"}, sdk.PHP),
+			s.detectPM("composer", "composer", []string{"--version"}, sdk.PHP),
 		}
 	case sdk.Python:
 		if runtime.GOOS == "windows" {
 			return []sdk.PackageManagerInfo{
-				a.detectPM("pip", "python", []string{"-m", "pip", "--version"}, sdk.Python),
+				s.detectPM("pip", "python", []string{"-m", "pip", "--version"}, sdk.Python),
 			}
 		}
 		return []sdk.PackageManagerInfo{
-			a.detectPM("pip", "pip", []string{"--version"}, sdk.Python),
+			s.detectPM("pip", "pip", []string{"--version"}, sdk.Python),
 		}
 	default:
 		return nil
 	}
 }
 
-func (a *App) detectPM(name, cmd string, args []string, parent sdk.SdkType) sdk.PackageManagerInfo {
-	scopedPath := a.buildSdkPath(parent)
+func (s *Service) detectPM(name, cmd string, args []string, parent sdk.SdkType) sdk.PackageManagerInfo {
+	scopedPath := s.buildSdkPath(parent)
 	fullPath := resolveInPath(cmd, scopedPath)
 	if fullPath == cmd {
 		return sdk.PackageManagerInfo{Name: name, Installed: false, ParentSdk: parent}
@@ -109,42 +124,42 @@ func nodeSupportsCorepack(version string) bool {
 	return false
 }
 
-func (a *App) InstallPackageManager(name string) error {
+func (s *Service) InstallPackageManager(name string) error {
 	switch name {
 	case "npm":
-		if a.cfg.GetActiveVersion("nodejs") == "" {
+		if s.cfg.GetActiveVersion("nodejs") == "" {
 			return fmt.Errorf("please install Node.js first")
 		}
 		return fmt.Errorf("npm is installed with Node.js, please install Node.js first")
 	case "yarn":
-		if a.cfg.GetActiveVersion("nodejs") == "" {
+		if s.cfg.GetActiveVersion("nodejs") == "" {
 			return fmt.Errorf("please install Node.js first")
 		}
-		if nodeSupportsCorepack(a.cfg.GetActiveVersion("nodejs")) {
-			if err := a.runScopedCommand("corepack", sdk.NodeJS, "enable"); err != nil {
+		if nodeSupportsCorepack(s.cfg.GetActiveVersion("nodejs")) {
+			if err := s.runScopedCommand("corepack", sdk.NodeJS, "enable"); err != nil {
 				return err
 			}
-			return a.runScopedCommand("corepack", sdk.NodeJS, "prepare", "yarn@latest", "--activate")
+			return s.runScopedCommand("corepack", sdk.NodeJS, "prepare", "yarn@latest", "--activate")
 		}
-		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "yarn")
+		return s.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "yarn")
 	case "pnpm":
-		if a.cfg.GetActiveVersion("nodejs") == "" {
+		if s.cfg.GetActiveVersion("nodejs") == "" {
 			return fmt.Errorf("please install Node.js first")
 		}
-		if nodeSupportsCorepack(a.cfg.GetActiveVersion("nodejs")) {
-			if err := a.runScopedCommand("corepack", sdk.NodeJS, "enable"); err != nil {
+		if nodeSupportsCorepack(s.cfg.GetActiveVersion("nodejs")) {
+			if err := s.runScopedCommand("corepack", sdk.NodeJS, "enable"); err != nil {
 				return err
 			}
-			return a.runScopedCommand("corepack", sdk.NodeJS, "prepare", "pnpm@latest", "--activate")
+			return s.runScopedCommand("corepack", sdk.NodeJS, "prepare", "pnpm@latest", "--activate")
 		}
-		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "pnpm")
+		return s.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "pnpm")
 	case "composer":
-		if a.cfg.GetActiveVersion("php") == "" {
+		if s.cfg.GetActiveVersion("php") == "" {
 			return fmt.Errorf("please install PHP first")
 		}
 		return fmt.Errorf("Composer requires manual download: https://getcomposer.org/download/")
 	case "pip":
-		if a.cfg.GetActiveVersion("python") == "" {
+		if s.cfg.GetActiveVersion("python") == "" {
 			return fmt.Errorf("please install Python first")
 		}
 		return fmt.Errorf("pip is installed with Python, please install Python first")
@@ -153,40 +168,40 @@ func (a *App) InstallPackageManager(name string) error {
 	}
 }
 
-func (a *App) UpdatePackageManager(name string) error {
+func (s *Service) UpdatePackageManager(name string) error {
 	switch name {
 	case "npm":
-		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "npm@latest")
+		return s.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "npm@latest")
 	case "yarn":
-		if nodeSupportsCorepack(a.cfg.GetActiveVersion("nodejs")) {
-			return a.runScopedCommand("corepack", sdk.NodeJS, "prepare", "yarn@latest", "--activate")
+		if nodeSupportsCorepack(s.cfg.GetActiveVersion("nodejs")) {
+			return s.runScopedCommand("corepack", sdk.NodeJS, "prepare", "yarn@latest", "--activate")
 		}
-		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "yarn@latest")
+		return s.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "yarn@latest")
 	case "pnpm":
-		if nodeSupportsCorepack(a.cfg.GetActiveVersion("nodejs")) {
-			return a.runScopedCommand("corepack", sdk.NodeJS, "prepare", "pnpm@latest", "--activate")
+		if nodeSupportsCorepack(s.cfg.GetActiveVersion("nodejs")) {
+			return s.runScopedCommand("corepack", sdk.NodeJS, "prepare", "pnpm@latest", "--activate")
 		}
-		return a.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "pnpm@latest")
+		return s.runScopedCommand("npm", sdk.NodeJS, "install", "-g", "pnpm@latest")
 	case "composer":
-		return a.runScopedCommand("composer", sdk.PHP, "self-update")
+		return s.runScopedCommand("composer", sdk.PHP, "self-update")
 	case "pip":
-		return a.runScopedCommand("python", sdk.Python, "-m", "pip", "install", "--upgrade", "pip")
+		return s.runScopedCommand("python", sdk.Python, "-m", "pip", "install", "--upgrade", "pip")
 	default:
 		return fmt.Errorf("unknown package manager: %s", name)
 	}
 }
 
 // buildSdkPath builds a PATH containing only the bin directories of the specified SDK's active version
-func (a *App) buildSdkPath(parent sdk.SdkType) string {
-	active := a.cfg.GetActiveVersion(string(parent))
+func (s *Service) buildSdkPath(parent sdk.SdkType) string {
+	active := s.cfg.GetActiveVersion(string(parent))
 	if active == "" {
 		return ""
 	}
-	f := a.registry.Get(parent)
+	f := s.registry.Get(parent)
 	if f == nil {
 		return ""
 	}
-	versionDir := a.cfg.SdkVersionDir(string(parent), active)
+	versionDir := s.cfg.SdkVersionDir(string(parent), active)
 	var paths []string
 	for _, binDir := range f.GetBinDirs() {
 		if binDir == "" {
@@ -242,8 +257,8 @@ func newScopedCommandContext() (context.Context, context.CancelFunc) {
 }
 
 // runScopedCommand runs a command within the PATH scope of the specified SDK
-func (a *App) runScopedCommand(name string, parent sdk.SdkType, args ...string) error {
-	scopedPath := a.buildSdkPath(parent)
+func (s *Service) runScopedCommand(name string, parent sdk.SdkType, args ...string) error {
+	scopedPath := s.buildSdkPath(parent)
 	fullPath := resolveInPath(name, scopedPath)
 	// H3: Bound install/update commands so a hung process doesn't block forever.
 	ctx, cancel := newScopedCommandContext()

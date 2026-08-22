@@ -13,6 +13,7 @@ import (
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/logmgr"
 	"sdk_version_control/internal/pathmgr"
+	"sdk_version_control/internal/pkgmgr"
 	"sdk_version_control/internal/proxy"
 	"sdk_version_control/internal/sdk"
 	"sdk_version_control/internal/settings"
@@ -55,6 +56,7 @@ type App struct {
 	settingsSvc  *settings.Service
 	storageMgr   *storage.Manager
 	updater      *update.Updater
+	pkgmgrSvc    *pkgmgr.Service
 	appInfo      update.AppInfo
 	cancelMu     sync.Mutex
 	cancelFuncs  map[string]cancelEntry
@@ -153,6 +155,7 @@ func (a *App) startup(ctx context.Context) {
 	logger.Info("SDK registry initialized with %d SDK types", len(a.registry.All()))
 	a.storageMgr = storage.NewManager(a.cfg, a.registry, a.pathMgr, a.shimMgr, a.settings)
 	a.updater = update.NewUpdater(a.appInfo, a.settings, a.downloader, a.proxySvc, &runtimeAdapter{ctx: ctx})
+	a.pkgmgrSvc = pkgmgr.New(a.cfg, a.registry)
 
 	// Seed ~/.svc/mirrors.json (the editable "easter egg" GitHub mirror list)
 	// and point the version cache at ~/.svc/cache. Both must be (re)initialised
@@ -332,4 +335,19 @@ func (a *App) ApplyUpdate() error {
 // RollbackUpdate restores the previous binary from the .bak backup.
 func (a *App) RollbackUpdate() error {
 	return a.updater.RollbackUpdate()
+}
+
+// GetPackageManagers lists the package managers available for an SDK.
+func (a *App) GetPackageManagers(sdkType string) []sdk.PackageManagerInfo {
+	return a.pkgmgrSvc.GetPackageManagers(sdkType)
+}
+
+// InstallPackageManager installs a package manager (yarn/pnpm/...).
+func (a *App) InstallPackageManager(name string) error {
+	return a.pkgmgrSvc.InstallPackageManager(name)
+}
+
+// UpdatePackageManager updates a package manager to the latest version.
+func (a *App) UpdatePackageManager(name string) error {
+	return a.pkgmgrSvc.UpdatePackageManager(name)
 }
