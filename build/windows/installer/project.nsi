@@ -118,7 +118,7 @@ Section
     # SDKVersionControl.exe, which would lock files in the same directory.
     # wscript.exe is a GUI-subsystem host and the VBS uses WMI, so NO console
     # window can ever flash (a bare taskkill/ExecWait/powershell would).
-    File /oname:$PLUGINSDIR\svckill.vbs "svckill.vbs"
+    File /oname=$PLUGINSDIR\svckill.vbs "svckill.vbs"
     ExecWait 'wscript.exe //B //nologo "$PLUGINSDIR\svckill.vbs"'
 
     # Backup the previous version before overwriting (for manual rollback).
@@ -149,8 +149,6 @@ Section
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon-white.ico"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon-white.ico"
-    # Refresh the shell so the new shortcuts show without a manual refresh.
-    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
@@ -210,8 +208,6 @@ Section "uninstall"
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}*.lnk"
     Delete "$DESKTOP\${LEGACY_PRODUCTNAME}*.lnk"
     Delete "$SMPROGRAMS\${LEGACY_PRODUCTNAME}*.lnk"
-    # Refresh the shell so removed shortcuts disappear without a manual refresh.
-    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 
     !insertmacro wails.unassociateFiles
     !insertmacro wails.unassociateCustomProtocols
