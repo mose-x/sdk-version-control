@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"sdk_version_control/internal/logger"
 )
 
 // installExitWaitTimeout bounds how long a new InstallSdk waits for the
@@ -86,7 +88,8 @@ func (t *cancelTracker) cancel(sdkType string) {
 // cancelAll requests cancellation of every in-flight install (app shutdown).
 func (t *cancelTracker) cancelAll() {
 	t.mu.Lock()
-	for _, entry := range t.m {
+	for sdkType, entry := range t.m {
+		logger.Info("Cancelling ongoing install: %s", sdkType)
 		entry.cancel()
 	}
 	t.mu.Unlock()
