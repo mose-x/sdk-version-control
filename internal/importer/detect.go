@@ -1,4 +1,4 @@
-package main
+package importer
 
 import (
 	"context"
@@ -12,7 +12,10 @@ import (
 	"sdk_version_control/internal/sdk"
 )
 
-func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string, error) {
+// detectVersionFromDir runs the fetcher's verify command against an SDK
+// directory to discover its version (layer-1 import pre-check). Searches the
+// declared binDirs, then sdkRoot/bin, then sdkRoot itself.
+func (s *Service) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string, error) {
 	cmdName, args := f.VerifyCommand()
 	sdkType := string(f.Type())
 
@@ -62,7 +65,7 @@ func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string
 	env := helpers.ReplacePathEnv(os.Environ(), extraPath)
 
 	if sdkType == "maven" || sdkType == "gradle" {
-		javaHome := a.findJavaHome()
+		javaHome := s.findJavaHome()
 		if javaHome == "" {
 			return "", fmt.Errorf("importing %s requires JDK to be installed first, please import or install JDK first", sdkType)
 		}
@@ -70,7 +73,7 @@ func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string
 	}
 
 	if sdkType == "android" {
-		javaHome := a.findJavaHome()
+		javaHome := s.findJavaHome()
 		if javaHome != "" {
 			env = append(env, "JAVA_HOME="+javaHome)
 		}
@@ -92,9 +95,12 @@ func (a *App) detectVersionFromDir(sdkRoot string, f sdk.VersionFetcher) (string
 	return ver, nil
 }
 
-func (a *App) findJavaHome() string {
-	jdkDir := a.cfg.SdkDir("jdk")
-	activeVersion := a.cfg.GetActiveVersion("jdk")
+// findJavaHome locates a usable JAVA_HOME for maven/gradle/android imports:
+// the app-managed active JDK, any app-managed JDK version, or the JAVA_HOME
+// environment variable.
+func (s *Service) findJavaHome() string {
+	jdkDir := s.cfg.SdkDir("jdk")
+	activeVersion := s.cfg.GetActiveVersion("jdk")
 	if activeVersion != "" {
 		jdkRoot := filepath.Join(jdkDir, activeVersion)
 		if helpers.IsDir(jdkRoot) {

@@ -9,6 +9,7 @@ import (
 
 	"sdk_version_control/internal/config"
 	"sdk_version_control/internal/downloader"
+	"sdk_version_control/internal/importer"
 	"sdk_version_control/internal/installer"
 	"sdk_version_control/internal/logger"
 	"sdk_version_control/internal/logmgr"
@@ -50,6 +51,7 @@ type App struct {
 	updater      *update.Updater
 	pkgmgrSvc    *pkgmgr.Service
 	installerSvc *installer.Service
+	importerSvc  *importer.Service
 	appInfo      update.AppInfo
 }
 
@@ -121,6 +123,7 @@ func (a *App) startup(ctx context.Context) {
 	a.updater = update.NewUpdater(a.appInfo, a.settings, a.downloader, a.proxySvc, rt)
 	a.pkgmgrSvc = pkgmgr.New(a.cfg, a.registry)
 	a.installerSvc = installer.New(a.cfg, a.registry, a.downloader, a.pathMgr, a.shimMgr, a.settings, a.proxySvc, rt)
+	a.importerSvc = importer.New(a.cfg, a.registry, a.pathMgr, a.shimMgr, rt)
 
 	// Seed ~/.svc/mirrors.json (the editable "easter egg" GitHub mirror list)
 	// and point the version cache at ~/.svc/cache. Both must be (re)initialised
@@ -377,4 +380,44 @@ func (a *App) DetectPathVersion(sdkType string) string {
 		return ""
 	}
 	return a.installerSvc.DetectPathVersion(sdkType)
+}
+
+// SelectLocalFile opens a file dialog to pick an SDK archive.
+func (a *App) SelectLocalFile() (string, error) {
+	if a.importerSvc == nil {
+		return "", errUninitialized
+	}
+	return a.importerSvc.SelectLocalFile()
+}
+
+// SelectLocalDir opens a directory dialog to pick an SDK directory.
+func (a *App) SelectLocalDir() (string, error) {
+	if a.importerSvc == nil {
+		return "", errUninitialized
+	}
+	return a.importerSvc.SelectLocalDir()
+}
+
+// ImportLocalSdk imports an SDK from a local archive or directory.
+func (a *App) ImportLocalSdk(sdkType string, localPath string) error {
+	if a.importerSvc == nil {
+		return errUninitialized
+	}
+	return a.importerSvc.ImportLocalSdk(sdkType, localPath)
+}
+
+// ImportSdk imports an SDK from an external directory.
+func (a *App) ImportSdk(externalPath string, sdkType string) error {
+	if a.importerSvc == nil {
+		return errUninitialized
+	}
+	return a.importerSvc.ImportSdk(externalPath, sdkType)
+}
+
+// ImportPathSdk imports an SDK detected on the system PATH.
+func (a *App) ImportPathSdk(sdkType string) error {
+	if a.importerSvc == nil {
+		return errUninitialized
+	}
+	return a.importerSvc.ImportPathSdk(sdkType)
 }
