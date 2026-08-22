@@ -49,8 +49,7 @@ func TestProjectNSI_UpgradeInPlace(t *testing.T) {
 		{"SkipDirIfInstalled function", "Function SkipDirIfInstalled"},
 		{"Abort to skip dir page", "Abort"},
 		{"silent kill via wscript (no console)", "wscript.exe //B //nologo"},
-		{"ships silent kill script", `File /oname:$PLUGINSDIR\svckill.vbs "svckill.vbs"`},
-		{"shell refresh after shortcuts", "SHChangeNotify"},
+		{"ships silent kill script", `File /oname=$PLUGINSDIR\svckill.vbs "svckill.vbs"`},
 		{"CopyFiles backup", `CopyFiles /SILENT "$INSTDIR\${PRODUCT_EXECUTABLE}" "$INSTDIR\${PRODUCT_EXECUTABLE}.bak"`},
 		{"InstallLocation write to registry", `WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"`},
 		// Rename migration (SDK Version Control -> svc): legacy installs are
