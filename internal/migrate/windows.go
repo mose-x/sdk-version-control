@@ -230,6 +230,7 @@ $dir = Split-Path -Parent $exe
 $icon = Join-Path $dir 'icon-white.ico'
 if (-not (Test-Path -LiteralPath $icon)) { $icon = $exe }
 $ws = New-Object -ComObject WScript.Shell
+$changed = $false
 $bases = @(
     [Environment]::GetFolderPath('Desktop'),
     [Environment]::GetFolderPath('Programs'),
@@ -244,19 +245,25 @@ foreach ($b in $bases) {
         ($_.Name -eq 'svc.lnk') -or ($t -like '*svc.exe') -or ($t -like '*SDK Version Control*')
     } | ForEach-Object {
         $s = $ws.CreateShortcut($_.FullName)
-        $s.TargetPath = $exe
-        $s.IconLocation = "$icon, 0"
-        $s.Save()
+        $need = $false
+        if ($s.TargetPath -ne $exe) { $s.TargetPath = $exe; $need = $true }
+        $curIcon = ($s.IconLocation -split ',')[0]
+        if ($curIcon -ne $icon) { $s.IconLocation = "$icon, 0"; $need = $true }
+        if ($need) { $s.Save(); $changed = $true }
     }
 }
-try {
-    Add-Type @"
+# Only refresh the shell if we actually repaired something, so a normal launch
+# with already-correct shortcuts never triggers a desktop-wide refresh.
+if ($changed) {
+    try {
+        Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class ShellRefresh2 { [DllImport("shell32.dll")] public static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2); }
 "@
-    [ShellRefresh2]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
-} catch {}
+        [ShellRefresh2]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
+    } catch {}
+}
 `, strings.ReplaceAll(currentExe, "'", "''"))
 }
 
