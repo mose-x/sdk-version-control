@@ -71,18 +71,30 @@ if ($oldDir -ne $newDir) {
     if (-not (Test-Path -LiteralPath $newDir)) { $newDir = $oldDir }
 }
 
-# Rename the executable. The backup uses the name RollbackUpdate expects
-# (<current exe>.bak) so rollback keeps working after the migration.
+# Rename the executable and set up the rollback backup RollbackUpdate expects
+# (svc.exe.bak). Prefer the self-update backup (<old name>.bak), which holds
+# the REAL previous version, over a copy of the current exe — so rollback
+# actually restores the prior version instead of the same one, and we don't
+# end up with two .bak files. Only copy the current exe when no self-update
+# backup exists.
 $legacyExe = Join-Path $newDir $oldName
 $newExe    = Join-Path $newDir 'svc.exe'
+$legacyBak = Join-Path $newDir ($oldName + '.bak')
+$newBak    = Join-Path $newDir 'svc.exe.bak'
 if (Test-Path -LiteralPath $legacyExe) {
-    Copy-Item -LiteralPath $legacyExe -Destination (Join-Path $newDir 'svc.exe.bak') -Force
+    if (Test-Path -LiteralPath $legacyBak) {
+        Move-Item -LiteralPath $legacyBak -Destination $newBak -Force
+    } else {
+        Copy-Item -LiteralPath $legacyExe -Destination $newBak -Force
+    }
     Rename-Item -LiteralPath $legacyExe -NewName 'svc.exe'
 }
 if (-not (Test-Path -LiteralPath $newExe)) { $newExe = $legacyExe }
 
 # Recreate shortcuts only where legacy ones exist (never add shortcuts where
-# the user had none).
+# the user had none). Scan every .lnk and remove any that belong to the old
+# product — matched by the old shortcut name OR by a target path pointing
+# into the old install — so leftovers are removed regardless of exact naming.
 try {
     $ws = New-Object -ComObject WScript.Shell
     $bases = @(
@@ -93,9 +105,13 @@ try {
     )
     foreach ($b in $bases) {
         if (-not $b) { continue }
-        $old = Join-Path $b 'SDK Version Control.lnk'
-        if (Test-Path -LiteralPath $old) {
-            Remove-Item -LiteralPath $old -Force
+        $legacy = Get-ChildItem -Path $b -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object {
+            $t = ''
+            try { $t = ($ws.CreateShortcut($_.FullName)).TargetPath } catch {}
+            ($_.Name -like 'SDK Version Control*') -or ($t -like '*SDK Version Control*')
+        }
+        if ($legacy) {
+            $legacy | Remove-Item -Force
             $s = $ws.CreateShortcut((Join-Path $b 'svc.lnk'))
             $s.TargetPath = $newExe
             $s.Save()

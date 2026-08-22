@@ -63,16 +63,28 @@ if [ "$BUNDLE" != "$NEW_BUNDLE" ]; then
     mv "$BUNDLE" "$NEW_BUNDLE" 2>/dev/null || NEW_BUNDLE="$BUNDLE"
 fi
 
-# Update the displayed bundle name in Info.plist (CFBundleName drives the
-# Finder/Dock label). Best-effort; ignore failures.
+# Self-update replaces the inner executable's CONTENTS but not its FILE NAME,
+# so Contents/MacOS/<file> still shows the old name. Rename it to "svc" and
+# point CFBundleExecutable at the new name so macOS launches it. (The bundle
+# is unsigned — the build strips the signature — so renaming is safe.)
+INNER_OLD=$(basename "$OLD_EXE")
+MACOS_NEW="$NEW_BUNDLE/Contents/MacOS"
+if [ "$INNER_OLD" != "svc" ] && [ -f "$MACOS_NEW/$INNER_OLD" ]; then
+    mv "$MACOS_NEW/$INNER_OLD" "$MACOS_NEW/svc" 2>/dev/null
+fi
+
+# Update the displayed bundle name and the executable name in Info.plist.
+# CFBundleName/CFBundleDisplayName drive the Finder/Dock label;
+# CFBundleExecutable must match the renamed inner binary. Best-effort.
 PLIST="$NEW_BUNDLE/Contents/Info.plist"
 if [ -f "$PLIST" ]; then
     /usr/bin/plutil -replace CFBundleName -string "svc" "$PLIST" 2>/dev/null
     /usr/bin/plutil -replace CFBundleDisplayName -string "svc" "$PLIST" 2>/dev/null
+    /usr/bin/plutil -replace CFBundleExecutable -string "svc" "$PLIST" 2>/dev/null
 fi
 
 # Relaunch.
-open "$NEW_BUNDLE" 2>/dev/null || nohup "$NEW_BUNDLE/Contents/MacOS/$(basename "$OLD_EXE")" >/dev/null 2>&1 &
+open "$NEW_BUNDLE" 2>/dev/null || nohup "$MACOS_NEW/svc" >/dev/null 2>&1 &
 exit 0
 `, pid, currentExe)
 }

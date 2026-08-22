@@ -29,7 +29,10 @@ func TestBuildLegacyRenamePs(t *testing.T) {
 		{"folder rename fallback keeps old dir", "if (-not (Test-Path -LiteralPath $newDir)) { $newDir = $oldDir }"},
 		{"executable renamed to svc.exe", "Rename-Item -LiteralPath $legacyExe -NewName 'svc.exe'"},
 		{"backup named for RollbackUpdate compatibility", "'svc.exe.bak'"},
-		{"legacy shortcut name handled", "'SDK Version Control.lnk'"},
+		{"rollback backup prefers the self-update backup", "Move-Item -LiteralPath $legacyBak -Destination $newBak -Force"},
+		{"fallback copies current exe when no self-update backup", "Copy-Item -LiteralPath $legacyExe -Destination $newBak -Force"},
+		{"legacy shortcut matched by name pattern", "-like 'SDK Version Control*'"},
+		{"legacy shortcut matched by target path", "-like '*SDK Version Control*'"},
 		{"new shortcut name created", "'svc.lnk'"},
 		{"relaunches the new executable", "Start-Process -FilePath $newExe"},
 	}
