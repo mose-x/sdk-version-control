@@ -26,7 +26,7 @@ func TestBuildLegacyRenamePs(t *testing.T) {
 		{"waits via Get-Process polling", "Get-Process -Id $targetPid"},
 		{"wait loop bounded by timeout", "$timeout = 60"},
 		{"folder renamed to svc", "Rename-Item -LiteralPath $oldDir -NewName 'svc'"},
-		{"folder rename fallback keeps old dir", "if (-not (Test-Path -LiteralPath $newDir)) { $newDir = $oldDir }"},
+		{"folder rename fallback keeps old dir", "$newDir = $oldDir"},
 		{"executable renamed to svc.exe", "Rename-Item -LiteralPath $legacyExe -NewName 'svc.exe'"},
 		{"backup named for RollbackUpdate compatibility", "'svc.exe.bak'"},
 		{"rollback backup prefers the self-update backup", "Move-Item -LiteralPath $legacyBak -Destination $newBak -Force"},

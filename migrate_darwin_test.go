@@ -26,7 +26,7 @@ func TestBuildLegacyRenameSh(t *testing.T) {
 		{"waits via kill -0 polling", `kill -0 "$PID"`},
 		{"wait bounded by timeout", "timeout=60"},
 		{"bundle renamed to svc.app", `NEW_BUNDLE="$APPDIR/svc.app"`},
-		{"bundle rename fallback", `mv "$BUNDLE" "$NEW_BUNDLE" 2>/dev/null || NEW_BUNDLE="$BUNDLE"`},
+		{"bundle rename fallback", `NEW_BUNDLE="$BUNDLE"`},
 		{"inner executable renamed to svc", `mv "$MACOS_NEW/$INNER_OLD" "$MACOS_NEW/svc"`},
 		{"updates CFBundleName", `plutil -replace CFBundleName -string "svc"`},
 		{"updates CFBundleExecutable", `plutil -replace CFBundleExecutable -string "svc"`},
